@@ -1,0 +1,13 @@
+{
+  "route_id": "inspector_1",
+  "stops": [
+    {
+      "source_id": "s7",
+      "lat": 28.6,
+      "lon": 77.2,
+      "eta": "10:45",
+      "action": "FULL_INSPECTION",
+      "roi": 54.2
+    }
+  ]
+}

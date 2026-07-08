@@ -1,0 +1,27 @@
+{
+  "name": "vayubudhi-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "next": "^13.4.0",
+    "mapbox-gl": "^2.15.0",
+    "@deck.gl/core": "^8.9.0",
+    "@deck.gl/react": "^8.9.0",
+    "@deck.gl/layers": "^8.9.0",
+    "@deck.gl/geo-layers": "^8.9.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0"
+  }
+}

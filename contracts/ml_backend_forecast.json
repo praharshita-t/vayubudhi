@@ -1,0 +1,9 @@
+{
+  "horizon_h": 24,
+  "point": 210,
+  "interval": [
+    180,
+    245
+  ],
+  "ventilation_index": 850
+}

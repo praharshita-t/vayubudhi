@@ -1,0 +1,11 @@
+{
+  "prediction_set": [
+    "biomass_burning"
+  ],
+  "set_size": 1,
+  "confidence": 0.90,
+  "probabilities": {
+    "biomass_burning": 0.82,
+    "vehicular": 0.11
+  }
+}

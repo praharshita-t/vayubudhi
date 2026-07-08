@@ -1,0 +1,9 @@
+{
+  "station_id": "esp32_01",
+  "timestamp": "2026-07-07T10:15:00Z",
+  "pm25": 142.3,
+  "pm10": 168.9,
+  "temp": 31.2,
+  "humidity": 58.4,
+  "pressure": 1008.1
+}

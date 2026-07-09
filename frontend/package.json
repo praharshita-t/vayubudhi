@@ -16,7 +16,10 @@
     "@deck.gl/core": "^8.9.0",
     "@deck.gl/react": "^8.9.0",
     "@deck.gl/layers": "^8.9.0",
-    "@deck.gl/geo-layers": "^8.9.0"
+    "@deck.gl/geo-layers": "^8.9.0",
+    "@deck.gl/aggregation-layers": "^8.9.0",
+    "recharts": "^2.12.0",
+    "lucide-react": "^0.400.0"
   },
   "devDependencies": {
     "typescript": "^5.0.0",

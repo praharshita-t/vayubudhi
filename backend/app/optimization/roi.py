@@ -3,16 +3,18 @@ Cost-benefit ROI calculator.
 Estimates the balance between compliance enforcement costs and population exposure reduction.
 """
 
-def calculate_inspection_roi(exposure_reduction: float, operational_cost: float, penalty_recovered: float) -> float:
+def calculate_inspection_roi(population_exposed: float, estimated_aqi_reduction: float, compliance_cost: float) -> float:
     """
     Computes Return on Investment (ROI) score for a route.
     
     Args:
-        exposure_reduction: Est. reduction in AQI-exposure for local population.
-        operational_cost: Cost of running inspection route.
-        penalty_recovered: Expected penalty/compliance fee.
+        population_exposed: Population exposed.
+        estimated_aqi_reduction: Est. reduction in AQI-exposure for local population.
+        compliance_cost: Cost of running inspection route.
         
     Returns:
         ROI ratio or score
     """
-    pass
+    if compliance_cost <= 0:
+        return 0.0
+    return (population_exposed * estimated_aqi_reduction) / compliance_cost

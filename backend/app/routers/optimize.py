@@ -3,49 +3,166 @@ from sqlalchemy.orm import Session
 from database import get_db
 import models
 import schemas
+from optimization.solver import RouteSolver
+from optimization.router import get_dispatch_details
+from optimization.roi import calculate_inspection_roi
 
 router = APIRouter()
+
+# Synthetic source data representing emission hotspots in Delhi
+SYNTHETIC_SOURCES = [
+    {
+        "source_id": "S01",
+        "latitude": 28.6469,
+        "longitude": 77.3164,
+        "severity": 350.0,
+        "confidence": 0.92,
+        "set_size": 1,
+        "population_exposed": 185000.0
+    },
+    {
+        "source_id": "S03",
+        "latitude": 28.6289,
+        "longitude": 77.2406,
+        "severity": 248.0,
+        "confidence": 0.90,
+        "set_size": 1,
+        "population_exposed": 210000.0
+    },
+    {
+        "source_id": "S04",
+        "latitude": 28.5635,
+        "longitude": 77.1724,
+        "severity": 260.0,
+        "confidence": 0.58,
+        "set_size": 3,
+        "population_exposed": 78000.0
+    },
+    {
+        "source_id": "S07",
+        "latitude": 28.6724,
+        "longitude": 77.3151,
+        "severity": 275.0,
+        "confidence": 0.88,
+        "set_size": 1,
+        "population_exposed": 120000.0
+    },
+    {
+        "source_id": "S09",
+        "latitude": 28.7762,
+        "longitude": 77.0511,
+        "severity": 245.0,
+        "confidence": 0.62,
+        "set_size": 2,
+        "population_exposed": 65000.0
+    },
+    {
+        "source_id": "S12",
+        "latitude": 28.6843,
+        "longitude": 77.0319,
+        "severity": 225.0,
+        "confidence": 0.85,
+        "set_size": 1,
+        "population_exposed": 95000.0
+    },
+    {
+        "source_id": "S15",
+        "latitude": 28.5308,
+        "longitude": 77.2713,
+        "severity": 150.0,
+        "confidence": 0.50,
+        "set_size": 2,
+        "population_exposed": 50000.0
+    }
+]
 
 @router.get("/optimize", response_model=schemas.RoutePlan)
 def get_optimization(db: Session = Depends(get_db)):
     """
-    Returns the optimized routing plan.
-    Outputs Contract 4 JSON shape. Logs route and ROI details to SQLite.
+    Solves the vehicle routing problem for ground inspectors, vans, and drones using Google OR-Tools.
+    Logs all routes and their cost-benefit ROI profiles to SQLite.
+    Returns the primary inspector routing plan to stay compatible with Contract 4.
     """
-    route_id = "inspector_1"
-    stops = [
-        {
-            "source_id": "s7",
-            "lat": 28.6,
-            "lon": 77.2,
-            "eta": "10:45",
-            "action": "FULL_INSPECTION",
-            "roi": 54.2
-        }
-    ]
+    # 1. Establish the central depot coordinates (VayuBudhi Sensor alpha / central Delhi)
+    depot = {
+        "source_id": "depot",
+        "latitude": 28.6350,
+        "longitude": 77.2250,
+        "severity": 0,
+        "confidence": 0,
+        "set_size": 0,
+        "population_exposed": 0
+    }
     
-    # Check if this route_id already exists to prevent duplicate insertion error
-    db_route = db.query(models.EnforcementRoute).filter_by(route_id=route_id).first()
-    if not db_route:
-        db_route = models.EnforcementRoute(
-            route_id=route_id,
-            stops=stops
-        )
-        db.add(db_route)
+    # 2. Filter out MONITOR-only sources (severity < 200) from active routing
+    dispatchable_sources = [src for src in SYNTHETIC_SOURCES if src["severity"] >= 200]
+    locations = [depot] + dispatchable_sources
+
+    # 3. Instantiate and run Google OR-Tools CVRPTW solver
+    solver = RouteSolver(locations, depot_index=0)
+    routes = solver.solve_vrp()
+
+    # 4. Save/update all generated routes and calculate their ROI metrics in database
+    for r_id, route_data in routes.items():
+        # Update or create EnforcementRoute log
+        db_route = db.query(models.EnforcementRoute).filter_by(route_id=r_id).first()
+        if db_route:
+            db_route.stops = route_data["stops"]
+        else:
+            db_route = models.EnforcementRoute(
+                route_id=r_id,
+                stops=route_data["stops"]
+            )
+            db.add(db_route)
         db.commit()
-        db.refresh(db_route)
+
+        # Compute route-level aggregate metrics for ROIResult
+        total_reduction = 0.0
+        total_cost = 0.0
+        stop_rois = []
         
-        # Also log the cost-benefit ROI calculation result
-        db_roi = models.ROIResult(
-            route_id=route_id,
-            exposure_reduction=125.5,
-            compliance_cost=250.0,
-            roi=54.2
-        )
-        db.add(db_roi)
+        # We look up matching synthetic source records to retrieve severity, cost, and pop
+        for stop in route_data["stops"]:
+            src = next((s for s in SYNTHETIC_SOURCES if s["source_id"] == stop["source_id"]), None)
+            if src:
+                severity = src["severity"]
+                pop = src["population_exposed"]
+                reduction = severity * 0.05
+                total_reduction += reduction
+                
+                # Retrieve the specific vehicle cost
+                v_type = route_data["vehicle_type"]
+                if v_type == "inspector":
+                    cost = 10000.0 + (severity - 200.0) * 36.0
+                elif v_type == "van":
+                    cost = 9000.0 + (severity - 200.0) * 40.0
+                else:
+                    cost = 5000.0 + (severity - 200.0) * 50.0
+                
+                total_cost += cost
+                stop_rois.append(stop["roi"])
+                
+        route_roi = round(sum(stop_rois), 1) if stop_rois else 0.0
+        
+        # Update or create ROIResult log
+        db_roi = db.query(models.ROIResult).filter_by(route_id=r_id).first()
+        if db_roi:
+            db_roi.exposure_reduction = total_reduction
+            db_roi.compliance_cost = total_cost
+            db_roi.roi = route_roi
+        else:
+            db_roi = models.ROIResult(
+                route_id=r_id,
+                exposure_reduction=total_reduction,
+                compliance_cost=total_cost,
+                roi=route_roi
+            )
+            db.add(db_roi)
         db.commit()
-    
+
+    # 5. Return the primary inspector route plan (inspector_1) for Contract 4 compatibility
+    inspector_route = routes.get("inspector_1")
     return {
-        "route_id": route_id,
-        "stops": stops
+        "route_id": inspector_route["route_id"],
+        "stops": inspector_route["stops"]
     }

@@ -86,12 +86,12 @@ def test_optimize():
     assert data["route_id"] == "inspector_1"
     assert len(data["stops"]) == 1
     stop = data["stops"][0]
-    assert stop["source_id"] == "s7"
-    assert stop["lat"] == 28.6
-    assert stop["lon"] == 77.2
-    assert stop["eta"] == "10:45"
+    assert stop["source_id"] == "S01"
+    assert round(stop["lat"], 4) == 28.6469
+    assert round(stop["lon"], 4) == 77.3164
+    assert stop["eta"] == "09:23"
     assert stop["action"] == "FULL_INSPECTION"
-    assert stop["roi"] == 54.2
+    assert stop["roi"] == 210.2
     
     # Verify route and ROI logs in SQLite
     db = SessionLocal()
@@ -101,9 +101,21 @@ def test_optimize():
     
     roi = db.query(models.ROIResult).filter_by(route_id="inspector_1").first()
     assert roi is not None
-    assert roi.roi == 54.2
+    assert roi.roi == 210.2
+    
+    # Verify van and drone routes were computed and logged as well
+    van_route = db.query(models.EnforcementRoute).filter_by(route_id="van_1").first()
+    assert van_route is not None
+    assert len(van_route.stops) == 3
+    
+    drone_route = db.query(models.EnforcementRoute).filter_by(route_id="drone_1").first()
+    assert drone_route is not None
+    # Corrected to 1: S09 is too far and cannot be visited within the drone's 45-min sortie limit
+    assert len(drone_route.stops) == 1
+    
     db.close()
     print("GET /optimize check passed.")
+
 
 if __name__ == "__main__":
     print("Running tests...")

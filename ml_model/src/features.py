@@ -14,4 +14,5 @@ def calculate_ventilation_index(pblh: float, wind_speed: float) -> float:
     Returns:
         Ventilation Index (m^2/s)
     """
-    pass
+    return max(0.0, float(pblh * wind_speed))
+

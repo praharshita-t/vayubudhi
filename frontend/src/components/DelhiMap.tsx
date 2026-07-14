@@ -1,108 +1,203 @@
 'use client';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { delhiStations, getAqiCategory, Station } from '@/data/mockStations';
+import { hexGridData, HexDataPoint } from '@/data/mockHexGrid';
 
-const DELHI_CENTER: [number, number] = [77.21, 28.63];
-const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
+// deck.gl imports
+import DeckGL from '@deck.gl/react';
+import { ColumnLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
+import { LightingEffect, AmbientLight, DirectionalLight } from '@deck.gl/core';
+
+const DELHI_CENTER = { longitude: 77.17, latitude: 28.62 };
+
+const INITIAL_VIEW_STATE = {
+  longitude: DELHI_CENTER.longitude,
+  latitude: DELHI_CENTER.latitude,
+  zoom: 11,
+  pitch: 55,
+  bearing: -20,
+  minZoom: 9,
+  maxZoom: 15,
+};
+
+// AQI → Color mapping (green → yellow → orange → red)
+function aqiToColor(aqi: number): [number, number, number, number] {
+  if (aqi <= 50)  return [34, 197, 94, 220];     // green
+  if (aqi <= 100) return [132, 204, 22, 220];     // lime
+  if (aqi <= 150) return [234, 179, 8, 220];      // yellow
+  if (aqi <= 200) return [245, 158, 11, 220];     // amber
+  if (aqi <= 250) return [249, 115, 22, 220];     // orange
+  if (aqi <= 300) return [239, 68, 68, 220];      // red
+  if (aqi <= 400) return [220, 38, 38, 230];      // dark red
+  return [185, 28, 28, 240];                       // deep red
+}
+
+// AQI → Height (in meters, exaggerated for visual impact)
+function aqiToHeight(aqi: number): number {
+  return Math.max(100, aqi * 8);
+}
 
 export default function DelhiMap({ alertStation }: { alertStation?: Station | null }) {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstance = useRef<any>(null);
-  const [mapReady, setMapReady] = useState(false);
+  const [hoveredHex, setHoveredHex] = useState<HexDataPoint | null>(null);
   const [hoveredStation, setHoveredStation] = useState<Station | null>(null);
+  const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
 
-  useEffect(() => {
-    if (!mapRef.current || mapInstance.current) return;
-
-    // Dynamically import mapbox to avoid SSR issues
-    import('mapbox-gl').then((mapboxgl) => {
-      if (!MAPBOX_TOKEN) {
-        // Render a beautiful fallback map
-        setMapReady(true);
-        return;
-      }
-
-      (mapboxgl as any).accessToken = MAPBOX_TOKEN;
-      const map = new mapboxgl.Map({
-        container: mapRef.current!,
-        style: 'mapbox://styles/mapbox/dark-v11',
-        center: DELHI_CENTER,
-        zoom: 11,
-        pitch: 45,
-        bearing: -15,
-        antialias: true,
-      });
-
-      map.on('load', () => {
-        // Add station markers as a GeoJSON source
-        const geojson = {
-          type: 'FeatureCollection' as const,
-          features: delhiStations.map((s) => ({
-            type: 'Feature' as const,
-            geometry: { type: 'Point' as const, coordinates: [s.lon, s.lat] },
-            properties: { id: s.id, name: s.name, aqi: s.aqi, source: s.source, status: s.status },
-          })),
-        };
-
-        map.addSource('stations', { type: 'geojson', data: geojson });
-
-        // Glow circle layer
-        map.addLayer({
-          id: 'station-glow',
-          type: 'circle',
-          source: 'stations',
-          paint: {
-            'circle-radius': ['case', ['==', ['get', 'source'], 'iot'], 18, 12],
-            'circle-color': [
-              'interpolate', ['linear'], ['get', 'aqi'],
-              50, '#22c55e', 100, '#84cc16', 200, '#f59e0b', 300, '#f97316', 400, '#ef4444',
-            ],
-            'circle-opacity': 0.15,
-            'circle-blur': 1,
-          },
-        });
-
-        // Core dot layer
-        map.addLayer({
-          id: 'station-dots',
-          type: 'circle',
-          source: 'stations',
-          paint: {
-            'circle-radius': ['case', ['==', ['get', 'source'], 'iot'], 7, 5],
-            'circle-color': [
-              'interpolate', ['linear'], ['get', 'aqi'],
-              50, '#22c55e', 100, '#84cc16', 200, '#f59e0b', 300, '#f97316', 400, '#ef4444',
-            ],
-            'circle-stroke-width': ['case', ['==', ['get', 'source'], 'iot'], 2, 1],
-            'circle-stroke-color': 'rgba(255,255,255,0.3)',
-          },
-        });
-
-        setMapReady(true);
-        mapInstance.current = map;
-      });
+  // Lighting setup for 3D columns
+  const lightingEffect = useMemo(() => {
+    const ambientLight = new AmbientLight({ color: [255, 255, 255], intensity: 1.2 });
+    const dirLight = new DirectionalLight({
+      color: [255, 255, 255],
+      intensity: 2.0,
+      direction: [-3, -9, -1],
     });
-
-    return () => {
-      if (mapInstance.current) mapInstance.current.remove();
-    };
+    return new LightingEffect({ ambientLight, dirLight });
   }, []);
 
-  // Flash alert station when simulation triggers
-  useEffect(() => {
-    if (!alertStation || !mapInstance.current) return;
-    const map = mapInstance.current;
-    map.flyTo({ center: [alertStation.lon, alertStation.lat], zoom: 14, pitch: 50, duration: 1500 });
+  // Handle fly-to on alert
+  React.useEffect(() => {
+    if (!alertStation) return;
+    setViewState((prev: typeof INITIAL_VIEW_STATE) => ({
+      ...prev,
+      longitude: alertStation.lon,
+      latitude: alertStation.lat,
+      zoom: 13,
+      pitch: 55,
+      transitionDuration: 1500,
+    }));
   }, [alertStation]);
 
+  // Build deck.gl layers
+  const layers = useMemo(() => {
+    // Layer 1: 3D Hexagonal Columns (the main visual)
+    const columnLayer = new ColumnLayer<HexDataPoint>({
+      id: 'aqi-columns',
+      data: hexGridData,
+      diskResolution: 6,           // 6 sides = hexagon
+      radius: 450,                 // hex radius in meters
+      extruded: true,
+      pickable: true,
+      elevationScale: 1,
+      getPosition: (d: HexDataPoint) => [d.lon, d.lat],
+      getFillColor: (d: HexDataPoint) => aqiToColor(d.aqi),
+      getElevation: (d: HexDataPoint) => aqiToHeight(d.aqi),
+      material: {
+        ambient: 0.45,
+        diffuse: 0.6,
+        shininess: 40,
+        specularColor: [60, 64, 70],
+      },
+      transitions: {
+        getElevation: { duration: 800 },
+        getFillColor: { duration: 800 },
+      },
+      onHover: (info: any) => setHoveredHex(info.object || null),
+    });
+
+    // Layer 2: Station marker dots (glowing rings)
+    const stationGlowLayer = new ScatterplotLayer<Station>({
+      id: 'station-glow',
+      data: delhiStations,
+      pickable: false,
+      opacity: 0.25,
+      stroked: false,
+      filled: true,
+      radiusMinPixels: 12,
+      radiusMaxPixels: 30,
+      getPosition: (d: Station) => [d.lon, d.lat, aqiToHeight(d.aqi) + 50],
+      getFillColor: (d: Station) => {
+        if (d.source === 'iot') return [57, 210, 192, 80];
+        const c = aqiToColor(d.aqi);
+        return [c[0], c[1], c[2], 60];
+      },
+      getRadius: (d: Station) => d.source === 'iot' ? 600 : 400,
+    });
+
+    // Layer 3: Station core dots
+    const stationDotLayer = new ScatterplotLayer<Station>({
+      id: 'station-dots',
+      data: delhiStations,
+      pickable: true,
+      opacity: 1,
+      stroked: true,
+      filled: true,
+      radiusMinPixels: 4,
+      radiusMaxPixels: 10,
+      lineWidthMinPixels: 1,
+      getPosition: (d: Station) => [d.lon, d.lat, aqiToHeight(d.aqi) + 50],
+      getFillColor: (d: Station) => {
+        if (d.source === 'iot') return [57, 210, 192, 255];
+        return aqiToColor(d.aqi);
+      },
+      getLineColor: [255, 255, 255, 100],
+      getRadius: (d: Station) => d.source === 'iot' ? 350 : 200,
+      onHover: (info: any) => setHoveredStation(info.object || null),
+    });
+
+    // Layer 4: Station name labels
+    const labelLayer = new TextLayer<Station>({
+      id: 'station-labels',
+      data: delhiStations.filter(s => s.source === 'iot' || s.status === 'alert'),
+      pickable: false,
+      getPosition: (d: Station) => [d.lon, d.lat, aqiToHeight(d.aqi) + 200],
+      getText: (d: Station) => d.source === 'iot' ? `IoT ● ${d.aqi}` : d.name,
+      getSize: 11,
+      getColor: (d: Station) => d.source === 'iot' ? [57, 210, 192, 255] : [230, 237, 243, 200],
+      getTextAnchor: 'middle' as const,
+      getAlignmentBaseline: 'bottom' as const,
+      fontFamily: 'Inter, system-ui, sans-serif',
+      fontWeight: 600,
+      outlineWidth: 2,
+      outlineColor: [6, 8, 15, 200],
+      billboard: true,
+    });
+
+    // Layer 5: Alert pulse ring
+    const alertLayers: any[] = [];
+    if (alertStation) {
+      alertLayers.push(
+        new ScatterplotLayer({
+          id: 'alert-pulse',
+          data: [alertStation],
+          pickable: false,
+          opacity: 0.5,
+          stroked: true,
+          filled: false,
+          radiusMinPixels: 20,
+          radiusMaxPixels: 50,
+          lineWidthMinPixels: 2,
+          getPosition: (d: any) => [d.lon, d.lat, aqiToHeight(d.aqi) + 100],
+          getLineColor: [248, 81, 73, 200],
+          getRadius: 800,
+        })
+      );
+    }
+
+    return [columnLayer, stationGlowLayer, stationDotLayer, labelLayer, ...alertLayers];
+  }, [alertStation]);
+
+  const onViewStateChange = useCallback(({ viewState: vs }: any) => {
+    setViewState(vs);
+  }, []);
+
+  // Tooltip
+  const tooltip = hoveredHex || hoveredStation;
+  const tooltipData = hoveredStation
+    ? { name: hoveredStation.name, aqi: hoveredStation.aqi, pm25: hoveredStation.pm25, type: hoveredStation.source === 'iot' ? 'IoT Sensor' : 'CAAQMS' }
+    : hoveredHex
+      ? { name: 'Grid Cell', aqi: hoveredHex.aqi, pm25: hoveredHex.pm25, type: 'Interpolated' }
+      : null;
+
   return (
-    <div className="map-container">
-      <div ref={mapRef} className="map-canvas" style={{ width: '100%', height: '100%' }}>
-        {/* Fallback canvas when no Mapbox token */}
-        {!MAPBOX_TOKEN && (
-          <FallbackMap stations={delhiStations} hoveredStation={hoveredStation} onHover={setHoveredStation} alertStation={alertStation} />
-        )}
-      </div>
+    <div className="map-container" style={{ position: 'relative', background: '#080c14' }}>
+      <DeckGL
+        viewState={viewState}
+        onViewStateChange={onViewStateChange}
+        controller={true}
+        layers={layers}
+        effects={[lightingEffect]}
+        style={{ width: '100%', height: '100%' }}
+        getTooltip={() => null}
+      />
 
       {/* Overlay Stats */}
       <div className="map-overlay-stats">
@@ -113,11 +208,33 @@ export default function DelhiMap({ alertStation }: { alertStation?: Station | nu
           Alerts Active: <span className="chip-value" style={{ color: 'var(--accent-red)' }}>{delhiStations.filter(s => s.status === 'alert').length}</span>
         </div>
         <div className="map-stat-chip">
-          IoT Nodes: <span className="chip-value" style={{ color: 'var(--accent-cyan)' }}>{delhiStations.filter(s => s.source === 'iot').length}</span>
+          Hex Cells: <span className="chip-value" style={{ color: 'var(--accent-cyan)' }}>{hexGridData.length}</span>
         </div>
       </div>
 
-      {/* Legend */}
+      {/* Color Legend */}
+      <div style={{
+        position: 'absolute', bottom: 12, left: 12, zIndex: 5,
+        background: 'rgba(13,17,23,0.88)', backdropFilter: 'blur(12px)',
+        border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)',
+        padding: '10px 14px',
+      }}>
+        <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>
+          AQI Density
+        </div>
+        <div style={{ display: 'flex', gap: 0, height: 10, borderRadius: 3, overflow: 'hidden', width: 140 }}>
+          {['#22c55e', '#84cc16', '#eab308', '#f59e0b', '#f97316', '#ef4444', '#dc2626'].map((c, i) => (
+            <div key={i} style={{ flex: 1, background: c }} />
+          ))}
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 3, fontSize: '0.55rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+          <span>0</span>
+          <span>150</span>
+          <span>300+</span>
+        </div>
+      </div>
+
+      {/* Legend icons */}
       <div className="map-legend">
         <div className="legend-item"><div className="legend-dot" style={{ background: '#22c55e' }} />Good</div>
         <div className="legend-item"><div className="legend-dot" style={{ background: '#f59e0b' }} />Moderate</div>
@@ -126,84 +243,21 @@ export default function DelhiMap({ alertStation }: { alertStation?: Station | nu
       </div>
 
       {/* Hover tooltip */}
-      {hoveredStation && (
+      {tooltipData && (
         <div style={{
-          position: 'absolute', bottom: 50, right: 12,
+          position: 'absolute', bottom: 80, right: 12,
           background: 'rgba(13,17,23,0.92)', backdropFilter: 'blur(12px)',
           border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)',
           padding: '10px 14px', zIndex: 10, minWidth: 180,
         }}>
-          <div style={{ fontWeight: 700, fontSize: '0.8rem', marginBottom: 4 }}>{hoveredStation.name}</div>
+          <div style={{ fontWeight: 700, fontSize: '0.8rem', marginBottom: 4 }}>{tooltipData.name}</div>
+          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginBottom: 4 }}>{tooltipData.type}</div>
           <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-            AQI: <span style={{ color: getAqiCategory(hoveredStation.aqi).color, fontWeight: 700, fontFamily: 'var(--font-mono)' }}>{hoveredStation.aqi}</span>
-            {' '}• PM2.5: {hoveredStation.pm25} • PM10: {hoveredStation.pm10}
-          </div>
-          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: 2 }}>
-            Ratio: {(hoveredStation.pm25 / Math.max(hoveredStation.pm10, 1)).toFixed(2)}
+            AQI: <span style={{ color: getAqiCategory(tooltipData.aqi).color, fontWeight: 700, fontFamily: 'var(--font-mono)' }}>{tooltipData.aqi}</span>
+            {' '}• PM2.5: <span style={{ fontFamily: 'var(--font-mono)' }}>{tooltipData.pm25}</span>
           </div>
         </div>
       )}
     </div>
-  );
-}
-
-/* ── Fallback SVG Map (no Mapbox token required) ── */
-function FallbackMap({ stations, hoveredStation, onHover, alertStation }: {
-  stations: Station[];
-  hoveredStation: Station | null;
-  onHover: (s: Station | null) => void;
-  alertStation?: Station | null;
-}) {
-  // Project lat/lon to SVG coordinates within Delhi bounding box
-  const bounds = { minLat: 28.40, maxLat: 28.85, minLon: 76.85, maxLon: 77.45 };
-  const project = (lat: number, lon: number): [number, number] => {
-    const x = ((lon - bounds.minLon) / (bounds.maxLon - bounds.minLon)) * 100;
-    const y = ((bounds.maxLat - lat) / (bounds.maxLat - bounds.minLat)) * 100;
-    return [x, y];
-  };
-
-  return (
-    <svg viewBox="0 0 100 100" style={{ width: '100%', height: '100%', background: '#0d1117' }}>
-      {/* Grid lines */}
-      {Array.from({ length: 11 }, (_, i) => (
-        <React.Fragment key={`grid-${i}`}>
-          <line x1={i * 10} y1={0} x2={i * 10} y2={100} stroke="#1c2333" strokeWidth={0.15} />
-          <line x1={0} y1={i * 10} x2={100} y2={i * 10} stroke="#1c2333" strokeWidth={0.15} />
-        </React.Fragment>
-      ))}
-      {/* Delhi boundary approximation */}
-      <ellipse cx={50} cy={50} rx={38} ry={42} fill="none" stroke="#21262d" strokeWidth={0.3} strokeDasharray="1,1" />
-      {/* Station dots */}
-      {stations.map((s) => {
-        const [cx, cy] = project(s.lat, s.lon);
-        const cat = getAqiCategory(s.aqi);
-        const isIoT = s.source === 'iot';
-        const isAlert = alertStation?.id === s.id;
-        return (
-          <g key={s.id}
-            onMouseEnter={() => onHover(s)}
-            onMouseLeave={() => onHover(null as unknown as Station)}
-            style={{ cursor: 'pointer' }}
-          >
-            {/* Glow */}
-            <circle cx={cx} cy={cy} r={isIoT ? 3.5 : 2} fill={cat.color} opacity={0.15} />
-            {isAlert && <circle cx={cx} cy={cy} r={5} fill="none" stroke={cat.color} strokeWidth={0.3} opacity={0.6}>
-              <animate attributeName="r" from="3" to="7" dur="1.2s" repeatCount="indefinite" />
-              <animate attributeName="opacity" from="0.8" to="0" dur="1.2s" repeatCount="indefinite" />
-            </circle>}
-            {/* Core dot */}
-            <circle cx={cx} cy={cy} r={isIoT ? 1.2 : 0.8} fill={cat.color} stroke="rgba(255,255,255,0.25)" strokeWidth={0.15} />
-            {/* IoT label */}
-            {isIoT && (
-              <text x={cx + 1.8} y={cy + 0.4} fontSize={1.5} fill="var(--accent-cyan)" fontWeight={600}>IoT</text>
-            )}
-          </g>
-        );
-      })}
-      {/* Center label */}
-      <text x={50} y={96} textAnchor="middle" fontSize={1.8} fill="var(--text-muted)" fontWeight={500}>
-        DELHI NCR — {stations.length} Monitoring Stations
-      </text>
-    </svg>
   );
 }

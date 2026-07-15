@@ -15,54 +15,27 @@ from validation import (
     calculate_js_divergence,
     calculate_wasserstein_distance
 )
-
-def generate_synthetic_data(num_samples=1000):
-    np.random.seed(42)
-    # Generate typical meteorological features
-    temp = np.random.uniform(15, 38, size=num_samples)
-    humidity = np.random.uniform(20, 90, size=num_samples)
-    pressure = np.random.uniform(995, 1015, size=num_samples)
-    wind_speed = np.random.uniform(0.5, 12.0, size=num_samples)
-    pblh = np.random.uniform(100, 2000, size=num_samples)
-    
-    # Generate PM values reflecting typical urban conditions
-    pm10 = np.random.uniform(30, 350, size=num_samples)
-    pm_ratio = np.random.uniform(0.3, 0.9, size=num_samples)
-    pm25 = pm10 * pm_ratio
-    
-    # Stack features: [pm25, pm10, temp, humidity, pressure, wind_speed, pblh]
-    X = np.column_stack([pm25, pm10, temp, humidity, pressure, wind_speed, pblh])
-    
-    # Generate AQI forecast target (future AQI in 24h)
-    # Physically grounded: high PM2.5 + low ventilation (stagnant air) = high future AQI
-    vi = pblh * wind_speed
-    stagnancy = 1.0 / (vi + 1e-5)
-    y_reg = pm25 * (1.2 + 500.0 * stagnancy) + np.random.normal(0, 10, size=num_samples)
-    y_reg = np.clip(y_reg, 0, 500) # Clip AQI to standard range [0, 500]
-    
-    # Create dictionary list for weak labels heuristics
-    data_list = []
-    for i in range(num_samples):
-        data_list.append({
-            "pm25": pm25[i],
-            "pm10": pm10[i],
-            "temp": temp[i],
-            "humidity": humidity[i],
-            "pressure": pressure[i],
-            "wind_speed": wind_speed[i],
-            "pblh": pblh[i]
-        })
-        
-    return X, y_reg, data_list
+from preprocess_and_label import create_training_data
 
 def main():
-    print("Generating synthetic datasets...")
-    X, y_reg, data_list = generate_synthetic_data(1200)
+    print("Loading and preprocessing real data from APIs...")
+    X, y_reg, data_list = create_training_data()
     
-    # Split into Train (800), Calib (200), Test (200)
-    X_train, y_train_reg, data_train = X[:800], y_reg[:800], data_list[:800]
-    X_calib, y_calib_reg, data_calib = X[800:1000], y_reg[800:1000], data_list[800:1000]
-    X_test, y_test_reg, data_test = X[1000:], y_reg[1000:], data_list[1000:]
+    if X is None or len(X) < 100:
+        print("Not enough real data found! Make sure to run fetch_data.py and get enough samples.")
+        print("We need at least 100 samples to train and calibrate. Exiting.")
+        return
+        
+    print(f"Loaded {len(X)} samples of real data.")
+    
+    # Split into Train (80%), Calib (10%), Test (10%)
+    n = len(X)
+    train_idx = int(0.8 * n)
+    calib_idx = int(0.9 * n)
+    
+    X_train, y_train_reg, data_train = X[:train_idx], y_reg[:train_idx], data_list[:train_idx]
+    X_calib, y_calib_reg, data_calib = X[train_idx:calib_idx], y_reg[train_idx:calib_idx], data_list[train_idx:calib_idx]
+    X_test, y_test_reg, data_test = X[calib_idx:], y_reg[calib_idx:], data_list[calib_idx:]
     
     # 1. FORECASTING
     print("\n--- Training Forecast Model (XGBoost) ---")

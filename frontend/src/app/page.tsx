@@ -28,7 +28,7 @@ function LiveClock() {
     return () => clearInterval(id);
   }, []);
   return (
-    <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+    <span suppressHydrationWarning style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
       {time} IST
     </span>
   );
@@ -103,11 +103,19 @@ export default function DashboardPage() {
           </div>
 
           {/* Tab Content */}
-          <div className="sidebar-content">
-            {activeTab === 'simulate' && <SimulatorPanel onAlert={setAlertStation} />}
-            {activeTab === 'forecast' && <ForecastPanel />}
-            {activeTab === 'enforce' && <OptimizerPanel />}
-            {activeTab === 'advisory' && <AdvisoryPanel />}
+          <div className="sidebar-content" style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+            <div style={{ display: activeTab === 'simulate' ? 'block' : 'none', height: '100%', overflowY: 'auto' }}>
+              <SimulatorPanel onAlert={setAlertStation} />
+            </div>
+            <div style={{ display: activeTab === 'forecast' ? 'block' : 'none', height: '100%', overflowY: 'auto' }}>
+              <ForecastPanel />
+            </div>
+            <div style={{ display: activeTab === 'enforce' ? 'block' : 'none', height: '100%', overflowY: 'auto' }}>
+              <OptimizerPanel />
+            </div>
+            <div style={{ display: activeTab === 'advisory' ? 'block' : 'none', height: '100%', overflowY: 'auto' }}>
+              <AdvisoryPanel />
+            </div>
           </div>
         </aside>
       </div>

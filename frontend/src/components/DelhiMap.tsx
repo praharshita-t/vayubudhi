@@ -5,6 +5,8 @@ import { hexGridData, HexDataPoint } from '@/data/mockHexGrid';
 
 // deck.gl imports
 import DeckGL from '@deck.gl/react';
+import Map from 'react-map-gl/maplibre';
+import 'maplibre-gl/dist/maplibre-gl.css';
 import { ColumnLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import { LightingEffect, AmbientLight, DirectionalLight } from '@deck.gl/core';
 
@@ -32,9 +34,12 @@ function aqiToColor(aqi: number): [number, number, number, number] {
   return [185, 28, 28, 240];                       // deep red
 }
 
-// AQI → Height (in meters, exaggerated for visual impact)
+// AQI → Height (exponential curve for dramatic visual contrast)
 function aqiToHeight(aqi: number): number {
-  return Math.max(100, aqi * 8);
+  // Normalize AQI to 0-1 range (capped at 500)
+  const t = Math.min(aqi, 500) / 500;
+  // Exponential curve: low AQI = very short, high AQI = towering
+  return 50 + Math.pow(t, 2.2) * 6000;
 }
 
 export default function DelhiMap({ alertStation }: { alertStation?: Station | null }) {
@@ -73,7 +78,7 @@ export default function DelhiMap({ alertStation }: { alertStation?: Station | nu
       id: 'aqi-columns',
       data: hexGridData,
       diskResolution: 6,           // 6 sides = hexagon
-      radius: 450,                 // hex radius in meters
+      radius: 900,                 // hex radius in meters
       extruded: true,
       pickable: true,
       elevationScale: 1,
@@ -197,7 +202,11 @@ export default function DelhiMap({ alertStation }: { alertStation?: Station | nu
         effects={[lightingEffect]}
         style={{ width: '100%', height: '100%' }}
         getTooltip={() => null}
-      />
+      >
+        <Map
+          mapStyle="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json"
+        />
+      </DeckGL>
 
       {/* Overlay Stats */}
       <div className="map-overlay-stats">

@@ -58,7 +58,7 @@ function isInsideDelhi(lat: number, lon: number): boolean {
 
 export function generateHexGridData(): HexDataPoint[] {
   const points: HexDataPoint[] = [];
-  const step = 0.012; // ~1.3km grid spacing
+  const step = 0.024; // ~2.6km grid spacing
 
   for (let lat = BOUNDS.minLat; lat <= BOUNDS.maxLat; lat += step) {
     // Offset every other row for hex-like packing

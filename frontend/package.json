@@ -9,22 +9,24 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@deck.gl/aggregation-layers": "^8.9.0",
+    "@deck.gl/core": "^8.9.0",
+    "@deck.gl/geo-layers": "^8.9.0",
+    "@deck.gl/layers": "^8.9.0",
+    "@deck.gl/react": "^8.9.0",
+    "lucide-react": "^0.400.0",
+    "mapbox-gl": "^2.15.0",
+    "maplibre-gl": "^5.24.0",
+    "next": "^13.4.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "next": "^13.4.0",
-    "mapbox-gl": "^2.15.0",
-    "@deck.gl/core": "^8.9.0",
-    "@deck.gl/react": "^8.9.0",
-    "@deck.gl/layers": "^8.9.0",
-    "@deck.gl/geo-layers": "^8.9.0",
-    "@deck.gl/aggregation-layers": "^8.9.0",
-    "recharts": "^2.12.0",
-    "lucide-react": "^0.400.0"
+    "react-map-gl": "^8.1.1",
+    "recharts": "^2.12.0"
   },
   "devDependencies": {
-    "typescript": "^5.0.0",
     "@types/node": "^20.0.0",
     "@types/react": "^18.2.0",
-    "@types/react-dom": "^18.2.0"
+    "@types/react-dom": "^18.2.0",
+    "typescript": "^5.0.0"
   }
 }

@@ -163,7 +163,7 @@ body {
 /* ── Main Content Grid ── */
 .dashboard-body {
   display: grid;
-  grid-template-columns: 1fr 380px;
+  grid-template-columns: 1fr 420px;
   gap: 0;
   overflow: hidden;
   height: 100%;
@@ -257,11 +257,11 @@ body {
 
 .sidebar-tab {
   flex: 1;
-  padding: 10px 8px;
-  font-size: 0.7rem;
+  padding: 10px 4px;
+  font-size: 0.65rem;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   color: var(--text-muted);
   background: none;
   border: none;
@@ -271,7 +271,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 4px;
 }
 
 .sidebar-tab:hover { color: var(--text-secondary); }

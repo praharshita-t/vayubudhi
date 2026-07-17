@@ -9,6 +9,9 @@ import { delhiStations } from '@/data/mockStations';
 
 export default function ForecastPanel() {
   const [data, setData] = useState<ForecastPoint[]>(initialForecastData);
+  const [liveForecast, setLiveForecast] = React.useState<any>(null);
+  const [liveAttribution, setLiveAttribution] = React.useState<any>(null);
+  const [liveConnection, setLiveConnection] = React.useState<boolean>(false);
 
   useEffect(() => {
     // Find the IoT sensor to use as input features
@@ -58,6 +61,20 @@ export default function ForecastPanel() {
         }
       })
       .catch(err => console.error('Failed to fetch ML forecast:', err));
+
+    Promise.all([
+      fetch('http://127.0.0.1:8000/api/forecast').then(res => res.json()),
+      fetch('http://127.0.0.1:8000/api/attribution').then(res => res.json())
+    ])
+      .then(([forecast, attribution]) => {
+        setLiveForecast(forecast);
+        setLiveAttribution(attribution);
+        setLiveConnection(true);
+      })
+      .catch(err => {
+        console.error('Failed to fetch live API data:', err);
+        setLiveConnection(false);
+      });
   }, []);
 
   const currentVI = data[0]?.vi ?? 0;
@@ -71,6 +88,23 @@ export default function ForecastPanel() {
 
   return (
     <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Live API Integration Card */}
+      {liveConnection && liveForecast && liveAttribution && (
+        <div className="panel" style={{ borderColor: 'var(--accent-green)', background: 'rgba(56, 139, 253, 0.05)' }}>
+          <div className="panel-header">
+            <div className="panel-title" style={{ color: 'var(--accent-green)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className="dot live" style={{ width: 8, height: 8, background: 'var(--accent-green)', borderRadius: '50%', display: 'inline-block' }}></span>
+              Live API & ML Model Connected
+            </div>
+            <div className="panel-badge badge-green">Active</div>
+          </div>
+          <div style={{ fontSize: '0.72rem', display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6, color: 'var(--text-normal)' }}>
+            <div><strong>Forecast (XGBoost + MAPIE):</strong> 24h AQI Point = {liveForecast.point.toFixed(1)} | Conformal Interval = [{liveForecast.interval[0].toFixed(1)}, {liveForecast.interval[1].toFixed(1)}]</div>
+            <div><strong>Source Attribution (Random Forest):</strong> Predicted Sources = {liveAttribution.prediction_set.join(', ')} | Confidence = {(liveAttribution.confidence * 100).toFixed(0)}%</div>
+          </div>
+        </div>
+      )}
+
       {/* VI Gauge */}
       <div className="gauge-container">
         <div className="gauge-ring">

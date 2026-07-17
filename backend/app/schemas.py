@@ -10,8 +10,8 @@ class SensorReading(BaseModel):
     temp: float = Field(..., examples=[31.2])
     humidity: float = Field(..., examples=[58.4])
     pressure: float = Field(..., examples=[1008.1])
-    wind_speed: float = Field(..., examples=[2.5])
-    pblh: float = Field(..., examples=[800.0])
+    wind_speed: float = Field(default=3.0, examples=[2.5])
+    pblh: float = Field(default=1000.0, examples=[800.0])
 
 # Contract 2: ML -> Backend (Attribution)
 class AttributionOutput(BaseModel):

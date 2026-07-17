@@ -62,11 +62,15 @@ def test_forecast():
     assert response.status_code == 200
     data = response.json()
     assert data["horizon_h"] == 24
+    assert isinstance(data["point"], float)
+    assert len(data["interval"]) == 2
+    assert isinstance(data["ventilation_index"], float)
     
     # Verify logged forecast in SQLite
     db = SessionLocal()
     forecast = db.query(models.Forecast).first()
     assert forecast is not None
+    assert isinstance(forecast.point, float)
     db.close()
     print("POST /api/forecast check passed.")
 
@@ -85,13 +89,19 @@ def test_attribution():
     response = client.post("/api/attribution", json=payload)
     assert response.status_code == 200
     data = response.json()
+    assert isinstance(data["prediction_set"], list)
+    assert isinstance(data["set_size"], int)
+    assert isinstance(data["confidence"], float)
+    assert isinstance(data["probabilities"], dict)
     
     # Verify logged attribution in SQLite
     db = SessionLocal()
     attr = db.query(models.AttributionResult).first()
     assert attr is not None
+    assert isinstance(attr.confidence, float)
     db.close()
     print("POST /api/attribution check passed.")
+
 
 def test_optimize():
     response = client.get("/api/optimize")

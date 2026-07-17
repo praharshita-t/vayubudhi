@@ -1,8 +1,16 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from database import get_db
-import models
-import schemas
+import sys
+import os
+
+# Add the 'app' directory to python path so 'optimization' imports can be resolved
+app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if app_dir not in sys.path:
+    sys.path.append(app_dir)
+
+from app.database import get_db
+from app import models
+from app import schemas
 from optimization.solver import RouteSolver
 from optimization.router import get_dispatch_details
 from optimization.roi import calculate_inspection_roi

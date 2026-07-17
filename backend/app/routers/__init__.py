@@ -1,9 +1,9 @@
 from fastapi import APIRouter
-from routers.ingest import router as ingest_router
-from routers.forecast import router as forecast_router
-from routers.attribution import router as attribution_router
-from routers.optimize import router as optimize_router
-from routers.health import router as health_router
+from app.routers.ingest import router as ingest_router
+from app.routers.forecast import router as forecast_router
+from app.routers.attribution import router as attribution_router
+from app.routers.optimize import router as optimize_router
+from app.routers.health import router as health_router
 
 api_router = APIRouter()
 

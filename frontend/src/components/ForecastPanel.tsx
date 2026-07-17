@@ -1,13 +1,66 @@
 'use client';
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
   ReferenceLine, CartesianGrid,
 } from 'recharts';
-import { forecastData, validationMetrics } from '@/data/mockForecast';
+import { forecastData as initialForecastData, validationMetrics, ForecastPoint } from '@/data/mockForecast';
+import { delhiStations } from '@/data/mockStations';
 
 export default function ForecastPanel() {
-  const currentVI = forecastData[0]?.vi ?? 0;
+  const [data, setData] = useState<ForecastPoint[]>(initialForecastData);
+
+  useEffect(() => {
+    // Find the IoT sensor to use as input features
+    const iotSensor = delhiStations.find(s => s.source === 'iot');
+    if (!iotSensor) return;
+
+    const payload = {
+      station_id: iotSensor.id,
+      timestamp: new Date().toISOString(),
+      pm25: iotSensor.pm25,
+      pm10: iotSensor.pm25 * 1.5, // approximate pm10
+      temp: 32.5,
+      humidity: 55.0,
+      pressure: 1008.2,
+      wind_speed: 2.5,
+      pblh: 850.0
+    };
+
+    fetch('http://127.0.0.1:8000/api/forecast', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+      .then(res => res.json())
+      .then(result => {
+        // Splice the real 24h point into the mock 72h curve
+        if (result && result.horizon_h === 24) {
+          setData(prev => {
+            const newData = [...prev];
+            const targetIndex = newData.findIndex(p => p.hour === 24);
+            if (targetIndex !== -1) {
+              const oldPoint = newData[targetIndex].point;
+              const ratio = oldPoint > 0 ? result.point / oldPoint : 1;
+              const viRatio = newData[targetIndex].vi > 0 ? result.ventilation_index / newData[targetIndex].vi : 1;
+
+              // Scale the entire curve to smoothly anchor to the real ML prediction
+              return newData.map(p => ({
+                ...p,
+                point: Math.round(p.point * ratio),
+                lower: Math.round(p.lower * ratio),
+                upper: Math.round(p.upper * ratio),
+                vi: Math.round(p.vi * viRatio)
+              }));
+            }
+            return newData;
+          });
+        }
+      })
+      .catch(err => console.error('Failed to fetch ML forecast:', err));
+  }, []);
+
+  const currentVI = data[0]?.vi ?? 0;
   const viStatus = currentVI < 1000 ? 'STAGNATION' : currentVI < 3000 ? 'POOR' : currentVI < 6000 ? 'MODERATE' : 'GOOD';
   const viColor =
     currentVI < 1000 ? 'var(--accent-red)' :
@@ -50,7 +103,7 @@ export default function ForecastPanel() {
         </div>
         <div className="chart-container">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={forecastData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+            <AreaChart data={data} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="conformalBand" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#388bfd" stopOpacity={0.15} />

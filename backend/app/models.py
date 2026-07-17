@@ -5,7 +5,7 @@ source attribution classifier results, optimized dispatch routes, and ROI calcul
 """
 from sqlalchemy import Column, Integer, String, Float, JSON, DateTime
 from datetime import datetime
-from database import Base
+from app.database import Base
 
 class SensorReading(Base):
     """

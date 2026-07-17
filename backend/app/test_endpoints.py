@@ -1,13 +1,12 @@
 import sys
 import os
 
-# Add the directory containing this script to python path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
+# Add the backend directory (parent of app) to python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fastapi.testclient import TestClient
-from main import app
-from database import SessionLocal, engine, Base
-import models
+from app.main import app
+from app.database import SessionLocal, engine, Base
+from app import models
 
 # Ensure tables are clean for testing
 Base.metadata.drop_all(bind=engine)
@@ -16,7 +15,7 @@ Base.metadata.create_all(bind=engine)
 client = TestClient(app)
 
 def test_health():
-    response = client.get("/health")
+    response = client.get("/api/health")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "healthy"
@@ -31,9 +30,11 @@ def test_ingest():
         "pm10": 168.9,
         "temp": 31.2,
         "humidity": 58.4,
-        "pressure": 1008.1
+        "pressure": 1008.1,
+        "wind_speed": 2.5,
+        "pblh": 800.0
     }
-    response = client.post("/ingest", json=payload)
+    response = client.post("/api/ingest", json=payload)
     assert response.status_code == 200
     assert response.json() == {"status": "received"}
     
@@ -46,41 +47,54 @@ def test_ingest():
     print("POST /ingest check passed.")
 
 def test_forecast():
-    response = client.get("/forecast")
+    payload = {
+        "station_id": "esp32_01",
+        "timestamp": "2026-07-07T10:15:00Z",
+        "pm25": 142.3,
+        "pm10": 168.9,
+        "temp": 31.2,
+        "humidity": 58.4,
+        "pressure": 1008.1,
+        "wind_speed": 2.5,
+        "pblh": 800.0
+    }
+    response = client.post("/api/forecast", json=payload)
     assert response.status_code == 200
     data = response.json()
     assert data["horizon_h"] == 24
-    assert data["point"] == 210.0
-    assert data["interval"] == [180.0, 245.0]
-    assert data["ventilation_index"] == 850.0
     
     # Verify logged forecast in SQLite
     db = SessionLocal()
     forecast = db.query(models.Forecast).first()
     assert forecast is not None
-    assert forecast.point == 210.0
     db.close()
-    print("GET /forecast check passed.")
+    print("POST /api/forecast check passed.")
 
 def test_attribution():
-    response = client.get("/attribution")
+    payload = {
+        "station_id": "esp32_01",
+        "timestamp": "2026-07-07T10:15:00Z",
+        "pm25": 142.3,
+        "pm10": 168.9,
+        "temp": 31.2,
+        "humidity": 58.4,
+        "pressure": 1008.1,
+        "wind_speed": 2.5,
+        "pblh": 800.0
+    }
+    response = client.post("/api/attribution", json=payload)
     assert response.status_code == 200
     data = response.json()
-    assert data["prediction_set"] == ["biomass_burning"]
-    assert data["set_size"] == 1
-    assert data["confidence"] == 0.90
-    assert data["probabilities"] == {"biomass_burning": 0.82, "vehicular": 0.11}
     
     # Verify logged attribution in SQLite
     db = SessionLocal()
     attr = db.query(models.AttributionResult).first()
     assert attr is not None
-    assert attr.confidence == 0.90
     db.close()
-    print("GET /attribution check passed.")
+    print("POST /api/attribution check passed.")
 
 def test_optimize():
-    response = client.get("/optimize")
+    response = client.get("/api/optimize")
     assert response.status_code == 200
     data = response.json()
     assert data["route_id"] == "inspector_1"

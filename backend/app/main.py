@@ -1,6 +1,6 @@
 from fastapi import FastAPI
-from database import engine, Base
-from routers import api_router
+from app.database import engine, Base
+from app.routers import api_router
 
 # Initialize SQLite database tables
 Base.metadata.create_all(bind=engine)
@@ -12,7 +12,7 @@ app = FastAPI(
 )
 
 # Register endpoints router
-app.include_router(api_router)
+app.include_router(api_router, prefix="/api")
 
 @app.get("/")
 def read_root():

@@ -1,30 +1,29 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from database import get_db
-import models
-import schemas
+from app.database import get_db
+from app import models
+from app import schemas
+from app.ml_service import ml_service
 
 router = APIRouter()
 
-@router.get("/forecast", response_model=schemas.ForecastOutput)
-def get_forecast(db: Session = Depends(get_db)):
+@router.post("/forecast", response_model=schemas.ForecastOutput)
+def get_forecast(reading: schemas.SensorReading, db: Session = Depends(get_db)):
     """
-    Returns the 24h point and interval forecast.
-    Outputs Contract 3 JSON shape. Logs the forecast in database.
+    Returns the 24h point and interval forecast using the ML model.
     """
+    # Call the ML service
+    prediction = ml_service.predict_forecast(reading)
+    
+    # Log to DB (optional, simplified for hackathon)
     db_forecast = models.Forecast(
-        horizon_h=24,
-        point=210.0,
-        interval=[180.0, 245.0],
-        ventilation_index=850.0
+        horizon_h=prediction["horizon_h"],
+        point=prediction["point"],
+        interval=prediction["interval"],
+        ventilation_index=prediction["ventilation_index"]
     )
     db.add(db_forecast)
     db.commit()
     db.refresh(db_forecast)
     
-    return {
-        "horizon_h": db_forecast.horizon_h,
-        "point": db_forecast.point,
-        "interval": db_forecast.interval,
-        "ventilation_index": db_forecast.ventilation_index
-    }
+    return prediction

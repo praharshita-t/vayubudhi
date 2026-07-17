@@ -1,14 +1,14 @@
 'use client';
 import React, { useState } from 'react';
 import dynamic from 'next/dynamic';
-import SimulatorPanel from '@/components/SimulatorPanel';
-import ForecastPanel from '@/components/ForecastPanel';
-import OptimizerPanel from '@/components/OptimizerPanel';
-import AdvisoryPanel from '@/components/AdvisoryPanel';
 import { delhiStations, getAqiCategory, Station } from '@/data/mockStations';
 
-// Dynamic import for Map to avoid SSR issues with Mapbox/Canvas
+// Dynamic imports to avoid SSR hydration mismatches (dynamic clocks, charts, etc.)
 const DelhiMap = dynamic(() => import('@/components/DelhiMap'), { ssr: false });
+const SimulatorPanel = dynamic(() => import('@/components/SimulatorPanel'), { ssr: false });
+const ForecastPanel = dynamic(() => import('@/components/ForecastPanel'), { ssr: false });
+const OptimizerPanel = dynamic(() => import('@/components/OptimizerPanel'), { ssr: false });
+const AdvisoryPanel = dynamic(() => import('@/components/AdvisoryPanel'), { ssr: false });
 
 type TabId = 'simulate' | 'forecast' | 'enforce' | 'advisory';
 

@@ -10,6 +10,7 @@ export default function SimulatorPanel({ onAlert }: SimulatorProps) {
   const [simulating, setSimulating] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [stage, setStage] = useState<'idle' | 'detecting' | 'attributing' | 'routing' | 'dispatched'>('idle');
+  const [attribution, setAttribution] = useState<{ prediction_set: string[], set_size: number, confidence: number } | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const iotSensor = delhiStations.find(s => s.source === 'iot')!;
@@ -23,6 +24,27 @@ export default function SimulatorPanel({ onAlert }: SimulatorProps) {
     timerRef.current = setInterval(() => {
       setElapsed(prev => prev + 100);
     }, 100);
+
+    const payload = {
+      station_id: iotSensor.id,
+      timestamp: new Date().toISOString(),
+      pm25: iotSensor.pm25,
+      pm10: iotSensor.pm25 * 1.5,
+      temp: 32.5,
+      humidity: 55.0,
+      pressure: 1008.2,
+      wind_speed: 2.5,
+      pblh: 850.0
+    };
+
+    fetch('http://127.0.0.1:8000/api/attribution', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+      .then(res => res.json())
+      .then(result => setAttribution(result))
+      .catch(err => console.error('Failed to fetch ML attribution:', err));
 
     // Stage 1: Detecting (0-8s)
     setTimeout(() => setStage('attributing'), 8000);
@@ -109,12 +131,12 @@ export default function SimulatorPanel({ onAlert }: SimulatorProps) {
         <div className="panel slide-in" style={{ borderColor: 'var(--accent-blue)' }}>
           <div className="panel-header">
             <div className="panel-title">Attribution Result</div>
-            <div className="panel-badge badge-green">90% Coverage</div>
+            <div className="panel-badge badge-green">{attribution ? Math.round(attribution.confidence * 100) : 90}% Coverage</div>
           </div>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-            <div>PM2.5/PM10 ratio: <strong style={{ color: 'var(--accent-amber)', fontFamily: 'var(--font-mono)' }}>0.85</strong></div>
-            <div>Conformal set: <strong style={{ color: 'var(--accent-green)' }}>{'{biomass_burning}'}</strong> — Set size: 1</div>
-            <div>Confidence: <strong style={{ fontFamily: 'var(--font-mono)' }}>92%</strong> → <span style={{ color: 'var(--accent-blue)' }}>FULL_INSPECTION</span></div>
+            <div>PM2.5/PM10 ratio: <strong style={{ color: 'var(--accent-amber)', fontFamily: 'var(--font-mono)' }}>{(iotSensor.pm25 / (iotSensor.pm25 * 1.5)).toFixed(2)}</strong></div>
+            <div>Conformal set: <strong style={{ color: 'var(--accent-green)' }}>{`{${attribution ? attribution.prediction_set.join(', ') : 'biomass_burning'}}`}</strong> — Set size: {attribution ? attribution.set_size : 1}</div>
+            <div>Confidence: <strong style={{ fontFamily: 'var(--font-mono)' }}>{attribution ? Math.round(attribution.confidence * 100) : 92}%</strong> → <span style={{ color: 'var(--accent-blue)' }}>FULL_INSPECTION</span></div>
           </div>
         </div>
       )}

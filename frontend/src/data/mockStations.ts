@@ -30,17 +30,30 @@ export const delhiStations: Station[] = [
   { id: 'ST08', name: 'Dwarka Sec 8', lat: 28.5921, lon: 77.0460, pm25: 95, pm10: 128, no2: 35, so2: 8, co: 1.2, o3: 45, aqi: 142, source: 'caaqms', status: 'online' },
   { id: 'ST09', name: 'IGI Airport T3', lat: 28.5562, lon: 77.0873, pm25: 108, pm10: 140, no2: 48, so2: 10, co: 1.6, o3: 38, aqi: 158, source: 'caaqms', status: 'online' },
   { id: 'ST10', name: 'Nehru Nagar', lat: 28.5680, lon: 77.2509, pm25: 188, pm10: 228, no2: 72, so2: 16, co: 2.5, o3: 25, aqi: 238, source: 'caaqms', status: 'alert' },
-  { id: 'ST11', name: 'Siri Fort', lat: 28.5506, lon: 77.2178, pm25: 132, pm10: 165, no2: 50, so2: 11, co: 1.7, o3: 36, aqi: 182, source: 'caaqms', status: 'online' },
-  { id: 'ST12', name: 'Mundka', lat: 28.6843, lon: 77.0319, pm25: 142, pm10: 175, no2: 45, so2: 18, co: 1.8, o3: 33, aqi: 192, source: 'caaqms', status: 'online' },
-  { id: 'ST13', name: 'Wazirpur', lat: 28.6996, lon: 77.1654, pm25: 210, pm10: 255, no2: 65, so2: 28, co: 2.6, o3: 20, aqi: 260, source: 'caaqms', status: 'alert' },
-  { id: 'ST14', name: 'Patparganj', lat: 28.6237, lon: 77.2874, pm25: 175, pm10: 215, no2: 70, so2: 15, co: 2.2, o3: 26, aqi: 225, source: 'caaqms', status: 'alert' },
-  { id: 'ST15', name: 'Okhla Phase-2', lat: 28.5308, lon: 77.2713, pm25: 165, pm10: 200, no2: 62, so2: 20, co: 2.1, o3: 29, aqi: 215, source: 'caaqms', status: 'online' },
-  { id: 'ST16', name: 'Bawana', lat: 28.7762, lon: 77.0511, pm25: 195, pm10: 240, no2: 48, so2: 25, co: 2.4, o3: 22, aqi: 245, source: 'caaqms', status: 'alert' },
-  { id: 'ST17', name: 'Jahangirpuri', lat: 28.7254, lon: 77.1680, pm25: 178, pm10: 218, no2: 56, so2: 16, co: 2.3, o3: 27, aqi: 228, source: 'caaqms', status: 'online' },
-  { id: 'ST18', name: 'Shadipur', lat: 28.6514, lon: 77.1595, pm25: 148, pm10: 185, no2: 58, so2: 13, co: 1.9, o3: 31, aqi: 198, source: 'caaqms', status: 'online' },
-  { id: 'ST19', name: 'Vivek Vihar', lat: 28.6724, lon: 77.3151, pm25: 225, pm10: 270, no2: 75, so2: 20, co: 2.9, o3: 19, aqi: 275, source: 'caaqms', status: 'alert' },
   { id: 'IOT01', name: 'VayuBudhi Sensor α', lat: 28.6350, lon: 77.2250, pm25: 252, pm10: 295, no2: 82, so2: 19, co: 3.0, o3: 16, aqi: 302, source: 'iot', status: 'alert' },
 ];
+
+export const mumbaiStations: Station[] = [
+  { id: 'MUM01', name: 'Bandra', lat: 19.0596, lon: 72.8295, pm25: 145, pm10: 190, no2: 60, so2: 25, co: 2.1, o3: 22, aqi: 195, source: 'caaqms', status: 'online' },
+  { id: 'MUM02', name: 'Colaba', lat: 18.9067, lon: 72.8147, pm25: 85, pm10: 120, no2: 30, so2: 12, co: 1.0, o3: 28, aqi: 120, source: 'caaqms', status: 'online' },
+  { id: 'MUM03', name: 'Andheri', lat: 19.1136, lon: 72.8697, pm25: 180, pm10: 220, no2: 75, so2: 28, co: 2.5, o3: 18, aqi: 230, source: 'caaqms', status: 'alert' },
+  { id: 'MUM04', name: 'BKC', lat: 19.0660, lon: 72.8631, pm25: 210, pm10: 260, no2: 85, so2: 32, co: 3.1, o3: 15, aqi: 265, source: 'caaqms', status: 'alert' },
+  { id: 'IOT02', name: 'VayuBudhi MUM-1', lat: 19.0800, lon: 72.8500, pm25: 160, pm10: 200, no2: 65, so2: 20, co: 2.2, o3: 20, aqi: 210, source: 'iot', status: 'alert' },
+];
+
+export const bengaluruStations: Station[] = [
+  { id: 'BLR01', name: 'BTM Layout', lat: 12.9166, lon: 77.6101, pm25: 95, pm10: 130, no2: 45, so2: 15, co: 1.5, o3: 25, aqi: 135, source: 'caaqms', status: 'online' },
+  { id: 'BLR02', name: 'Peenya', lat: 13.0285, lon: 77.5197, pm25: 155, pm10: 195, no2: 70, so2: 22, co: 2.4, o3: 18, aqi: 198, source: 'caaqms', status: 'alert' },
+  { id: 'BLR03', name: 'Majestic', lat: 12.9766, lon: 77.5713, pm25: 140, pm10: 180, no2: 65, so2: 20, co: 2.2, o3: 20, aqi: 185, source: 'caaqms', status: 'online' },
+  { id: 'BLR04', name: 'Hebbal', lat: 13.0354, lon: 77.5988, pm25: 120, pm10: 160, no2: 55, so2: 18, co: 1.8, o3: 28, aqi: 165, source: 'caaqms', status: 'online' },
+  { id: 'IOT03', name: 'VayuBudhi BLR-1', lat: 12.9716, lon: 77.5946, pm25: 110, pm10: 145, no2: 50, so2: 16, co: 1.6, o3: 30, aqi: 150, source: 'iot', status: 'online' },
+];
+
+export const cityStations: Record<string, Station[]> = {
+  'Delhi': delhiStations,
+  'Mumbai': mumbaiStations,
+  'Bengaluru': bengaluruStations,
+};
 
 export function getAqiCategory(aqi: number): { label: string; color: string; bg: string } {
   if (aqi <= 50)  return { label: 'Good', color: '#22c55e', bg: 'rgba(34,197,94,0.15)' };

@@ -37,7 +37,9 @@ class MLService:
             'humidity': reading.humidity,
             'pressure': reading.pressure,
             'wind_speed': reading.wind_speed,
-            'pblh': reading.pblh
+            'pblh': reading.pblh,
+            'traffic_density': getattr(reading, 'traffic_density', 0.5),
+            'distance_to_industry': getattr(reading, 'distance_to_industry', 5.0)
         }
 
     def predict_forecast(self, reading):

@@ -1,7 +1,7 @@
 'use client';
 import React, { useState, useMemo, useCallback } from 'react';
-import { delhiStations, getAqiCategory, Station } from '@/data/mockStations';
-import { hexGridData, HexDataPoint } from '@/data/mockHexGrid';
+import { cityStations, getAqiCategory, Station } from '@/data/mockStations';
+import { cityHexGridData, HexDataPoint } from '@/data/mockHexGrid';
 
 // deck.gl imports
 import DeckGL from '@deck.gl/react';
@@ -10,16 +10,34 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { ColumnLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 import { LightingEffect, AmbientLight, DirectionalLight } from '@deck.gl/core';
 
-const DELHI_CENTER = { longitude: 77.17, latitude: 28.62 };
+const CITY_CENTERS: Record<string, {longitude: number, latitude: number, zoom: number}> = {
+  'Delhi': { longitude: 77.17, latitude: 28.62, zoom: 11 },
+  'Mumbai': { longitude: 72.85, latitude: 19.08, zoom: 10.5 },
+  'Bengaluru': { longitude: 77.59, latitude: 12.97, zoom: 11 },
+};
 
-const INITIAL_VIEW_STATE = {
-  longitude: DELHI_CENTER.longitude,
-  latitude: DELHI_CENTER.latitude,
-  zoom: 11,
-  pitch: 55,
-  bearing: -20,
-  minZoom: 9,
-  maxZoom: 15,
+const getInitialViewState = (city: string, userCoords?: { lat: number, lon: number } | null) => {
+  if (city === 'My Location' && userCoords) {
+    return {
+      longitude: userCoords.lon,
+      latitude: userCoords.lat,
+      zoom: 12,
+      pitch: 55,
+      bearing: -20,
+      minZoom: 9,
+      maxZoom: 15,
+    };
+  }
+  const center = CITY_CENTERS[city] || CITY_CENTERS['Delhi'];
+  return {
+    longitude: center.longitude,
+    latitude: center.latitude,
+    zoom: center.zoom,
+    pitch: 55,
+    bearing: -20,
+    minZoom: 9,
+    maxZoom: 15,
+  };
 };
 
 // AQI → Color mapping (green → yellow → orange → red)
@@ -42,10 +60,56 @@ function aqiToHeight(aqi: number): number {
   return 50 + Math.pow(t, 2.2) * 6000;
 }
 
-export default function DelhiMap({ alertStation }: { alertStation?: Station | null }) {
+export default function CityMap({ 
+  alertStation, 
+  city = 'Delhi', 
+  userCoords, 
+  liveData, 
+  liveLoading 
+}: { 
+  alertStation?: Station | null, 
+  city?: string, 
+  userCoords?: { lat: number, lon: number } | null, 
+  liveData?: any, 
+  liveLoading?: boolean 
+}) {
   const [hoveredHex, setHoveredHex] = useState<HexDataPoint | null>(null);
   const [hoveredStation, setHoveredStation] = useState<Station | null>(null);
-  const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
+  const [viewState, setViewState] = useState(getInitialViewState(city, userCoords));
+
+  const stations = useMemo(() => {
+    if (city === 'My Location' && liveData) {
+      return [{
+        id: 'USER_GPS',
+        name: 'My Location',
+        lat: userCoords?.lat ?? 0,
+        lon: userCoords?.lon ?? 0,
+        pm25: liveData.reading.pm25,
+        pm10: liveData.reading.pm10,
+        no2: 40, so2: 12, co: 1.5, o3: 30,
+        aqi: liveData.forecast.point,
+        source: 'iot' as const,
+        status: 'online' as const
+      }];
+    }
+    return cityStations[city] || cityStations['Delhi'];
+  }, [city, liveData, userCoords]);
+
+  const hexGrid = useMemo(() => {
+    if (city === 'My Location' && liveData) {
+      return liveData.hex_grid;
+    }
+    return cityHexGridData[city] || cityHexGridData['Delhi'];
+  }, [city, liveData]);
+
+  // Handle fly-to on city or coords change
+  React.useEffect(() => {
+    setViewState((prev: any) => ({
+      ...prev,
+      ...getInitialViewState(city, userCoords),
+      transitionDuration: 1500,
+    }));
+  }, [city, userCoords]);
 
   // Lighting setup for 3D columns
   const lightingEffect = useMemo(() => {
@@ -69,14 +133,14 @@ export default function DelhiMap({ alertStation }: { alertStation?: Station | nu
       pitch: 55,
       transitionDuration: 1500,
     }));
-  }, [alertStation]);
+  }, [alertStation, city]);
 
   // Build deck.gl layers
   const layers = useMemo(() => {
     // Layer 1: 3D Hexagonal Columns (the main visual)
     const columnLayer = new ColumnLayer<HexDataPoint>({
       id: 'aqi-columns',
-      data: hexGridData,
+      data: hexGrid,
       diskResolution: 6,           // 6 sides = hexagon
       radius: 900,                 // hex radius in meters
       extruded: true,
@@ -101,7 +165,7 @@ export default function DelhiMap({ alertStation }: { alertStation?: Station | nu
     // Layer 2: Station marker dots (glowing rings)
     const stationGlowLayer = new ScatterplotLayer<Station>({
       id: 'station-glow',
-      data: delhiStations,
+      data: stations,
       pickable: false,
       opacity: 0.25,
       stroked: false,
@@ -120,7 +184,7 @@ export default function DelhiMap({ alertStation }: { alertStation?: Station | nu
     // Layer 3: Station core dots
     const stationDotLayer = new ScatterplotLayer<Station>({
       id: 'station-dots',
-      data: delhiStations,
+      data: stations,
       pickable: true,
       opacity: 1,
       stroked: true,
@@ -141,7 +205,7 @@ export default function DelhiMap({ alertStation }: { alertStation?: Station | nu
     // Layer 4: Station name labels
     const labelLayer = new TextLayer<Station>({
       id: 'station-labels',
-      data: delhiStations.filter(s => s.source === 'iot' || s.status === 'alert'),
+      data: stations.filter(s => s.source === 'iot' || s.status === 'alert'),
       pickable: false,
       getPosition: (d: Station) => [d.lon, d.lat, aqiToHeight(d.aqi) + 200],
       getText: (d: Station) => d.source === 'iot' ? `IoT ● ${d.aqi}` : d.name,
@@ -178,7 +242,7 @@ export default function DelhiMap({ alertStation }: { alertStation?: Station | nu
     }
 
     return [columnLayer, stationGlowLayer, stationDotLayer, labelLayer, ...alertLayers];
-  }, [alertStation]);
+  }, [alertStation, stations, hexGrid]);
 
   const onViewStateChange = useCallback(({ viewState: vs }: any) => {
     setViewState(vs);
@@ -211,13 +275,13 @@ export default function DelhiMap({ alertStation }: { alertStation?: Station | nu
       {/* Overlay Stats */}
       <div className="map-overlay-stats">
         <div className="map-stat-chip">
-          Stations Online: <span className="chip-value">{delhiStations.filter(s => s.status !== 'offline').length}</span>
+          Stations Online: <span className="chip-value">{stations.filter(s => s.status !== 'offline').length}</span>
         </div>
         <div className="map-stat-chip">
-          Alerts Active: <span className="chip-value" style={{ color: 'var(--accent-red)' }}>{delhiStations.filter(s => s.status === 'alert').length}</span>
+          Alerts Active: <span className="chip-value" style={{ color: 'var(--accent-red)' }}>{stations.filter(s => s.status === 'alert').length}</span>
         </div>
         <div className="map-stat-chip">
-          Hex Cells: <span className="chip-value" style={{ color: 'var(--accent-cyan)' }}>{hexGridData.length}</span>
+          Hex Cells: <span className="chip-value" style={{ color: 'var(--accent-cyan)' }}>{hexGrid.length}</span>
         </div>
       </div>
 

@@ -7,10 +7,35 @@ import {
 import { forecastData as initialForecastData, validationMetrics, ForecastPoint } from '@/data/mockForecast';
 import { delhiStations } from '@/data/mockStations';
 
-export default function ForecastPanel() {
+export default function ForecastPanel({ city = 'Delhi', userCoords, liveData }: { city?: string, userCoords?: { lat: number, lon: number } | null, liveData?: any }) {
   const [data, setData] = useState<ForecastPoint[]>(initialForecastData);
 
   useEffect(() => {
+    if (city === 'My Location') {
+      if (liveData && liveData.forecast) {
+        const result = liveData.forecast;
+        setData(prev => {
+          const newData = [...prev];
+          const targetIndex = newData.findIndex(p => p.hour === 24);
+          if (targetIndex !== -1) {
+            const oldPoint = newData[targetIndex].point;
+            const ratio = oldPoint > 0 ? result.point / oldPoint : 1;
+            const viRatio = newData[targetIndex].vi > 0 ? result.ventilation_index / newData[targetIndex].vi : 1;
+
+            return newData.map(p => ({
+              ...p,
+              point: Math.round(p.point * ratio),
+              lower: Math.round(p.lower * ratio),
+              upper: Math.round(p.upper * ratio),
+              vi: Math.round(p.vi * viRatio)
+            }));
+          }
+          return newData;
+        });
+      }
+      return;
+    }
+
     // Find the IoT sensor to use as input features
     const iotSensor = delhiStations.find(s => s.source === 'iot');
     if (!iotSensor) return;
@@ -58,7 +83,7 @@ export default function ForecastPanel() {
         }
       })
       .catch(err => console.error('Failed to fetch ML forecast:', err));
-  }, []);
+  }, [city, liveData]);
 
   const currentVI = data[0]?.vi ?? 0;
   const viStatus = currentVI < 1000 ? 'STAGNATION' : currentVI < 3000 ? 'POOR' : currentVI < 6000 ? 'MODERATE' : 'GOOD';

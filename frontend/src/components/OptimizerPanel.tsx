@@ -2,11 +2,7 @@
 import React, { useState } from 'react';
 import { enforcementRoutes, optimizerSummary, EnforcementRoute } from '@/data/mockRoutes';
 
-const vehicleIcons: Record<string, string> = {
-  inspector: '👤',
-  drone: '🛸',
-  van: '🚐',
-};
+
 
 export default function OptimizerPanel() {
   const [liveRoute, setLiveRoute] = React.useState<any>(null);
@@ -113,7 +109,6 @@ function RouteCard({ route, expanded, onToggle }: {
     <div className="route-card" onClick={onToggle}>
       <div className="route-card-header">
         <div className="route-vehicle">
-          <span>{vehicleIcons[route.vehicle_type] || '📍'}</span>
           <span>{route.vehicle_label}</span>
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>

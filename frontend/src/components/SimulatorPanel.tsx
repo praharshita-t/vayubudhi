@@ -82,10 +82,10 @@ export default function SimulatorPanel({ onAlert }: SimulatorProps) {
 
   const stageLabels = {
     idle: { label: 'Ready', color: 'var(--text-muted)' },
-    detecting: { label: '📡 Detecting PM spike...', color: 'var(--accent-amber)' },
-    attributing: { label: '🧠 Conformal attribution...', color: 'var(--accent-blue)' },
-    routing: { label: '⚙️ OR-Tools optimization...', color: 'var(--accent-purple)' },
-    dispatched: { label: '✅ Enforcement dispatched!', color: 'var(--accent-green)' },
+    detecting: { label: 'Detecting PM spike...', color: 'var(--accent-amber)' },
+    attributing: { label: 'Conformal attribution...', color: 'var(--accent-blue)' },
+    routing: { label: 'OR-Tools optimization...', color: 'var(--accent-purple)' },
+    dispatched: { label: 'Enforcement dispatched', color: 'var(--accent-green)' },
   };
 
   return (
@@ -144,7 +144,7 @@ export default function SimulatorPanel({ onAlert }: SimulatorProps) {
       {/* Action Button */}
       {!simulating && stage !== 'dispatched' ? (
         <button className="simulate-btn" onClick={startSimulation}>
-          🔥 Simulate Spot Event
+          Simulate Spot Event
         </button>
       ) : stage === 'dispatched' ? (
         <button className="simulate-btn" onClick={resetSimulation} style={{ borderColor: 'var(--accent-blue)', color: 'var(--accent-blue)', background: 'rgba(56,139,253,0.1)' }}>
@@ -152,7 +152,7 @@ export default function SimulatorPanel({ onAlert }: SimulatorProps) {
         </button>
       ) : (
         <button className="simulate-btn active" disabled>
-          ⏱ Simulation Running...
+          Simulation Running...
         </button>
       )}
     </div>

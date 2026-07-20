@@ -12,11 +12,11 @@ const AdvisoryPanel = dynamic(() => import('@/components/AdvisoryPanel'), { ssr:
 
 type TabId = 'simulate' | 'forecast' | 'enforce' | 'advisory';
 
-const tabs: { id: TabId; label: string; icon: string }[] = [
-  { id: 'simulate', label: 'Simulate', icon: '🔥' },
-  { id: 'forecast', label: 'Forecast', icon: '📈' },
-  { id: 'enforce', label: 'Enforce', icon: '⚙️' },
-  { id: 'advisory', label: 'Advisory', icon: '💬' },
+const tabs: { id: TabId; label: string }[] = [
+  { id: 'simulate', label: 'Simulate' },
+  { id: 'forecast', label: 'Forecast' },
+  { id: 'enforce', label: 'Enforce' },
+  { id: 'advisory', label: 'Advisory' },
 ];
 
 function LiveClock() {
@@ -96,7 +96,6 @@ export default function DashboardPage() {
                 className={`sidebar-tab ${activeTab === tab.id ? 'active' : ''}`}
                 onClick={() => setActiveTab(tab.id)}
               >
-                <span>{tab.icon}</span>
                 {tab.label}
               </button>
             ))}

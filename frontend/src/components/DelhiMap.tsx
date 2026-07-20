@@ -1,14 +1,13 @@
 'use client';
 import React, { useState, useMemo, useCallback } from 'react';
 import { delhiStations, getAqiCategory, Station } from '@/data/mockStations';
-import { hexGridData, HexDataPoint } from '@/data/mockHexGrid';
+import { delhiDistricts, District } from '@/data/delhiDistricts';
 
 // deck.gl imports
 import DeckGL from '@deck.gl/react';
 import Map from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { ColumnLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
-import { LightingEffect, AmbientLight, DirectionalLight } from '@deck.gl/core';
+import { PolygonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 
 const DELHI_CENTER = { longitude: 77.17, latitude: 28.62 };
 
@@ -16,47 +15,28 @@ const INITIAL_VIEW_STATE = {
   longitude: DELHI_CENTER.longitude,
   latitude: DELHI_CENTER.latitude,
   zoom: 11,
-  pitch: 55,
-  bearing: -20,
+  pitch: 0,
+  bearing: 0,
   minZoom: 9,
   maxZoom: 15,
 };
 
-// AQI → Color mapping (green → yellow → orange → red)
-function aqiToColor(aqi: number): [number, number, number, number] {
-  if (aqi <= 50)  return [34, 197, 94, 220];     // green
-  if (aqi <= 100) return [132, 204, 22, 220];     // lime
-  if (aqi <= 150) return [234, 179, 8, 220];      // yellow
-  if (aqi <= 200) return [245, 158, 11, 220];     // amber
-  if (aqi <= 250) return [249, 115, 22, 220];     // orange
-  if (aqi <= 300) return [239, 68, 68, 220];      // red
-  if (aqi <= 400) return [220, 38, 38, 230];      // dark red
-  return [185, 28, 28, 240];                       // deep red
-}
-
-// AQI → Height (exponential curve for dramatic visual contrast)
-function aqiToHeight(aqi: number): number {
-  // Normalize AQI to 0-1 range (capped at 500)
-  const t = Math.min(aqi, 500) / 500;
-  // Exponential curve: low AQI = very short, high AQI = towering
-  return 50 + Math.pow(t, 2.2) * 6000;
+// AQI → Color mapping with reduced alpha for translucent overlay
+function aqiToColor(aqi: number, alpha: number = 120): [number, number, number, number] {
+  if (aqi <= 50)  return [34, 197, 94, alpha];      // green
+  if (aqi <= 100) return [132, 204, 22, alpha];      // lime
+  if (aqi <= 150) return [234, 179, 8, alpha];       // yellow
+  if (aqi <= 200) return [245, 158, 11, alpha];      // amber
+  if (aqi <= 250) return [249, 115, 22, alpha];      // orange
+  if (aqi <= 300) return [239, 68, 68, alpha];       // red
+  if (aqi <= 400) return [220, 38, 38, alpha];       // dark red
+  return [185, 28, 28, alpha];                       // deep red
 }
 
 export default function DelhiMap({ alertStation }: { alertStation?: Station | null }) {
-  const [hoveredHex, setHoveredHex] = useState<HexDataPoint | null>(null);
+  const [hoveredDistrict, setHoveredDistrict] = useState<District | null>(null);
   const [hoveredStation, setHoveredStation] = useState<Station | null>(null);
   const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
-
-  // Lighting setup for 3D columns
-  const lightingEffect = useMemo(() => {
-    const ambientLight = new AmbientLight({ color: [255, 255, 255], intensity: 1.2 });
-    const dirLight = new DirectionalLight({
-      color: [255, 255, 255],
-      intensity: 2.0,
-      direction: [-3, -9, -1],
-    });
-    return new LightingEffect({ ambientLight, dirLight });
-  }, []);
 
   // Handle fly-to on alert
   React.useEffect(() => {
@@ -66,39 +46,43 @@ export default function DelhiMap({ alertStation }: { alertStation?: Station | nu
       longitude: alertStation.lon,
       latitude: alertStation.lat,
       zoom: 13,
-      pitch: 55,
+      pitch: 0,
       transitionDuration: 1500,
     }));
   }, [alertStation]);
 
   // Build deck.gl layers
   const layers = useMemo(() => {
-    // Layer 1: 3D Hexagonal Columns (the main visual)
-    const columnLayer = new ColumnLayer<HexDataPoint>({
-      id: 'aqi-columns',
-      data: hexGridData,
-      diskResolution: 6,           // 6 sides = hexagon
-      radius: 900,                 // hex radius in meters
-      extruded: true,
+    // Layer 1: District boundary polygons
+    const districtLayer = new PolygonLayer<District>({
+      id: 'district-polygons',
+      data: delhiDistricts,
       pickable: true,
-      elevationScale: 1,
-      getPosition: (d: HexDataPoint) => [d.lon, d.lat],
-      getFillColor: (d: HexDataPoint) => aqiToColor(d.aqi),
-      getElevation: (d: HexDataPoint) => aqiToHeight(d.aqi),
-      material: {
-        ambient: 0.45,
-        diffuse: 0.6,
-        shininess: 40,
-        specularColor: [60, 64, 70],
+      stroked: true,
+      filled: true,
+      extruded: false,
+      wireframe: false,
+      lineWidthMinPixels: 1.5,
+      getPolygon: (d: District) => d.polygon,
+      getFillColor: (d: District) => {
+        if (hoveredDistrict && hoveredDistrict.id === d.id) {
+          // Brighter on hover
+          return aqiToColor(d.aqi, 180);
+        }
+        return aqiToColor(d.aqi, 100);
       },
+      getLineColor: [200, 210, 220, 100],
+      getLineWidth: 2,
+      updateTriggers: {
+        getFillColor: [hoveredDistrict?.id],
+      },
+      onHover: (info: any) => setHoveredDistrict(info.object || null),
       transitions: {
-        getElevation: { duration: 800 },
-        getFillColor: { duration: 800 },
+        getFillColor: { duration: 200 },
       },
-      onHover: (info: any) => setHoveredHex(info.object || null),
     });
 
-    // Layer 2: Station marker dots (glowing rings)
+    // Layer 2: Station glow rings
     const stationGlowLayer = new ScatterplotLayer<Station>({
       id: 'station-glow',
       data: delhiStations,
@@ -106,15 +90,15 @@ export default function DelhiMap({ alertStation }: { alertStation?: Station | nu
       opacity: 0.25,
       stroked: false,
       filled: true,
-      radiusMinPixels: 12,
-      radiusMaxPixels: 30,
-      getPosition: (d: Station) => [d.lon, d.lat, aqiToHeight(d.aqi) + 50],
+      radiusMinPixels: 10,
+      radiusMaxPixels: 24,
+      getPosition: (d: Station) => [d.lon, d.lat],
       getFillColor: (d: Station) => {
         if (d.source === 'iot') return [57, 210, 192, 80];
-        const c = aqiToColor(d.aqi);
+        const c = aqiToColor(d.aqi, 220);
         return [c[0], c[1], c[2], 60];
       },
-      getRadius: (d: Station) => d.source === 'iot' ? 600 : 400,
+      getRadius: (d: Station) => d.source === 'iot' ? 500 : 300,
     });
 
     // Layer 3: Station core dots
@@ -126,29 +110,30 @@ export default function DelhiMap({ alertStation }: { alertStation?: Station | nu
       stroked: true,
       filled: true,
       radiusMinPixels: 4,
-      radiusMaxPixels: 10,
+      radiusMaxPixels: 9,
       lineWidthMinPixels: 1,
-      getPosition: (d: Station) => [d.lon, d.lat, aqiToHeight(d.aqi) + 50],
+      getPosition: (d: Station) => [d.lon, d.lat],
       getFillColor: (d: Station) => {
         if (d.source === 'iot') return [57, 210, 192, 255];
-        return aqiToColor(d.aqi);
+        return aqiToColor(d.aqi, 220);
       },
-      getLineColor: [255, 255, 255, 100],
-      getRadius: (d: Station) => d.source === 'iot' ? 350 : 200,
+      getLineColor: [255, 255, 255, 100] as [number, number, number, number],
+      getRadius: (d: Station) => d.source === 'iot' ? 300 : 180,
       onHover: (info: any) => setHoveredStation(info.object || null),
     });
 
-    // Layer 4: Station name labels
+    // Layer 4: Station name labels (IoT + alert stations only)
     const labelLayer = new TextLayer<Station>({
       id: 'station-labels',
       data: delhiStations.filter(s => s.source === 'iot' || s.status === 'alert'),
       pickable: false,
-      getPosition: (d: Station) => [d.lon, d.lat, aqiToHeight(d.aqi) + 200],
-      getText: (d: Station) => d.source === 'iot' ? `IoT ● ${d.aqi}` : d.name,
+      getPosition: (d: Station) => [d.lon, d.lat],
+      getText: (d: Station) => d.source === 'iot' ? `IoT  ${d.aqi}` : d.name,
       getSize: 11,
       getColor: (d: Station) => d.source === 'iot' ? [57, 210, 192, 255] : [230, 237, 243, 200],
       getTextAnchor: 'middle' as const,
       getAlignmentBaseline: 'bottom' as const,
+      getPixelOffset: [0, -14],
       fontFamily: 'Inter, system-ui, sans-serif',
       fontWeight: 600,
       outlineWidth: 2,
@@ -170,27 +155,48 @@ export default function DelhiMap({ alertStation }: { alertStation?: Station | nu
           radiusMinPixels: 20,
           radiusMaxPixels: 50,
           lineWidthMinPixels: 2,
-          getPosition: (d: any) => [d.lon, d.lat, aqiToHeight(d.aqi) + 100],
+          getPosition: (d: any) => [d.lon, d.lat],
           getLineColor: [248, 81, 73, 200],
           getRadius: 800,
         })
       );
     }
 
-    return [columnLayer, stationGlowLayer, stationDotLayer, labelLayer, ...alertLayers];
-  }, [alertStation]);
+    return [districtLayer, stationGlowLayer, stationDotLayer, labelLayer, ...alertLayers];
+  }, [alertStation, hoveredDistrict]);
 
   const onViewStateChange = useCallback(({ viewState: vs }: any) => {
     setViewState(vs);
   }, []);
 
-  // Tooltip
-  const tooltip = hoveredHex || hoveredStation;
-  const tooltipData = hoveredStation
-    ? { name: hoveredStation.name, aqi: hoveredStation.aqi, pm25: hoveredStation.pm25, type: hoveredStation.source === 'iot' ? 'IoT Sensor' : 'CAAQMS' }
-    : hoveredHex
-      ? { name: 'Grid Cell', aqi: hoveredHex.aqi, pm25: hoveredHex.pm25, type: 'Interpolated' }
+  // Build tooltip data
+  const tooltipData = hoveredDistrict
+    ? {
+        name: hoveredDistrict.name,
+        aqi: hoveredDistrict.aqi,
+        pm25: hoveredDistrict.pm25,
+        pm10: hoveredDistrict.pm10,
+        no2: hoveredDistrict.no2,
+        so2: hoveredDistrict.so2,
+        co: hoveredDistrict.co,
+        o3: hoveredDistrict.o3,
+        type: 'District',
+      }
+    : hoveredStation
+      ? {
+          name: hoveredStation.name,
+          aqi: hoveredStation.aqi,
+          pm25: hoveredStation.pm25,
+          pm10: hoveredStation.pm10,
+          no2: hoveredStation.no2,
+          so2: hoveredStation.so2,
+          co: hoveredStation.co,
+          o3: hoveredStation.o3,
+          type: hoveredStation.source === 'iot' ? 'IoT Sensor' : 'CAAQMS Station',
+        }
       : null;
+
+  const tooltipCat = tooltipData ? getAqiCategory(tooltipData.aqi) : null;
 
   return (
     <div className="map-container" style={{ position: 'relative', background: '#080c14' }}>
@@ -199,7 +205,6 @@ export default function DelhiMap({ alertStation }: { alertStation?: Station | nu
         onViewStateChange={onViewStateChange}
         controller={true}
         layers={layers}
-        effects={[lightingEffect]}
         style={{ width: '100%', height: '100%' }}
         getTooltip={() => null}
       >
@@ -217,7 +222,7 @@ export default function DelhiMap({ alertStation }: { alertStation?: Station | nu
           Alerts Active: <span className="chip-value" style={{ color: 'var(--accent-red)' }}>{delhiStations.filter(s => s.status === 'alert').length}</span>
         </div>
         <div className="map-stat-chip">
-          Hex Cells: <span className="chip-value" style={{ color: 'var(--accent-cyan)' }}>{hexGridData.length}</span>
+          Districts: <span className="chip-value" style={{ color: 'var(--accent-cyan)' }}>{delhiDistricts.length}</span>
         </div>
       </div>
 
@@ -229,7 +234,7 @@ export default function DelhiMap({ alertStation }: { alertStation?: Station | nu
         padding: '10px 14px',
       }}>
         <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>
-          AQI Density
+          AQI Severity
         </div>
         <div style={{ display: 'flex', gap: 0, height: 10, borderRadius: 3, overflow: 'hidden', width: 140 }}>
           {['#22c55e', '#84cc16', '#eab308', '#f59e0b', '#f97316', '#ef4444', '#dc2626'].map((c, i) => (
@@ -243,7 +248,7 @@ export default function DelhiMap({ alertStation }: { alertStation?: Station | nu
         </div>
       </div>
 
-      {/* Legend icons */}
+      {/* Map Legend */}
       <div className="map-legend">
         <div className="legend-item"><div className="legend-dot" style={{ background: '#22c55e' }} />Good</div>
         <div className="legend-item"><div className="legend-dot" style={{ background: '#f59e0b' }} />Moderate</div>
@@ -251,19 +256,48 @@ export default function DelhiMap({ alertStation }: { alertStation?: Station | nu
         <div className="legend-item"><div className="legend-dot" style={{ background: 'var(--accent-cyan)', boxShadow: '0 0 6px var(--accent-cyan)' }} />IoT</div>
       </div>
 
-      {/* Hover tooltip */}
-      {tooltipData && (
+      {/* Hover tooltip — detailed district/station info */}
+      {tooltipData && tooltipCat && (
         <div style={{
           position: 'absolute', bottom: 80, right: 12,
-          background: 'rgba(13,17,23,0.92)', backdropFilter: 'blur(12px)',
+          background: 'rgba(13,17,23,0.94)', backdropFilter: 'blur(14px)',
           border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)',
-          padding: '10px 14px', zIndex: 10, minWidth: 180,
+          padding: '12px 16px', zIndex: 10, minWidth: 220, maxWidth: 280,
         }}>
-          <div style={{ fontWeight: 700, fontSize: '0.8rem', marginBottom: 4 }}>{tooltipData.name}</div>
-          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginBottom: 4 }}>{tooltipData.type}</div>
-          <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-            AQI: <span style={{ color: getAqiCategory(tooltipData.aqi).color, fontWeight: 700, fontFamily: 'var(--font-mono)' }}>{tooltipData.aqi}</span>
-            {' '}• PM2.5: <span style={{ fontFamily: 'var(--font-mono)' }}>{tooltipData.pm25}</span>
+          <div style={{ fontWeight: 700, fontSize: '0.85rem', marginBottom: 2 }}>{tooltipData.name}</div>
+          <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{tooltipData.type}</div>
+
+          {/* AQI banner */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10,
+            padding: '6px 10px', borderRadius: 'var(--radius-sm)',
+            background: tooltipCat.bg, border: `1px solid ${tooltipCat.color}30`,
+          }}>
+            <span style={{ fontSize: '1.3rem', fontWeight: 800, fontFamily: 'var(--font-mono)', color: tooltipCat.color }}>{tooltipData.aqi}</span>
+            <div>
+              <div style={{ fontSize: '0.7rem', fontWeight: 600, color: tooltipCat.color }}>{tooltipCat.label}</div>
+              <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)' }}>Air Quality Index</div>
+            </div>
+          </div>
+
+          {/* Pollutant grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4 }}>
+            {[
+              { label: 'PM2.5', value: tooltipData.pm25, unit: 'µg/m³' },
+              { label: 'PM10', value: tooltipData.pm10, unit: 'µg/m³' },
+              { label: 'NO₂', value: tooltipData.no2, unit: 'ppb' },
+              { label: 'SO₂', value: tooltipData.so2, unit: 'ppb' },
+              { label: 'CO', value: tooltipData.co, unit: 'mg/m³' },
+              { label: 'O₃', value: tooltipData.o3, unit: 'ppb' },
+            ].map((p) => (
+              <div key={p.label} style={{
+                padding: '4px 6px', background: 'var(--bg-elevated)', borderRadius: 4,
+                textAlign: 'center',
+              }}>
+                <div style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{p.value}</div>
+                <div style={{ fontSize: '0.5rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{p.label}</div>
+              </div>
+            ))}
           </div>
         </div>
       )}

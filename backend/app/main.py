@@ -1,8 +1,7 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
 from app.routers import api_router
-
-from fastapi.middleware.cors import CORSMiddleware
 
 # Initialize SQLite database tables
 Base.metadata.create_all(bind=engine)
@@ -13,16 +12,19 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# Enable CORS for frontend integration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Allow all origins for local hackathon development
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Register endpoints router
+# Register endpoints router with and without prefix for frontend compatibility
 app.include_router(api_router, prefix="/api")
+app.include_router(api_router)
+
 
 @app.get("/")
 def read_root():

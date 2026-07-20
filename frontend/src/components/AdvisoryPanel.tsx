@@ -129,11 +129,11 @@ export default function AdvisoryPanel({ city = 'Delhi', userCoords, liveData }: 
 
             {/* Meta */}
             <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
-              <span className="tag badge-blue">📚 {adv.schools_nearby} schools</span>
-              <span className="tag badge-green">🏥 {adv.hospitals_nearby} hospitals</span>
+              <span className="tag badge-blue">{adv.schools_nearby} schools</span>
+              <span className="tag badge-green">{adv.hospitals_nearby} hospitals</span>
               <span className="tag badge-amber">{adv.dominant_source}</span>
               <span className="tag badge-purple">
-                {adv.forecast_trend === 'rising' ? '📈 Rising' : adv.forecast_trend === 'falling' ? '📉 Falling' : '➡️ Stable'}
+                {adv.forecast_trend === 'rising' ? 'Rising' : adv.forecast_trend === 'falling' ? 'Falling' : 'Stable'}
               </span>
             </div>
 

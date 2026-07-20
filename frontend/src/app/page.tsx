@@ -1,23 +1,23 @@
 'use client';
 import React, { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
-import SimulatorPanel from '@/components/SimulatorPanel';
-import ForecastPanel from '@/components/ForecastPanel';
-import OptimizerPanel from '@/components/OptimizerPanel';
-import AdvisoryPanel from '@/components/AdvisoryPanel';
 import { cityStations, getAqiCategory, Station } from '@/data/mockStations';
 
-// Dynamic import for Map to avoid SSR issues with Mapbox/Canvas
+// Dynamic imports to avoid SSR hydration mismatches (dynamic clocks, charts, etc.)
 const CityMap = dynamic(() => import('@/components/CityMap'), { ssr: false });
+const SimulatorPanel = dynamic(() => import('@/components/SimulatorPanel'), { ssr: false });
+const ForecastPanel = dynamic(() => import('@/components/ForecastPanel'), { ssr: false });
+const OptimizerPanel = dynamic(() => import('@/components/OptimizerPanel'), { ssr: false });
+const AdvisoryPanel = dynamic(() => import('@/components/AdvisoryPanel'), { ssr: false });
 
 type TabId = 'simulate' | 'forecast' | 'enforce' | 'advisory';
 type CityId = 'Delhi' | 'Mumbai' | 'Bengaluru' | 'My Location';
 
-const tabs: { id: TabId; label: string; icon: string }[] = [
-  { id: 'simulate', label: 'Simulate', icon: '🔥' },
-  { id: 'forecast', label: 'Forecast', icon: '📈' },
-  { id: 'enforce', label: 'Enforce', icon: '⚙️' },
-  { id: 'advisory', label: 'Advisory', icon: '💬' },
+const tabs: { id: TabId; label: string }[] = [
+  { id: 'simulate', label: 'Simulate' },
+  { id: 'forecast', label: 'Forecast' },
+  { id: 'enforce', label: 'Enforce' },
+  { id: 'advisory', label: 'Advisory' },
 ];
 
 function LiveClock() {
@@ -186,7 +186,6 @@ export default function DashboardPage() {
                 className={`sidebar-tab ${activeTab === tab.id ? 'active' : ''}`}
                 onClick={() => setActiveTab(tab.id)}
               >
-                <span>{tab.icon}</span>
                 {tab.label}
               </button>
             ))}

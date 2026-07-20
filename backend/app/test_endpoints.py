@@ -62,11 +62,15 @@ def test_forecast():
     assert response.status_code == 200
     data = response.json()
     assert data["horizon_h"] == 24
+    assert isinstance(data["point"], float)
+    assert len(data["interval"]) == 2
+    assert isinstance(data["ventilation_index"], float)
     
     # Verify logged forecast in SQLite
     db = SessionLocal()
     forecast = db.query(models.Forecast).first()
     assert forecast is not None
+    assert isinstance(forecast.point, float)
     db.close()
     print("POST /api/forecast check passed.")
 
@@ -85,13 +89,19 @@ def test_attribution():
     response = client.post("/api/attribution", json=payload)
     assert response.status_code == 200
     data = response.json()
+    assert isinstance(data["prediction_set"], list)
+    assert isinstance(data["set_size"], int)
+    assert isinstance(data["confidence"], float)
+    assert isinstance(data["probabilities"], dict)
     
     # Verify logged attribution in SQLite
     db = SessionLocal()
     attr = db.query(models.AttributionResult).first()
     assert attr is not None
+    assert isinstance(attr.confidence, float)
     db.close()
     print("POST /api/attribution check passed.")
+
 
 def test_optimize():
     response = client.get("/api/optimize")
@@ -100,12 +110,12 @@ def test_optimize():
     assert data["route_id"] == "inspector_1"
     assert len(data["stops"]) == 1
     stop = data["stops"][0]
-    assert stop["source_id"] == "s7"
-    assert stop["lat"] == 28.6
-    assert stop["lon"] == 77.2
-    assert stop["eta"] == "10:45"
+    assert stop["source_id"] == "S01"
+    assert round(stop["lat"], 4) == 28.6469
+    assert round(stop["lon"], 4) == 77.3164
+    assert stop["eta"] == "09:23"
     assert stop["action"] == "FULL_INSPECTION"
-    assert stop["roi"] == 54.2
+    assert stop["roi"] == 210.2
     
     # Verify route and ROI logs in SQLite
     db = SessionLocal()
@@ -115,9 +125,21 @@ def test_optimize():
     
     roi = db.query(models.ROIResult).filter_by(route_id="inspector_1").first()
     assert roi is not None
-    assert roi.roi == 54.2
+    assert roi.roi == 210.2
+    
+    # Verify van and drone routes were computed and logged as well
+    van_route = db.query(models.EnforcementRoute).filter_by(route_id="van_1").first()
+    assert van_route is not None
+    assert len(van_route.stops) == 3
+    
+    drone_route = db.query(models.EnforcementRoute).filter_by(route_id="drone_1").first()
+    assert drone_route is not None
+    # Corrected to 1: S09 is too far and cannot be visited within the drone's 45-min sortie limit
+    assert len(drone_route.stops) == 1
+    
     db.close()
     print("GET /optimize check passed.")
+
 
 if __name__ == "__main__":
     print("Running tests...")

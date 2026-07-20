@@ -4,10 +4,46 @@ import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
   ReferenceLine, CartesianGrid,
 } from 'recharts';
-import { forecastData as initialForecastData, validationMetrics, ForecastPoint } from '@/data/mockForecast';
-import { delhiStations } from '@/data/mockStations';
 
-export default function ForecastPanel({ city = 'Delhi', userCoords, liveData }: { city?: string, userCoords?: { lat: number, lon: number } | null, liveData?: any }) {
+export interface ForecastPoint {
+  hour: number;
+  label: string;
+  point: number;
+  lower: number;
+  upper: number;
+  vi: number;
+}
+
+function generateForecast(): ForecastPoint[] {
+  const points: ForecastPoint[] = [];
+  const baseHour = new Date().getHours();
+  for (let h = 0; h <= 72; h += 3) {
+    const futureHour = (baseHour + h) % 24;
+    const day = Math.floor(h / 24);
+    const diurnalFactor = 1.0 + 0.35 * Math.sin(((futureHour - 8) / 24) * 2 * Math.PI) + 0.15 * Math.sin(((futureHour - 20) / 12) * 2 * Math.PI);
+    const baseLine = 220 - day * 18;
+    const point = Math.round(baseLine * diurnalFactor + (Math.random() - 0.5) * 20);
+    const bandWidth = 25 + h * 0.8;
+    const lower = Math.max(0, Math.round(point - bandWidth));
+    const upper = Math.round(point + bandWidth);
+    const vi = Math.round(8000 - point * 22 + (Math.random() - 0.5) * 500);
+    const dayLabel = day === 0 ? 'Today' : day === 1 ? 'Tomorrow' : `Day ${day + 1}`;
+    const timeStr = `${futureHour.toString().padStart(2, '0')}:00`;
+    points.push({ hour: h, label: `${dayLabel} ${timeStr}`, point: Math.max(30, point), lower: Math.max(10, lower), upper, vi: Math.max(200, vi) });
+  }
+  return points;
+}
+
+const initialForecastData = generateForecast();
+const validationMetrics = {
+  rmse_24h: 18.3, rmse_48h: 27.1, rmse_72h: 38.6,
+  persistence_24h: 26.8, persistence_48h: 34.9, persistence_72h: 44.2,
+  improvement_24h: 31.7, improvement_48h: 22.3, improvement_72h: 12.7,
+  conformal_coverage: 91.2,
+};
+
+
+export default function ForecastPanel({ city = 'Delhi', userCoords, liveData, cityData }: { city?: string, userCoords?: { lat: number, lon: number } | null, liveData?: any, cityData?: any }) {
   const [data, setData] = useState<ForecastPoint[]>(initialForecastData);
   const [liveForecast, setLiveForecast] = React.useState<any>(null);
   const [liveAttribution, setLiveAttribution] = React.useState<any>(null);
@@ -16,6 +52,10 @@ export default function ForecastPanel({ city = 'Delhi', userCoords, liveData }: 
   useEffect(() => {
     if (city === 'My Location') {
       if (liveData && liveData.forecast) {
+        setLiveForecast(liveData.forecast);
+        setLiveAttribution(liveData.attribution);
+        setLiveConnection(true);
+        
         const result = liveData.forecast;
         setData(prev => {
           const newData = [...prev];
@@ -39,8 +79,9 @@ export default function ForecastPanel({ city = 'Delhi', userCoords, liveData }: 
       return;
     }
 
-    // Find the IoT sensor to use as input features
-    const iotSensor = delhiStations.find(s => s.source === 'iot');
+    // Find the IoT sensor to use as input features from live cityData
+    const stations = cityData ? cityData.stations : [];
+    const iotSensor = stations.find((s: any) => s.source === 'iot') || stations[0];
     if (!iotSensor) return;
 
     const payload = {
@@ -64,6 +105,7 @@ export default function ForecastPanel({ city = 'Delhi', userCoords, liveData }: 
       .then(result => {
         // Splice the real 24h point into the mock 72h curve
         if (result && result.horizon_h === 24) {
+          setLiveForecast(result);
           setData(prev => {
             const newData = [...prev];
             const targetIndex = newData.findIndex(p => p.hour === 24);
@@ -87,20 +129,22 @@ export default function ForecastPanel({ city = 'Delhi', userCoords, liveData }: 
       })
       .catch(err => console.error('Failed to fetch ML forecast:', err));
 
-    Promise.all([
-      fetch('http://127.0.0.1:8000/api/forecast').then(res => res.json()),
-      fetch('http://127.0.0.1:8000/api/attribution').then(res => res.json())
-    ])
-      .then(([forecast, attribution]) => {
-        setLiveForecast(forecast);
-        setLiveAttribution(attribution);
+    fetch('http://127.0.0.1:8000/api/attribution', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+      .then(res => res.json())
+      .then(result => {
+        setLiveAttribution(result);
         setLiveConnection(true);
       })
       .catch(err => {
-        console.error('Failed to fetch live API data:', err);
+        console.error('Failed to fetch ML attribution:', err);
         setLiveConnection(false);
       });
-  }, [city, liveData]);
+
+  }, [city, liveData, cityData]);
 
   const currentVI = data[0]?.vi ?? 0;
   const viStatus = currentVI < 1000 ? 'STAGNATION' : currentVI < 3000 ? 'POOR' : currentVI < 6000 ? 'MODERATE' : 'GOOD';

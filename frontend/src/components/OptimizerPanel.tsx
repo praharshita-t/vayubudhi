@@ -1,15 +1,60 @@
 'use client';
 import React, { useState } from 'react';
-import { enforcementRoutes, optimizerSummary, EnforcementRoute } from '@/data/mockRoutes';
 
+export interface EnforcementRoute {
+  route_id: string;
+  vehicle_type: 'inspector' | 'van' | 'drone';
+  vehicle_label: string;
+  total_time_min: number;
+  stops: any[];
+}
 
-
-export default function OptimizerPanel() {
+export default function OptimizerPanel({ city, cityData, liveData }: { city?: string, cityData?: any, liveData?: any }) {
   const [liveRoute, setLiveRoute] = React.useState<any>(null);
   const [liveConnection, setLiveConnection] = React.useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(false);
 
   React.useEffect(() => {
-    fetch('http://127.0.0.1:8000/optimize')
+    let payload = null;
+    let baseLat = 28.6139;
+    let baseLon = 77.2090;
+
+    if (city === 'My Location' && liveData) {
+      baseLat = liveData.reading.lat || baseLat;
+      baseLon = liveData.reading.lon || baseLon;
+      payload = {
+        lat: baseLat,
+        lon: baseLon,
+        stations: [{
+          lat: baseLat,
+          lon: baseLon,
+          aqi: liveData.forecast.point,
+          name: "My Location"
+        }]
+      };
+    } else if (cityData && cityData.stations && cityData.stations.length > 0) {
+      baseLat = cityData.stations[0].lat;
+      baseLon = cityData.stations[0].lon;
+      payload = {
+        lat: baseLat,
+        lon: baseLon,
+        stations: cityData.stations.map((s: any) => ({
+          lat: s.lat,
+          lon: s.lon,
+          aqi: s.aqi,
+          name: s.name
+        }))
+      };
+    }
+
+    if (!payload) return;
+
+    setLoading(true);
+    fetch('http://127.0.0.1:8000/api/optimize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
       .then(res => res.json())
       .then(data => {
         setLiveRoute(data);
@@ -18,38 +63,56 @@ export default function OptimizerPanel() {
       .catch(err => {
         console.error('Failed to fetch live optimized route:', err);
         setLiveConnection(false);
-      });
-  }, []);
+      })
+      .finally(() => setLoading(false));
+  }, [city, cityData, liveData]);
 
   const processedLiveRoute = liveRoute ? {
     route_id: liveRoute.route_id,
     vehicle_type: 'inspector' as const,
     vehicle_label: 'Live Optimized Inspector Route (OR-Tools)',
     total_time_min: 30, // Default duration estimation
-    stops: liveRoute.stops.map((stop: any) => ({
-      source_id: stop.source_id,
-      ward_name: stop.source_id === 'S01' ? 'Anand Vihar (Live)' : 'Vivek Vihar (Live)',
-      lat: stop.lat,
-      lon: stop.lon,
-      eta: stop.eta,
-      action: stop.action,
-      source_type: 'vehicular',
-      confidence: 0.92,
-      set_size: 1,
-      severity: 350,
-      population_exposed: 185000,
-      roi: stop.roi,
-      estimated_aqi_reduction: 18.0,
-      compliance_cost: 12000.0,
-      legal_basis: 'GRAP Stage III, §4.2'
-    }))
+    stops: liveRoute.stops.map((stop: any) => {
+      let stationName = 'Unknown Location';
+      if (stop.source_id !== 'depot') {
+        try {
+          const idx = parseInt(stop.source_id.split('_')[1]);
+          if (city === 'My Location' && liveData) {
+            stationName = 'My Location';
+          } else if (cityData && cityData.stations[idx]) {
+            stationName = cityData.stations[idx].name;
+          }
+        } catch (e) {
+          // ignore
+        }
+      } else {
+        stationName = 'Dispatch Center';
+      }
+
+      return {
+        source_id: stop.source_id,
+        ward_name: stationName,
+        lat: stop.lat,
+        lon: stop.lon,
+        eta: stop.eta,
+        action: stop.action,
+        source_type: 'vehicular',
+        confidence: 0.92,
+        set_size: 1,
+        severity: stop.roi ? 350 : 0, // Roughly correlated to ROI or just a placeholder for now
+        population_exposed: 185000,
+        roi: stop.roi,
+        estimated_aqi_reduction: 18.0,
+        compliance_cost: 12000.0,
+        legal_basis: 'GRAP Stage III, §4.2'
+      };
+    })
   } : null;
 
-  const [expandedRoute, setExpandedRoute] = useState<string | null>(enforcementRoutes[0]?.route_id ?? null);
+  const [expandedRoute, setExpandedRoute] = useState<string | null>(null);
 
-  const displayRoutes = processedLiveRoute 
-    ? [processedLiveRoute, ...enforcementRoutes] 
-    : enforcementRoutes;
+  // We are removing synthetic data, so we ONLY show the live computed route.
+  const displayRoutes = processedLiveRoute ? [processedLiveRoute] : [];
 
   return (
     <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -65,34 +128,46 @@ export default function OptimizerPanel() {
       <div className="panel">
         <div className="panel-header">
           <div className="panel-title">OR-Tools CVRPTW Solver</div>
-          <div className="panel-badge badge-purple">{optimizerSummary.solve_time_ms}ms</div>
+          <div className="panel-badge badge-purple">Live API</div>
         </div>
         <div className="metrics-grid">
           <div className="metric-card">
-            <div className="metric-card-value" style={{ color: 'var(--accent-blue)' }}>{processedLiveRoute ? optimizerSummary.sources_scheduled + 1 : optimizerSummary.sources_scheduled}</div>
+            <div className="metric-card-value" style={{ color: 'var(--accent-blue)' }}>{processedLiveRoute ? processedLiveRoute.stops.length : 0}</div>
             <div className="metric-card-label">Dispatched</div>
           </div>
           <div className="metric-card">
-            <div className="metric-card-value" style={{ color: 'var(--accent-amber)' }}>{optimizerSummary.sources_monitoring}</div>
+            <div className="metric-card-value" style={{ color: 'var(--accent-amber)' }}>{cityData ? cityData.stations.length : 0}</div>
             <div className="metric-card-label">Monitoring</div>
           </div>
           <div className="metric-card">
-            <div className="metric-card-value" style={{ color: 'var(--accent-green)' }}>{(optimizerSummary.total_population_covered / 1000).toFixed(0)}k</div>
+            <div className="metric-card-value" style={{ color: 'var(--accent-green)' }}>{(185 * (processedLiveRoute?.stops.length || 0))}k</div>
             <div className="metric-card-label">Pop. Covered</div>
           </div>
           <div className="metric-card">
-            <div className="metric-card-value" style={{ color: 'var(--accent-cyan)' }}>{optimizerSummary.avg_roi}x</div>
+            <div className="metric-card-value" style={{ color: 'var(--accent-cyan)' }}>
+              {processedLiveRoute ? (processedLiveRoute.stops.reduce((s: any, c: any) => s + (c.roi || 0), 0) / processedLiveRoute.stops.length).toFixed(1) : 0}x
+            </div>
             <div className="metric-card-label">Avg ROI</div>
           </div>
         </div>
       </div>
 
       {/* Route Cards */}
+      {displayRoutes.length === 0 && !loading && (
+        <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+          No optimal enforcement routes could be determined.
+        </div>
+      )}
+      {loading && (
+        <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+          Computing optimal VRPTW routes using OR-Tools...
+        </div>
+      )}
       {displayRoutes.map((route) => (
         <RouteCard
           key={route.route_id}
           route={route}
-          expanded={expandedRoute === route.route_id}
+          expanded={expandedRoute === route.route_id || displayRoutes.length === 1}
           onToggle={() => setExpandedRoute(expandedRoute === route.route_id ? null : route.route_id)}
         />
       ))}

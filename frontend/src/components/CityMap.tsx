@@ -1,14 +1,21 @@
 'use client';
 import React, { useState, useMemo, useCallback } from 'react';
-import { cityStations, getAqiCategory, Station } from '@/data/mockStations';
-import { cityHexGridData, HexDataPoint } from '@/data/mockHexGrid';
+import { getAqiCategory } from '@/utils/aqi';
+import { Station } from '@/app/page';
 import { delhiDistricts, District } from '@/data/delhiDistricts';
+
+export interface HexDataPoint {
+  lat: number;
+  lon: number;
+  aqi: number;
+  pm25: number;
+}
 
 // deck.gl imports
 import DeckGL from '@deck.gl/react';
 import Map from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { PolygonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
+import { ColumnLayer, PolygonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
 
 const CITY_CENTERS: Record<string, {longitude: number, latitude: number, zoom: number}> = {
   'Delhi': { longitude: 77.17, latitude: 28.62, zoom: 11 },
@@ -63,6 +70,7 @@ export default function CityMap({
   city?: string, 
   userCoords?: { lat: number, lon: number } | null, 
   liveData?: any, 
+  cityData?: any,
   liveLoading?: boolean 
 }) {
   const [hoveredHex, setHoveredHex] = useState<HexDataPoint | null>(null);
@@ -85,15 +93,16 @@ export default function CityMap({
         status: 'online' as const
       }];
     }
-    return cityStations[city] || cityStations['Delhi'];
-  }, [city, liveData, userCoords]);
+    return cityData ? cityData.stations : [];
+  }, [city, liveData, cityData, userCoords]);
 
   const hexGrid = useMemo(() => {
     if (city === 'My Location' && liveData) {
       return liveData.hex_grid;
     }
-    return cityHexGridData[city] || cityHexGridData['Delhi'];
-  }, [city, liveData]);
+    // We can use the stations from our grid-like cityData as the hexGrid too!
+    return cityData ? cityData.stations : [];
+  }, [city, liveData, cityData]);
 
   // Handle fly-to on city or coords change
   React.useEffect(() => {

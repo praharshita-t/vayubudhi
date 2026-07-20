@@ -1,7 +1,7 @@
 'use client';
 import React, { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
-import { cityStations, getAqiCategory, Station } from '@/data/mockStations';
+import { getAqiCategory } from '@/utils/aqi';
 
 // Dynamic imports to avoid SSR hydration mismatches (dynamic clocks, charts, etc.)
 const CityMap = dynamic(() => import('@/components/CityMap'), { ssr: false });
@@ -9,6 +9,22 @@ const SimulatorPanel = dynamic(() => import('@/components/SimulatorPanel'), { ss
 const ForecastPanel = dynamic(() => import('@/components/ForecastPanel'), { ssr: false });
 const OptimizerPanel = dynamic(() => import('@/components/OptimizerPanel'), { ssr: false });
 const AdvisoryPanel = dynamic(() => import('@/components/AdvisoryPanel'), { ssr: false });
+
+export interface Station {
+  id: string;
+  name: string;
+  lat: number;
+  lon: number;
+  pm25: number;
+  pm10: number;
+  no2: number;
+  so2: number;
+  co: number;
+  o3: number;
+  aqi: number;
+  source: string;
+  status: string;
+}
 
 type TabId = 'simulate' | 'forecast' | 'enforce' | 'advisory';
 type CityId = 'Delhi' | 'Mumbai' | 'Bengaluru' | 'My Location';
@@ -89,8 +105,35 @@ export default function DashboardPage() {
     }
   }, [activeCity, userCoords]);
 
+  const [cityData, setCityData] = useState<any>(null);
+
+  useEffect(() => {
+    if (activeCity !== 'My Location') {
+      setLiveLoading(true);
+      fetch(`http://127.0.0.1:8000/api/city-data?city=${activeCity}`)
+        .then((res) => res.json())
+        .then((data) => {
+          setCityData(data);
+          setLiveLoading(false);
+        })
+        .catch((err) => {
+          console.error('Failed to fetch city data:', err);
+          setLiveLoading(false);
+        });
+    }
+  }, [activeCity]);
+
   // Compute live metrics
-  const stations = cityStations[activeCity] || [];
+  let stations = [];
+  if (activeCity === 'My Location' && liveData) {
+    stations = [{
+      name: 'Local GPS',
+      aqi: liveData.forecast.point,
+      status: liveData.forecast.point > 200 ? 'alert' : 'online'
+    }];
+  } else if (cityData && cityData.stations) {
+    stations = cityData.stations;
+  }
   
   let avgAqi = 0;
   let worstStationName = 'N/A';
@@ -110,11 +153,11 @@ export default function DashboardPage() {
       alertCount = 0;
     }
   } else if (stations.length > 0) {
-    avgAqi = Math.round(stations.reduce((s, st) => s + st.aqi, 0) / stations.length);
-    const maxStation = stations.reduce((max, st) => st.aqi > max.aqi ? st : max, stations[0]);
+    avgAqi = Math.round(stations.reduce((s: any, st: any) => s + st.aqi, 0) / stations.length);
+    const maxStation = stations.reduce((max: any, st: any) => st.aqi > max.aqi ? st : max, stations[0]);
     worstStationName = maxStation.name;
     worstStationAqi = maxStation.aqi;
-    alertCount = stations.filter(s => s.status === 'alert').length;
+    alertCount = stations.filter((s: any) => s.status === 'alert').length;
   }
 
   const avgCat = getAqiCategory(avgAqi);
@@ -172,7 +215,8 @@ export default function DashboardPage() {
           alertStation={alertStation} 
           city={activeCity} 
           userCoords={userCoords} 
-          liveData={liveData} 
+          liveData={liveData}
+          cityData={cityData}
           liveLoading={liveLoading} 
         />
 
@@ -194,16 +238,16 @@ export default function DashboardPage() {
           {/* Tab Content */}
           <div className="sidebar-content" style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
             <div style={{ display: activeTab === 'simulate' ? 'block' : 'none', height: '100%', overflowY: 'auto' }}>
-              <SimulatorPanel onAlert={setAlertStation} />
+              <SimulatorPanel onAlert={setAlertStation} city={activeCity} cityData={cityData} liveData={liveData} />
             </div>
             <div style={{ display: activeTab === 'forecast' ? 'block' : 'none', height: '100%', overflowY: 'auto' }}>
-              <ForecastPanel city={activeCity} userCoords={userCoords} liveData={liveData} />
+              <ForecastPanel city={activeCity} userCoords={userCoords} liveData={liveData} cityData={cityData} />
             </div>
             <div style={{ display: activeTab === 'enforce' ? 'block' : 'none', height: '100%', overflowY: 'auto' }}>
-              <OptimizerPanel />
+              <OptimizerPanel city={activeCity} cityData={cityData} liveData={liveData} />
             </div>
             <div style={{ display: activeTab === 'advisory' ? 'block' : 'none', height: '100%', overflowY: 'auto' }}>
-              <AdvisoryPanel city={activeCity} userCoords={userCoords} liveData={liveData} />
+              <AdvisoryPanel city={activeCity} userCoords={userCoords} liveData={liveData} cityData={cityData} />
             </div>
           </div>
         </aside>

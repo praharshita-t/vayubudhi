@@ -1,21 +1,27 @@
 'use client';
 import React, { useState, useEffect, useRef } from 'react';
-import { delhiStations, getAqiCategory } from '@/data/mockStations';
+import { getAqiCategory } from '@/utils/aqi';
 
 interface SimulatorProps {
-  onAlert: (station: typeof delhiStations[0] | null) => void;
+  onAlert: (station: any | null) => void;
+  city?: string;
+  cityData?: any;
+  liveData?: any;
 }
 
-export default function SimulatorPanel({ onAlert }: SimulatorProps) {
+export default function SimulatorPanel({ onAlert, city, cityData, liveData }: SimulatorProps) {
   const [simulating, setSimulating] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [stage, setStage] = useState<'idle' | 'detecting' | 'attributing' | 'routing' | 'dispatched'>('idle');
   const [attribution, setAttribution] = useState<{ prediction_set: string[], set_size: number, confidence: number } | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const iotSensor = delhiStations.find(s => s.source === 'iot')!;
+  const stations = cityData ? cityData.stations : [];
+  const iotSensor = stations.find((s: any) => s.source === 'iot') || stations[0];
 
   const startSimulation = () => {
+    if (!iotSensor) return;
+    
     setSimulating(true);
     setElapsed(0);
     setStage('detecting');

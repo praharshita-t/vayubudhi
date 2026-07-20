@@ -78,20 +78,27 @@ SYNTHETIC_SOURCES = [
         "latitude": 28.5308,
         "longitude": 77.2713,
         "severity": 150.0,
-        "confidence": 0.50,
-        "set_size": 2,
-        "population_exposed": 50000.0
-    }
-]
+class StationData(BaseModel):
+    lat: float
+    lon: float
+    aqi: float
+    name: str = "Unknown"
 
-@router.get("/optimize", response_model=schemas.RoutePlan)
-def get_optimization(lat: float = 28.6139, lon: float = 77.2090, db: Session = Depends(get_db)):
+class OptimizeRequest(BaseModel):
+    lat: float
+    lon: float
+    stations: List[StationData]
+
+@router.post("")
+def generate_optimal_routes(request: OptimizeRequest, db: Session = Depends(get_db)):
     """
     Solves the vehicle routing problem for ground inspectors, vans, and drones using Google OR-Tools.
-    Shift locations dynamically to center around the requested coordinates (lat, lon).
     Logs all routes and their cost-benefit ROI profiles to SQLite.
     Returns the primary inspector routing plan to stay compatible with Contract 4.
     """
+    lat = request.lat
+    lon = request.lon
+    
     # 1. Establish the central depot coordinates
     depot = {
         "source_id": "depot",
@@ -103,16 +110,18 @@ def get_optimization(lat: float = 28.6139, lon: float = 77.2090, db: Session = D
         "population_exposed": 0
     }
     
-    # 2. Adjust synthetic sources relative to the depot coordinates
-    delta_lat = lat - 28.6289
-    delta_lon = lon - 77.2406
-    
+    # 2. Map real stations to sources
     adjusted_sources = []
-    for src in SYNTHETIC_SOURCES:
+    for i, st in enumerate(request.stations):
         adjusted_sources.append({
-            **src,
-            "latitude": src["latitude"] + delta_lat,
-            "longitude": src["longitude"] + delta_lon
+            "source_id": f"S_{i}",
+            "latitude": st.lat,
+            "longitude": st.lon,
+            "severity": st.aqi,
+            "confidence": 0.85,
+            "set_size": 1,
+            "population_exposed": 100000.0,
+            "name": st.name
         })
     
     # 3. Filter out MONITOR-only sources (severity < 200) from active routing

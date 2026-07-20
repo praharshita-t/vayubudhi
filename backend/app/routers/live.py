@@ -134,3 +134,109 @@ def get_live_data(lat: float, lon: float):
         forecast=forecast,
         hex_grid=hex_grid
     )
+
+
+class StationData(BaseModel):
+    id: str
+    name: str
+    lat: float
+    lon: float
+    pm25: float
+    pm10: float
+    no2: float
+    so2: float
+    co: float
+    o3: float
+    aqi: float
+    source: str
+    status: str
+
+class CityDataResponse(BaseModel):
+    city: str
+    stations: List[StationData]
+    center_aqi: float
+
+CITY_BOUNDS = {
+    "Delhi": {"lat_start": 28.5, "lat_end": 28.75, "lon_start": 76.95, "lon_end": 77.3, "step": 0.08},
+    "Mumbai": {"lat_start": 18.9, "lat_end": 19.15, "lon_start": 72.8, "lon_end": 72.95, "step": 0.08},
+    "Bengaluru": {"lat_start": 12.85, "lat_end": 13.1, "lon_start": 77.5, "lon_end": 77.7, "step": 0.08}
+}
+
+@router.get("/city-data", response_model=CityDataResponse)
+def get_city_data(city: str):
+    if city not in CITY_BOUNDS:
+        return CityDataResponse(city=city, stations=[], center_aqi=0)
+        
+    bounds = CITY_BOUNDS[city]
+    
+    # Generate grid
+    lats = []
+    lons = []
+    
+    curr_lat = bounds["lat_start"]
+    while curr_lat <= bounds["lat_end"]:
+        curr_lon = bounds["lon_start"]
+        while curr_lon <= bounds["lon_end"]:
+            lats.append(round(curr_lat, 4))
+            lons.append(round(curr_lon, 4))
+            curr_lon += bounds["step"]
+        curr_lat += bounds["step"]
+        
+    # Cap to max points to avoid URL too long
+    lats = lats[:25]
+    lons = lons[:25]
+    
+    lat_str = ",".join(map(str, lats))
+    lon_str = ",".join(map(str, lons))
+    
+    aq_url = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat_str}&longitude={lon_str}&current=pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone"
+    
+    stations = []
+    center_aqi = 0
+    try:
+        aq_res = requests.get(aq_url, timeout=10)
+        aq_data = aq_res.json()
+        
+        if not isinstance(aq_data, list):
+            aq_data = [aq_data]
+            
+        total_aqi = 0
+        for i, data in enumerate(aq_data):
+            current = data.get("current", {})
+            pm25 = current.get("pm2_5") or 35.0
+            pm10 = current.get("pm10") or (pm25 * 1.5)
+            no2 = current.get("nitrogen_dioxide") or 20.0
+            so2 = current.get("sulphur_dioxide") or 10.0
+            co = current.get("carbon_monoxide") or 1.0
+            o3 = current.get("ozone") or 30.0
+            
+            aqi = pm25_to_aqi(pm25)
+            total_aqi += aqi
+            
+            stations.append(StationData(
+                id=f"OM_{city[:3]}_{i}",
+                name=f"OM Node {i+1}",
+                lat=lats[i],
+                lon=lons[i],
+                pm25=pm25,
+                pm10=pm10,
+                no2=no2,
+                so2=so2,
+                co=co,
+                o3=o3,
+                aqi=round(aqi),
+                source="iot" if i % 5 == 0 else "caaqms",
+                status="alert" if aqi > 200 else "online"
+            ))
+            
+        if len(stations) > 0:
+            center_aqi = total_aqi / len(stations)
+            
+    except Exception as e:
+        print(f"Failed to fetch bulk city data: {e}")
+        
+    return CityDataResponse(
+        city=city,
+        stations=stations,
+        center_aqi=center_aqi
+    )

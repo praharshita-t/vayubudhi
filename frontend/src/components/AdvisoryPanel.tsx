@@ -1,9 +1,14 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { advisoryData, languageLabels } from '@/data/mockAdvisory';
-import { getAqiCategory, cityStations } from '@/data/mockStations';
+import { getAqiCategory } from '@/utils/aqi';
 
-export default function AdvisoryPanel({ city = 'Delhi', userCoords, liveData }: { city?: string, userCoords?: { lat: number, lon: number } | null, liveData?: any }) {
+export const languageLabels: Record<string, string> = {
+  en: 'English',
+  hi: 'हिंदी',
+  kn: 'ಕನ್ನಡ',
+};
+
+export default function AdvisoryPanel({ city = 'Delhi', userCoords, liveData, cityData }: { city?: string, userCoords?: { lat: number, lon: number } | null, liveData?: any, cityData?: any }) {
   const [selectedLang, setSelectedLang] = useState<'en' | 'hi' | 'kn'>('en');
   const [liveAdvisory, setLiveAdvisory] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
@@ -24,8 +29,9 @@ export default function AdvisoryPanel({ city = 'Delhi', userCoords, liveData }: 
         reading: liveData.reading
       };
     } else {
-      const stations = cityStations[city] || cityStations['Delhi'];
-      const maxStation = stations.reduce((max, st) => st.aqi > max.aqi ? st : max, stations[0]);
+      const stations = cityData ? cityData.stations : [];
+      if (stations.length === 0) return;
+      const maxStation = stations.reduce((max: any, st: any) => st.aqi > max.aqi ? st : max, stations[0]);
       
       payload = {
         city: city,
@@ -65,7 +71,7 @@ export default function AdvisoryPanel({ city = 'Delhi', userCoords, liveData }: 
       .finally(() => {
         setLoading(false);
       });
-  }, [city, selectedLang, liveData]);
+  }, [city, selectedLang, liveData, cityData]);
 
   return (
     <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -101,49 +107,6 @@ export default function AdvisoryPanel({ city = 'Delhi', userCoords, liveData }: 
           </div>
         </div>
       </div>
-
-      {/* Advisory Cards (Mock/Static for other wards) */}
-      {advisoryData.map((adv, i) => {
-        const cat = getAqiCategory(adv.aqi);
-        return (
-          <div key={i} className="advisory-card">
-            <div className="advisory-ward">
-              <span style={{ color: cat.color }}>●</span>{' '}
-              {adv.ward_name}
-              <span className={`panel-badge ${adv.aqi > 300 ? 'badge-red' : 'badge-amber'}`} style={{ marginLeft: 8 }}>
-                AQI {adv.aqi}
-              </span>
-            </div>
-
-            {/* Dose Display */}
-            <div className="advisory-dose">
-              <div className="dose-item">
-                <span className="dose-value" style={{ color: 'var(--accent-red)' }}>{adv.exposure_dose_outdoor}</span>
-                <span className="dose-label">µg/h outdoor</span>
-              </div>
-              <div className="dose-item">
-                <span className="dose-value" style={{ color: 'var(--accent-green)' }}>{adv.exposure_dose_indoor}</span>
-                <span className="dose-label">µg/h indoor</span>
-              </div>
-            </div>
-
-            {/* Meta */}
-            <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
-              <span className="tag badge-blue">{adv.schools_nearby} schools</span>
-              <span className="tag badge-green">{adv.hospitals_nearby} hospitals</span>
-              <span className="tag badge-amber">{adv.dominant_source}</span>
-              <span className="tag badge-purple">
-                {adv.forecast_trend === 'rising' ? 'Rising' : adv.forecast_trend === 'falling' ? 'Falling' : 'Stable'}
-              </span>
-            </div>
-
-            {/* Advisory Text */}
-            <div className="advisory-text">
-              {adv.advisories[selectedLang]}
-            </div>
-          </div>
-        );
-      })}
     </div>
   );
 }

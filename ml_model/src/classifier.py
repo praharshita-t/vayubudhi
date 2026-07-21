@@ -26,17 +26,25 @@ class SourceClassifier:
             pm10 = row.get("pm10", 1.0) # avoid division by zero
             temp = row.get("temp", 25.0)
             humidity = row.get("humidity", 50.0)
+            traffic_density = row.get("traffic_density", 0.5)
+            distance_to_industry = row.get("distance_to_industry", 5.0)
             
             pm_ratio = pm25 / max(0.1, pm10)
             
-            if pm_ratio > 0.85 and temp < 18.0:
-                labels.append("biomass_burning")
-            elif pm_ratio > 0.65:
+            if distance_to_industry < 3.0 and pm10 > 150:
+                labels.append("industrial")
+            elif traffic_density > 0.75 and pm_ratio > 0.6:
                 labels.append("vehicular")
+            elif pm_ratio > 0.85 and temp < 18.0:
+                labels.append("biomass_burning")
             elif pm_ratio < 0.45 and humidity < 40.0:
                 labels.append("dust")
             else:
-                labels.append("industrial")
+                # Default fallback based on ratio
+                if pm_ratio > 0.65:
+                    labels.append("vehicular")
+                else:
+                    labels.append("industrial")
         return labels
         
     def train(self, X_train, y_train_noisy) -> None:
@@ -63,7 +71,9 @@ class SourceClassifier:
             features["humidity"],
             features["pressure"],
             features["wind_speed"],
-            features["pblh"]
+            features["pblh"],
+            features.get("traffic_density", 0.5),
+            features.get("distance_to_industry", 5.0)
         ]])
         
         # Calculate raw probabilities

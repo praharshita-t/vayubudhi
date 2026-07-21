@@ -1,9 +1,5 @@
-/**
- * Delhi NCT Revenue Districts — real boundary polygons from OpenStreetMap + IDW AQI.
- * Boundaries sourced from OSM via Overpass API (admin_level=5 within Delhi).
- * Simplified with Douglas-Peucker for performance.
- */
-import districtGeoData from './delhiDistrictsGeo.json';
+import hyderabadGeoData from './hyderabadDistrictsGeo.json';
+import guwahatiGeoData from './guwahatiDistrictsGeo.json';
 
 export interface District {
   id: string;
@@ -24,7 +20,6 @@ export interface District {
   pblh: number;
 }
 
-// ── Inverse-distance weighting to compute per-district values ──
 function idwForDistrict(centroid: [number, number], stations: any[]): Omit<District, 'id' | 'name' | 'polygon' | 'centroid'> {
   const [cLon, cLat] = centroid;
   let wSum = 0;
@@ -77,8 +72,21 @@ function idwForDistrict(centroid: [number, number], stations: any[]): Omit<Distr
   };
 }
 
-export function computeDelhiDistricts(stations: any[]): District[] {
-  return districtGeoData.map((d: any) => {
+export function computeHyderabadDistricts(stations: any[]): District[] {
+  return hyderabadGeoData.map((d: any) => {
+    const values = idwForDistrict(d.centroid as [number, number], stations);
+    return {
+      id: d.id,
+      name: d.name,
+      polygon: d.polygon as [number, number][],
+      centroid: d.centroid as [number, number],
+      ...values,
+    };
+  });
+}
+
+export function computeGuwahatiDistricts(stations: any[]): District[] {
+  return guwahatiGeoData.map((d: any) => {
     const values = idwForDistrict(d.centroid as [number, number], stations);
     return {
       id: d.id,

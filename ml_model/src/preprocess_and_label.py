@@ -44,6 +44,15 @@ def create_features(df):
     df = df.sort_values(by=['station_id', 'timestamp'])
     df['target_y_reg'] = df.groupby('station_id')['pm25'].shift(-24)
     
+    # Generate synthetic geospatial features for the attribution engine
+    # In production, this would come from a geospatial database or satellite imagery.
+    np.random.seed(42)
+    # Traffic density index (0.0 to 1.0) with some diurnal pattern (higher during day)
+    hour = pd.to_datetime(df['timestamp']).dt.hour
+    df['traffic_density'] = np.where((hour >= 8) & (hour <= 20), np.random.uniform(0.6, 1.0, len(df)), np.random.uniform(0.1, 0.5, len(df)))
+    # Distance to nearest industrial zone (in km)
+    df['distance_to_industry'] = np.random.uniform(1.0, 15.0, len(df))
+    
     df = df.dropna(subset=['target_y_reg'])
     return df
 
@@ -54,8 +63,8 @@ def create_training_data():
         
     df = create_features(df)
     
-    # Format X matrix: [pm25, pm10, temp, humidity, pressure, wind_speed, pblh]
-    feature_cols = ['pm25', 'pm10', 'temp', 'humidity', 'pressure', 'wind_speed', 'pblh']
+    # Format X matrix: [pm25, pm10, temp, humidity, pressure, wind_speed, pblh, traffic_density, distance_to_industry]
+    feature_cols = ['pm25', 'pm10', 'temp', 'humidity', 'pressure', 'wind_speed', 'pblh', 'traffic_density', 'distance_to_industry']
     X = df[feature_cols].values
     y_reg = df['target_y_reg'].values
     

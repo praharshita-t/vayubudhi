@@ -221,7 +221,21 @@ def get_city_data(city: str):
         city_df = historical_df[historical_df['city'] == dataset_city]
         
         if not city_df.empty:
-            for i, row in city_df.iterrows():
+            # Deduplicate by station name to ensure accurate, non-overlapping readings!
+            unique_stations = {}
+            for _, r in city_df.iterrows():
+                name = str(r.get('station', 'Unknown'))
+                try:
+                    aqi_val = float(r.get('aqi', 0.0))
+                    if pd.isna(aqi_val): aqi_val = 0.0
+                except:
+                    aqi_val = 0.0
+                if name not in unique_stations or aqi_val > float(unique_stations[name].get('aqi', 0.0)):
+                    unique_stations[name] = r
+                    
+            unique_rows = list(unique_stations.values())
+            
+            for i, row in enumerate(unique_rows):
                 try:
                     # Distribute the identical CSV coordinates across our spatial grid
                     grid_idx = i % len(lats)
@@ -241,7 +255,8 @@ def get_city_data(city: str):
                     o3 = float(row.get('o3', 30.0))
                     if pd.isna(o3): o3 = 30.0
                     
-                    temp = float(row.get('temp_c', 28.0))
+                    # Robust temperature fallback like the portable monitoring branch
+                    temp = float(row.get('temp_c', row.get('t', 28.0)))
                     if pd.isna(temp): temp = 28.0
                     humidity = float(row.get('humidity', 60.0))
                     if pd.isna(humidity): humidity = 60.0

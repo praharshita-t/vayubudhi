@@ -8,18 +8,24 @@ from typing import List, Dict, Any
 from app import schemas
 from app.ml_service import ml_service
 
-# Load the historical dataset for realistic peak pollution injection
-# __file__ is backend/app/routers/live.py
-# So we need to go up 3 levels to reach backend, then 1 more to reach root
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-DATASET_PATH = os.path.join(BASE_DIR, 'ml_model', 'data', 'dataset.csv')
+# URL for the live Google Sheet containing the dataset
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1myYlsoOTpXPPN9mKfZkEDrX_H5mlAiIPbM0HxA6L0OY/export?format=csv"
 
 historical_df = None
 try:
-    if os.path.exists(DATASET_PATH):
-        historical_df = pd.read_csv(DATASET_PATH)
+    print("Fetching live dataset from Google Sheets...")
+    historical_df = pd.read_csv(SHEET_URL)
+    print(f"Successfully loaded {len(historical_df)} rows from live dataset.")
 except Exception as e:
-    print(f"Failed to load dataset: {e}")
+    print(f"Failed to fetch live dataset from Google Sheets: {e}")
+    # Fallback to local if network fails
+    try:
+        BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        DATASET_PATH = os.path.join(BASE_DIR, 'ml_model', 'data', 'dataset.csv')
+        if os.path.exists(DATASET_PATH):
+            historical_df = pd.read_csv(DATASET_PATH)
+    except Exception as e2:
+        print(f"Failed local fallback: {e2}")
 
 router = APIRouter()
 
@@ -190,11 +196,12 @@ def get_city_data(city: str):
         return CityDataResponse(city=city, stations=[], center_aqi=0)
         
     bounds = CITY_BOUNDS[city]
+    stations = []
+    center_aqi = 0
+    total_aqi = 0
     
-    # Generate grid
-    lats = []
-    lons = []
-    
+    # Generate a spatial grid based on the city bounds
+    lats, lons = [], []
     curr_lat = bounds["lat_start"]
     while curr_lat <= bounds["lat_end"]:
         curr_lon = bounds["lon_start"]
@@ -203,91 +210,103 @@ def get_city_data(city: str):
             lons.append(round(curr_lon, 4))
             curr_lon += bounds["step"]
         curr_lat += bounds["step"]
-        
-    # Cap to max points to avoid URL too long
-    lats = lats[:25]
-    lons = lons[:25]
     
-    lat_str = ",".join(map(str, lats))
-    lon_str = ",".join(map(str, lons))
-    
-    aq_url = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat_str}&longitude={lon_str}&current=pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone"
-    weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat_str}&longitude={lon_str}&current=temperature_2m,relative_humidity_2m,surface_pressure,wind_speed_10m"
-    
-    stations = []
-    center_aqi = 0
-    try:
-        aq_res = requests.get(aq_url, timeout=10)
-        aq_data = aq_res.json()
+    # If dataset is loaded, use it to populate stations!
+    if historical_df is not None:
+        # Handle aliases used in the dataset
+        if city == "Delhi": dataset_city = "New Delhi"
+        elif city == "Bengaluru": dataset_city = "Bangalore"
+        else: dataset_city = city
+            
+        city_df = historical_df[historical_df['city'] == dataset_city]
         
-        weather_res = requests.get(weather_url, timeout=10)
-        weather_data = weather_res.json()
-        
-        if not isinstance(aq_data, list):
-            aq_data = [aq_data]
-        if not isinstance(weather_data, list):
-            weather_data = [weather_data]
-            
-        total_aqi = 0
-        for i, data in enumerate(aq_data):
-            current = data.get("current", {})
-            pm25 = current.get("pm2_5") or 35.0
-            pm10 = current.get("pm10") or (pm25 * 1.5)
-            no2 = current.get("nitrogen_dioxide") or 20.0
-            so2 = current.get("sulphur_dioxide") or 10.0
-            co = current.get("carbon_monoxide") or 1.0
-            o3 = current.get("ozone") or 30.0
-            
-            w_data = weather_data[i] if i < len(weather_data) else {}
-            w_curr = w_data.get("current", {})
-            temp = w_curr.get("temperature_2m", 28.0)
-            humidity = w_curr.get("relative_humidity_2m", 60.0)
-            pressure = w_curr.get("surface_pressure", 1008.0)
-            wind_speed = w_curr.get("wind_speed_10m", 2.0)
-            
-            # Use the ML model to predict AQI natively for this district
-            reading = schemas.SensorReading(
-                station_id=f"OM_{city[:3]}_{i}",
-                timestamp="now",
-                pm25=pm25,
-                pm10=pm10,
-                temp=temp,
-                humidity=humidity,
-                pressure=pressure,
-                wind_speed=wind_speed,
-                pblh=800.0
-            )
-            
-            forecast = ml_service.predict_forecast(reading)
-            ml_aqi = forecast.get("point", pm25_to_aqi(pm25))
+        if not city_df.empty:
+            for i, row in city_df.iterrows():
+                try:
+                    # Distribute the identical CSV coordinates across our spatial grid
+                    grid_idx = i % len(lats)
+                    lat = lats[grid_idx]
+                    lon = lons[grid_idx]
+                    
+                    pm25 = float(row.get('pm25', 35.0))
+                    if pd.isna(pm25): pm25 = 35.0
+                    pm10 = float(row.get('pm10', pm25 * 1.5))
+                    if pd.isna(pm10): pm10 = pm25 * 1.5
+                    no2 = float(row.get('no2', 20.0))
+                    if pd.isna(no2): no2 = 20.0
+                    so2 = float(row.get('so2', 10.0))
+                    if pd.isna(so2): so2 = 10.0
+                    co = float(row.get('co', 1.0))
+                    if pd.isna(co): co = 1.0
+                    o3 = float(row.get('o3', 30.0))
+                    if pd.isna(o3): o3 = 30.0
+                    
+                    temp = float(row.get('temp_c', 28.0))
+                    if pd.isna(temp): temp = 28.0
+                    humidity = float(row.get('humidity', 60.0))
+                    if pd.isna(humidity): humidity = 60.0
+                    pressure = float(row.get('pressure_mb', 1008.0))
+                    if pd.isna(pressure): pressure = 1008.0
+                    wind_speed = float(row.get('wind_kph', 7.2)) / 3.6  # convert kph to m/s
+                    if pd.isna(wind_speed): wind_speed = 2.0
+                    
+                    pblh = float(row.get('pblh', 800.0))
+                    if pd.isna(pblh): pblh = 800.0
+                    
+                    ml_aqi = pm25_to_aqi(pm25)
+                    total_aqi += ml_aqi
+                    
+                    stations.append(StationData(
+                        id=f"ST_{row.get('uid', i)}",
+                        name=str(row.get('station', f"{city} Station {i}")),
+                        lat=lat,
+                        lon=lon,
+                        pm25=pm25,
+                        pm10=pm10,
+                        no2=no2,
+                        so2=so2,
+                        co=co,
+                        o3=o3,
+                        temp=temp,
+                        humidity=humidity,
+                        pressure=pressure,
+                        wind_speed=wind_speed,
+                        pblh=pblh,
+                        aqi=round(ml_aqi),
+                        source="iot" if i % 5 == 0 else "caaqms",
+                        status="alert" if ml_aqi > 200 else "online"
+                    ))
+                except Exception as e:
+                    print(f"Skipping row {i} due to parsing error: {e}")
+                    
+    # If historical_df failed or city not in dataset, use basic fallback grid
+    if len(stations) == 0:
+        for i in range(min(len(lats), 25)):
+            ml_aqi = 50.0 + random.uniform(-10, 10)
             total_aqi += ml_aqi
-            
             stations.append(StationData(
                 id=f"OM_{city[:3]}_{i}",
                 name=f"{city} District {i+1}",
                 lat=lats[i],
                 lon=lons[i],
-                pm25=pm25,
-                pm10=pm10,
-                no2=no2,
-                so2=so2,
-                co=co,
-                o3=o3,
-                temp=temp,
-                humidity=humidity,
-                pressure=pressure,
-                wind_speed=wind_speed,
+                pm25=35.0,
+                pm10=45.0,
+                no2=20.0,
+                so2=10.0,
+                co=1.0,
+                o3=30.0,
+                temp=28.0,
+                humidity=60.0,
+                pressure=1008.0,
+                wind_speed=2.0,
                 pblh=800.0,
                 aqi=round(ml_aqi),
-                source="iot" if i % 5 == 0 else "caaqms",
-                status="alert" if ml_aqi > 200 else "online"
+                source="caaqms",
+                status="online"
             ))
             
-        if len(stations) > 0:
-            center_aqi = total_aqi / len(stations)
-            
-    except Exception as e:
-        print(f"Failed to fetch bulk city data: {e}")
+    if len(stations) > 0:
+        center_aqi = total_aqi / len(stations)
         
     return CityDataResponse(
         city=city,

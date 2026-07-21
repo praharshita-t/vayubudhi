@@ -30,39 +30,62 @@ class MLService:
             print(f"Error loading models: {e}")
 
     def _prepare_features(self, reading):
-        return {
-            'pm25': reading.pm25,
-            'pm10': reading.pm10,
-            'temp': reading.temp,
-            'humidity': reading.humidity,
-            'pressure': reading.pressure,
-            'wind_speed': reading.wind_speed,
-            'pblh': reading.pblh,
-            'traffic_density': getattr(reading, 'traffic_density', 0.5),
-            'distance_to_industry': getattr(reading, 'distance_to_industry', 5.0)
+        # Must construct a Pandas DataFrame with exactly these 7 columns in this specific order
+        data = {
+            'pm25': [reading.pm25],
+            'pm10': [reading.pm10],
+            'temp': [reading.temp],
+            'humidity': [reading.humidity],
+            'pressure': [reading.pressure],
+            'wind_speed': [reading.wind_speed],
+            'pblh': [reading.pblh]
         }
+        return pd.DataFrame(data)
 
     def predict_forecast(self, reading):
         if not self.forecaster:
-            return {"horizon_h": 24, "point": 0, "interval": [0,0], "ventilation_index": 0}
+            return {"horizon_h": 24, "point": 0.0, "interval": [0.0, 0.0], "ventilation_index": 0.0}
         
-        features = self._prepare_features(reading)
+        df = self._prepare_features(reading)
         
         try:
-            return self.forecaster.predict(features)
+            # Use the base estimator directly
+            point = self.forecaster.predict(df)[0]
+            vent_idx = reading.pblh * reading.wind_speed
+            # Mock 90% conformal interval around the point prediction
+            return {
+                "horizon_h": 24,
+                "point": float(point),
+                "interval": [float(point * 0.85), float(point * 1.15)],
+                "ventilation_index": float(vent_idx)
+            }
         except Exception as e:
             print(f"Forecast error: {e}")
-            return {"horizon_h": 24, "point": 0, "interval": [0,0], "ventilation_index": features['pblh'] * features['wind_speed']}
+            return {"horizon_h": 24, "point": 0.0, "interval": [0.0, 0.0], "ventilation_index": float(reading.pblh * reading.wind_speed)}
 
     def predict_attribution(self, reading):
         if not self.classifier:
             return {"prediction_set": [], "set_size": 0, "confidence": 0.90, "probabilities": {}}
             
-        features = self._prepare_features(reading)
+        df = self._prepare_features(reading)
         
         try:
-            return self.classifier.predict(features)
+            # Predict probabilities using the base estimator
+            probs = self.classifier.predict_proba(df)[0]
+            classes = self.classifier.classes_
+            prob_dict = {str(classes[i]): float(probs[i]) for i in range(len(classes))}
             
+            # Construct a mock conformal set (all classes with > 10% probability)
+            prediction_set = [str(classes[i]) for i in range(len(classes)) if probs[i] > 0.1]
+            if not prediction_set:
+                prediction_set = [str(classes[np.argmax(probs)])]
+            
+            return {
+                "prediction_set": prediction_set,
+                "set_size": len(prediction_set),
+                "confidence": 0.90,
+                "probabilities": prob_dict
+            }
         except Exception as e:
             print(f"Attribution error: {e}")
             return {"prediction_set": [], "set_size": 0, "confidence": 0.90, "probabilities": {}}

@@ -19,6 +19,7 @@ class AttributionOutput(BaseModel):
     set_size: int = Field(..., examples=[1])
     confidence: float = Field(..., examples=[0.90])
     probabilities: Dict[str, float] = Field(..., examples=[{"biomass_burning": 0.82, "vehicular": 0.11}])
+    geospatial_evidence: Dict[str, str] = Field(default=None, description="Correlated geospatial data from TomTom, NASA FIRMS, etc.")
 
 # Contract 3: ML -> Backend/Frontend (Forecast)
 class ForecastOutput(BaseModel):
@@ -27,7 +28,18 @@ class ForecastOutput(BaseModel):
     interval: List[float] = Field(..., examples=[[180.0, 245.0]])
     ventilation_index: float = Field(..., examples=[850.0])
 
-# Contract 4: Backend -> Frontend (Optimizer)
+# Contract 4: Dispersion Model
+class DispersionPoint(BaseModel):
+    lat: float
+    lon: float
+    aqi: float
+
+class DispersionOutput(BaseModel):
+    center_lat: float
+    center_lon: float
+    grid: List[DispersionPoint]
+
+# Contract 5: Backend -> Frontend (Optimizer)
 class RouteStop(BaseModel):
     source_id: str = Field(..., examples=["s7"])
     lat: float = Field(..., examples=[28.6])

@@ -1,10 +1,25 @@
 import requests
 import random
+import os
+import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Dict, Any
 from app import schemas
 from app.ml_service import ml_service
+
+# Load the historical dataset for realistic peak pollution injection
+# __file__ is backend/app/routers/live.py
+# So we need to go up 3 levels to reach backend, then 1 more to reach root
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+DATASET_PATH = os.path.join(BASE_DIR, 'ml_model', 'data', 'dataset.csv')
+
+historical_df = None
+try:
+    if os.path.exists(DATASET_PATH):
+        historical_df = pd.read_csv(DATASET_PATH)
+except Exception as e:
+    print(f"Failed to load dataset: {e}")
 
 router = APIRouter()
 
@@ -147,6 +162,11 @@ class StationData(BaseModel):
     so2: float
     co: float
     o3: float
+    temp: float = 30.0
+    humidity: float = 50.0
+    pressure: float = 1010.0
+    wind_speed: float = 2.0
+    pblh: float = 800.0
     aqi: float
     source: str
     status: str
@@ -159,7 +179,9 @@ class CityDataResponse(BaseModel):
 CITY_BOUNDS = {
     "Delhi": {"lat_start": 28.5, "lat_end": 28.75, "lon_start": 76.95, "lon_end": 77.3, "step": 0.08},
     "Mumbai": {"lat_start": 18.9, "lat_end": 19.15, "lon_start": 72.8, "lon_end": 72.95, "step": 0.08},
-    "Bengaluru": {"lat_start": 12.85, "lat_end": 13.1, "lon_start": 77.5, "lon_end": 77.7, "step": 0.08}
+    "Bengaluru": {"lat_start": 12.85, "lat_end": 13.1, "lon_start": 77.5, "lon_end": 77.7, "step": 0.08},
+    "Hyderabad": {"lat_start": 17.3, "lat_end": 17.55, "lon_start": 78.3, "lon_end": 78.6, "step": 0.08},
+    "Guwahati": {"lat_start": 26.05, "lat_end": 26.3, "lon_start": 91.6, "lon_end": 91.85, "step": 0.08}
 }
 
 @router.get("/city-data", response_model=CityDataResponse)
@@ -190,6 +212,7 @@ def get_city_data(city: str):
     lon_str = ",".join(map(str, lons))
     
     aq_url = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat_str}&longitude={lon_str}&current=pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone"
+    weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat_str}&longitude={lon_str}&current=temperature_2m,relative_humidity_2m,surface_pressure,wind_speed_10m"
     
     stations = []
     center_aqi = 0
@@ -197,8 +220,13 @@ def get_city_data(city: str):
         aq_res = requests.get(aq_url, timeout=10)
         aq_data = aq_res.json()
         
+        weather_res = requests.get(weather_url, timeout=10)
+        weather_data = weather_res.json()
+        
         if not isinstance(aq_data, list):
             aq_data = [aq_data]
+        if not isinstance(weather_data, list):
+            weather_data = [weather_data]
             
         total_aqi = 0
         for i, data in enumerate(aq_data):
@@ -210,12 +238,33 @@ def get_city_data(city: str):
             co = current.get("carbon_monoxide") or 1.0
             o3 = current.get("ozone") or 30.0
             
-            aqi = pm25_to_aqi(pm25)
-            total_aqi += aqi
+            w_data = weather_data[i] if i < len(weather_data) else {}
+            w_curr = w_data.get("current", {})
+            temp = w_curr.get("temperature_2m", 28.0)
+            humidity = w_curr.get("relative_humidity_2m", 60.0)
+            pressure = w_curr.get("surface_pressure", 1008.0)
+            wind_speed = w_curr.get("wind_speed_10m", 2.0)
+            
+            # Use the ML model to predict AQI natively for this district
+            reading = schemas.SensorReading(
+                station_id=f"OM_{city[:3]}_{i}",
+                timestamp="now",
+                pm25=pm25,
+                pm10=pm10,
+                temp=temp,
+                humidity=humidity,
+                pressure=pressure,
+                wind_speed=wind_speed,
+                pblh=800.0
+            )
+            
+            forecast = ml_service.predict_forecast(reading)
+            ml_aqi = forecast.get("point", pm25_to_aqi(pm25))
+            total_aqi += ml_aqi
             
             stations.append(StationData(
                 id=f"OM_{city[:3]}_{i}",
-                name=f"OM Node {i+1}",
+                name=f"{city} District {i+1}",
                 lat=lats[i],
                 lon=lons[i],
                 pm25=pm25,
@@ -224,9 +273,14 @@ def get_city_data(city: str):
                 so2=so2,
                 co=co,
                 o3=o3,
-                aqi=round(aqi),
+                temp=temp,
+                humidity=humidity,
+                pressure=pressure,
+                wind_speed=wind_speed,
+                pblh=800.0,
+                aqi=round(ml_aqi),
                 source="iot" if i % 5 == 0 else "caaqms",
-                status="alert" if aqi > 200 else "online"
+                status="alert" if ml_aqi > 200 else "online"
             ))
             
         if len(stations) > 0:

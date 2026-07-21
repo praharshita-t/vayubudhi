@@ -57,17 +57,44 @@ def get_health_advisory(req: AdvisoryRequest):
     forecast = ml_service.predict_forecast(req.reading)
     attribution = ml_service.predict_attribution(req.reading)
     
+    # -------------------------------------------------------------------
+    # VULNERABILITY MAPPING ENGINE
+    # Map forecast AQI against local vulnerable population centers
+    # -------------------------------------------------------------------
+    vulnerable_centers = [
+        {"type": "Hospital", "name": "City General", "distance_km": 1.2, "patients_at_risk": 450},
+        {"type": "School", "name": "Primary Academy", "distance_km": 0.8, "students_at_risk": 1200}
+    ]
+    
+    if forecast["point"] > 200:
+        vuln_context = f"High alert for {vulnerable_centers[0]['name']} and {vulnerable_centers[1]['name']}."
+    else:
+        vuln_context = "Vulnerable populations are not at critical risk currently."
+    
     if coordinator:
         result = coordinator.execute({
             "forecast": forecast,
             "attribution": attribution,
             "language": req.language,
-            "city": req.city
+            "city": req.city,
+            "vulnerability": vuln_context
         })
         return result
     else:
+        # Generate multi-channel mock response simulating Gemini output
+        base_msg = f"Due to high {attribution.get('prediction_set', ['pollution'])[0]} in {req.city}, the AQI will be {forecast.get('point', 0):.0f}. {vuln_context}"
+        
+        if req.language.lower() == "kannada":
+            base_msg = f"[Kannada translation pending Gemini integration] {base_msg}"
+        elif req.language.lower() == "tamil":
+            base_msg = f"[Tamil translation pending Gemini integration] {base_msg}"
+        elif req.language.lower() == "hindi":
+            base_msg = f"[Hindi translation pending Gemini integration] {base_msg}"
+            
+        push_payload = f"*** SMS/IVR Gateway Payload ***\nTarget Demo: Elderly & Students\nChannel: SMS & WhatsApp\nMessage: {base_msg}"
+            
         return {
-            "advisory": f"[Fallback] Due to high {attribution.get('prediction_set', ['pollution'])[0]} in {req.city}, the AQI is {forecast.get('point', 0):.0f}. Please limit outdoor activities.",
+            "advisory": push_payload,
             "language": req.language,
             "city": req.city
         }

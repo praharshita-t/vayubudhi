@@ -2,7 +2,8 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { getAqiCategory } from '@/utils/aqi';
 import { Station } from '@/app/page';
-import { delhiDistricts, District } from '@/data/delhiDistricts';
+import { computeDelhiDistricts, District } from '@/data/delhiDistricts';
+import { computeHyderabadDistricts, computeGuwahatiDistricts } from '@/data/otherDistricts';
 
 export interface HexDataPoint {
   lat: number;
@@ -15,12 +16,14 @@ export interface HexDataPoint {
 import DeckGL from '@deck.gl/react';
 import Map from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { ColumnLayer, PolygonLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers';
+import { ColumnLayer, PolygonLayer, ScatterplotLayer, TextLayer, BitmapLayer } from '@deck.gl/layers';
 
 const CITY_CENTERS: Record<string, {longitude: number, latitude: number, zoom: number}> = {
   'Delhi': { longitude: 77.17, latitude: 28.62, zoom: 11 },
   'Mumbai': { longitude: 72.85, latitude: 19.08, zoom: 10.5 },
   'Bengaluru': { longitude: 77.59, latitude: 12.97, zoom: 11 },
+  'Hyderabad': { longitude: 78.48, latitude: 17.38, zoom: 11 },
+  'Guwahati': { longitude: 91.73, latitude: 26.14, zoom: 11 },
 };
 
 const getInitialViewState = (city: string, userCoords?: { lat: number, lon: number } | null) => {
@@ -64,19 +67,27 @@ export default function CityMap({
   city = 'Delhi', 
   userCoords, 
   liveData, 
-  liveLoading 
+  cityData,
+  liveLoading,
+  onHover,
+  onClick,
+  selectedDistrictId
 }: { 
   alertStation?: Station | null, 
   city?: string, 
   userCoords?: { lat: number, lon: number } | null, 
   liveData?: any, 
   cityData?: any,
-  liveLoading?: boolean 
+  liveLoading?: boolean,
+  onHover?: (data: any) => void,
+  onClick?: (data: any) => void,
+  selectedDistrictId?: string | null
 }) {
   const [hoveredHex, setHoveredHex] = useState<HexDataPoint | null>(null);
   const [hoveredDistrict, setHoveredDistrict] = useState<District | null>(null);
   const [hoveredStation, setHoveredStation] = useState<Station | null>(null);
   const [viewState, setViewState] = useState(getInitialViewState(city, userCoords));
+  const [showSatellite, setShowSatellite] = useState(false);
 
   const stations = useMemo(() => {
     if (city === 'My Location' && liveData) {
@@ -96,11 +107,17 @@ export default function CityMap({
     return cityData ? cityData.stations : [];
   }, [city, liveData, cityData, userCoords]);
 
+  const dynamicDistricts = useMemo(() => {
+    if (city === 'Delhi') return computeDelhiDistricts(stations);
+    if (city === 'Hyderabad') return computeHyderabadDistricts(stations);
+    if (city === 'Guwahati') return computeGuwahatiDistricts(stations);
+    return [];
+  }, [city, stations]);
+
   const hexGrid = useMemo(() => {
     if (city === 'My Location' && liveData) {
       return liveData.hex_grid;
     }
-    // We can use the stations from our grid-like cityData as the hexGrid too!
     return cityData ? cityData.stations : [];
   }, [city, liveData, cityData]);
 
@@ -128,10 +145,20 @@ export default function CityMap({
 
   // Build deck.gl layers
   const layers = useMemo(() => {
-    // Layer 1: 3D Hexagonal Columns (the main visual)
+    // Layer 0: Sentinel-5P NO2 GeoTIFF
+    const satelliteLayer = new BitmapLayer({
+      id: 'sentinel-no2-layer',
+      bounds: [76.84, 28.40, 77.35, 28.88], // Delhi bounding box
+      image: '/sentinel_no2.png',
+      transparentColor: [0, 0, 0, 0],
+      opacity: showSatellite && city === 'Delhi' ? 0.7 : 0,
+      transitions: { opacity: 500 }
+    });
+
+    // Layer 1: 3D Hexagonal Columns (fallback for cities without districts)
     const columnLayer = new ColumnLayer<HexDataPoint>({
       id: 'aqi-columns',
-      data: city !== 'Delhi' ? hexGrid : [],
+      data: dynamicDistricts.length === 0 ? hexGrid : [],
       diskResolution: 6,           // 6 sides = hexagon
       radius: 900,                 // hex radius in meters
       extruded: true,
@@ -156,7 +183,7 @@ export default function CityMap({
     // Layer 1: District boundary polygons
     const districtLayer = new PolygonLayer<District>({
       id: 'district-polygons',
-      data: city === 'Delhi' ? delhiDistricts : [],
+      data: dynamicDistricts,
       pickable: true,
       stroked: true,
       filled: true,
@@ -165,20 +192,47 @@ export default function CityMap({
       lineWidthMinPixels: 1.5,
       getPolygon: (d: District) => d.polygon,
       getFillColor: (d: District) => {
-        if (hoveredDistrict && hoveredDistrict.id === d.id) {
-          // Brighter on hover
-          return aqiToColor(d.aqi, 180);
+        const isSelected = selectedDistrictId === d.id;
+        const isHovered = hoveredDistrict && hoveredDistrict.id === d.id;
+        
+        // Dim unselected districts if a selection exists
+        let alpha = 100;
+        if (selectedDistrictId && !isSelected) {
+          alpha = 20; // dim drastically
+        } else if (isHovered || isSelected) {
+          alpha = 180; // bright for hover or selected
         }
-        return aqiToColor(d.aqi, 100);
+        
+        return aqiToColor(d.aqi, alpha);
       },
-      getLineColor: [200, 210, 220, 100],
-      getLineWidth: 2,
+      getLineColor: (d: District) => {
+        const isSelected = selectedDistrictId === d.id;
+        return isSelected ? [255, 255, 255, 200] : [200, 210, 220, 100];
+      },
+      getLineWidth: (d: District) => (selectedDistrictId === d.id ? 4 : 2),
       updateTriggers: {
-        getFillColor: [hoveredDistrict?.id],
+        getFillColor: [hoveredDistrict?.id, selectedDistrictId],
+        getLineColor: [selectedDistrictId],
+        getLineWidth: [selectedDistrictId],
       },
       onHover: (info: any) => setHoveredDistrict(info.object || null),
+      onClick: (info: any) => {
+        if (info.object && onClick) {
+          onClick({ ...info.object, type: 'District' });
+          setViewState((prev: any) => ({
+            ...prev,
+            longitude: info.object.centroid[0],
+            latitude: info.object.centroid[1],
+            zoom: 12.5,
+            pitch: 30,
+            transitionDuration: 1200,
+          }));
+        } else if (!info.object && onClick) {
+          onClick(null); // Clear selection when clicking off
+        }
+      },
       transitions: {
-        getFillColor: { duration: 200 },
+        getFillColor: { duration: 400 },
       },
     });
 
@@ -201,7 +255,32 @@ export default function CityMap({
       getRadius: (d: Station) => d.source === 'iot' ? 500 : 300,
     });
 
-    // Layer 3: Station core dots
+    // Helper to determine dominant pollution cause for distinct colored dots
+    const getCauseColor = (d: Station): [number, number, number, number] => {
+      if (d.source === 'iot') return [57, 210, 192, 255]; // IoT sensors stay cyan
+      
+      // Calculate a normalized score for each cause based on typical unhealthy thresholds
+      const trafficScore = (d.no2 / 80) + (d.co / 2.0); // NO2 and CO
+      const industryScore = (d.so2 / 40) + (d.pm25 / 60); // SO2 and fine PM
+      const dustScore = (d.pm10 / 100); // Coarse PM
+      
+      const maxScore = Math.max(trafficScore, industryScore, dustScore);
+      
+      if (maxScore < 0.3) {
+        // Very clean air, default to AQI color (green)
+        return aqiToColor(d.aqi, 255);
+      }
+      
+      if (maxScore === trafficScore) {
+        return [239, 68, 68, 255]; // Traffic -> Red
+      } else if (maxScore === industryScore) {
+        return [168, 85, 247, 255]; // Industry -> Purple
+      } else {
+        return [234, 179, 8, 255]; // Dust -> Yellow
+      }
+    };
+
+    // Layer 3: Station core dots (Distinct colors for pollution causes)
     const stationDotLayer = new ScatterplotLayer<Station>({
       id: 'station-dots',
       data: stations,
@@ -209,16 +288,13 @@ export default function CityMap({
       opacity: 1,
       stroked: true,
       filled: true,
-      radiusMinPixels: 4,
-      radiusMaxPixels: 9,
-      lineWidthMinPixels: 1,
+      radiusMinPixels: 5,
+      radiusMaxPixels: 10,
+      lineWidthMinPixels: 2,
       getPosition: (d: Station) => [d.lon, d.lat],
-      getFillColor: (d: Station) => {
-        if (d.source === 'iot') return [57, 210, 192, 255];
-        return aqiToColor(d.aqi, 220);
-      },
-      getLineColor: [255, 255, 255, 100] as [number, number, number, number],
-      getRadius: (d: Station) => d.source === 'iot' ? 300 : 180,
+      getFillColor: getCauseColor,
+      getLineColor: [255, 255, 255, 120] as [number, number, number, number],
+      getRadius: (d: Station) => d.source === 'iot' ? 350 : 200,
       onHover: (info: any) => setHoveredStation(info.object || null),
     });
 
@@ -262,12 +338,12 @@ export default function CityMap({
       );
     }
 
-    if (city === 'Delhi') {
-      return [districtLayer, stationGlowLayer, stationDotLayer, labelLayer, ...alertLayers];
+    if (dynamicDistricts.length > 0) {
+      return [satelliteLayer, districtLayer, stationGlowLayer, stationDotLayer, labelLayer, ...alertLayers];
     } else {
-      return [columnLayer, stationGlowLayer, stationDotLayer, labelLayer, ...alertLayers];
+      return [satelliteLayer, columnLayer, stationGlowLayer, stationDotLayer, labelLayer, ...alertLayers];
     }
-  }, [alertStation, stations, hexGrid, city, hoveredDistrict]);
+  }, [alertStation, stations, hexGrid, city, hoveredDistrict, dynamicDistricts, showSatellite]);
 
   const onViewStateChange = useCallback(({ viewState: vs }: any) => {
     setViewState(vs);
@@ -284,6 +360,11 @@ export default function CityMap({
         so2: hoveredDistrict.so2,
         co: hoveredDistrict.co,
         o3: hoveredDistrict.o3,
+        temp: hoveredDistrict.temp,
+        humidity: hoveredDistrict.humidity,
+        pressure: hoveredDistrict.pressure,
+        wind_speed: hoveredDistrict.wind_speed,
+        pblh: hoveredDistrict.pblh,
         type: 'District',
       }
     : hoveredStation
@@ -296,11 +377,22 @@ export default function CityMap({
           so2: hoveredStation.so2,
           co: hoveredStation.co,
           o3: hoveredStation.o3,
+          temp: hoveredStation.temp,
+          humidity: hoveredStation.humidity,
+          pressure: hoveredStation.pressure,
+          wind_speed: hoveredStation.wind_speed,
+          pblh: hoveredStation.pblh,
           type: hoveredStation.source === 'iot' ? 'IoT Sensor' : 'CAAQMS Station',
         }
       : null;
 
   const tooltipCat = tooltipData ? getAqiCategory(tooltipData.aqi) : null;
+
+  React.useEffect(() => {
+    if (onHover) {
+      onHover(tooltipData);
+    }
+  }, [tooltipData, onHover]);
 
   return (
     <div className="map-container" style={{ position: 'relative', background: '#080c14' }}>
@@ -317,8 +409,21 @@ export default function CityMap({
         />
       </DeckGL>
 
-      {/* Overlay Stats */}
+      {/* Overlay Stats & Satellite Toggle */}
       <div className="map-overlay-stats">
+        {city === 'Delhi' && (
+          <button 
+            className={`map-stat-chip ${showSatellite ? 'active' : ''}`}
+            onClick={() => setShowSatellite(!showSatellite)}
+            style={{ 
+              cursor: 'pointer', 
+              border: showSatellite ? '1px solid var(--accent-cyan)' : '1px solid var(--border-primary)',
+              background: showSatellite ? 'rgba(57,210,192,0.1)' : 'rgba(13,17,23,0.88)'
+            }}
+          >
+            Sentinel-5P NO₂: <span className="chip-value" style={{ color: showSatellite ? 'var(--accent-cyan)' : 'inherit' }}>{showSatellite ? 'ON' : 'OFF'}</span>
+          </button>
+        )}
         <div className="map-stat-chip">
           Stations Online: <span className="chip-value">{stations.filter(s => s.status !== 'offline').length}</span>
         </div>
@@ -326,8 +431,8 @@ export default function CityMap({
           Alerts Active: <span className="chip-value" style={{ color: 'var(--accent-red)' }}>{stations.filter(s => s.status === 'alert').length}</span>
         </div>
         <div className="map-stat-chip">
-          {city === 'Delhi' ? (
-            <>Districts: <span className="chip-value" style={{ color: 'var(--accent-cyan)' }}>{delhiDistricts.length}</span></>
+          {dynamicDistricts.length > 0 ? (
+            <>Districts: <span className="chip-value" style={{ color: 'var(--accent-cyan)' }}>{dynamicDistricts.length}</span></>
           ) : (
             <>Hex Cells: <span className="chip-value" style={{ color: 'var(--accent-cyan)' }}>{hexGrid.length}</span></>
           )}
@@ -356,12 +461,12 @@ export default function CityMap({
         </div>
       </div>
 
-      {/* Map Legend */}
+      {/* Map Legend for Station Dots */}
       <div className="map-legend">
-        <div className="legend-item"><div className="legend-dot" style={{ background: '#22c55e' }} />Good</div>
-        <div className="legend-item"><div className="legend-dot" style={{ background: '#f59e0b' }} />Moderate</div>
-        <div className="legend-item"><div className="legend-dot" style={{ background: '#ef4444' }} />Severe</div>
-        <div className="legend-item"><div className="legend-dot" style={{ background: 'var(--accent-cyan)', boxShadow: '0 0 6px var(--accent-cyan)' }} />IoT</div>
+        <div className="legend-item"><div className="legend-dot" style={{ background: '#ef4444' }} />Traffic (NO2)</div>
+        <div className="legend-item"><div className="legend-dot" style={{ background: '#a855f7' }} />Industry (SO2)</div>
+        <div className="legend-item"><div className="legend-dot" style={{ background: '#eab308' }} />Dust (PM10)</div>
+        <div className="legend-item"><div className="legend-dot" style={{ background: 'var(--accent-cyan)', boxShadow: '0 0 6px var(--accent-cyan)' }} />IoT Sensor</div>
       </div>
 
       {/* Hover tooltip — detailed district/station info */}

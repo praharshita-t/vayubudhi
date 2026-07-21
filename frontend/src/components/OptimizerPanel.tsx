@@ -67,7 +67,7 @@ export default function OptimizerPanel({ city, cityData, liveData }: { city?: st
       .finally(() => setLoading(false));
   }, [city, cityData, liveData]);
 
-  const processedLiveRoute = liveRoute ? {
+  const processedLiveRoute = (liveRoute && liveRoute.stops) ? {
     route_id: liveRoute.route_id,
     vehicle_type: 'inspector' as const,
     vehicle_label: 'Live Optimized Inspector Route (OR-Tools)',

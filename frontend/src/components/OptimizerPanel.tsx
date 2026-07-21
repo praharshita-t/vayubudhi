@@ -28,7 +28,7 @@ export default function OptimizerPanel({ city, cityData, liveData }: { city?: st
         stations: [{
           lat: baseLat,
           lon: baseLon,
-          aqi: liveData.forecast.point,
+          aqi: liveData.forecast.points[0],
           name: "My Location"
         }]
       };

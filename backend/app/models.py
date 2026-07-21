@@ -25,14 +25,14 @@ class SensorReading(Base):
 
 class Forecast(Base):
     """
-    Model for 24h point and conformal interval forecast values (Contract 3).
+    Model for 3-day point and conformal interval forecast values (Contract 3).
     """
     __tablename__ = "forecasts"
 
     id = Column(Integer, primary_key=True, index=True)
     horizon_h = Column(Integer, nullable=False)
-    point = Column(Float, nullable=False)
-    interval = Column(JSON, nullable=False)  # Stores List[float], e.g., [180.0, 245.0]
+    points = Column(JSON, nullable=False)  # Stores List[float]
+    intervals = Column(JSON, nullable=False)  # Stores List[List[float]]
     ventilation_index = Column(Float, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 

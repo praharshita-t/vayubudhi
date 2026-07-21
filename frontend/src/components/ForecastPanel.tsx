@@ -76,19 +76,26 @@ export default function ForecastPanel({ city = 'Delhi', userCoords, liveData, ci
     }
 
     const stations = cityData ? cityData.stations : [];
-    const iotSensor = stations.find((s: any) => s.source === 'iot') || stations[0];
-    if (!iotSensor) return;
+    // If hovering over a location, use its data! Otherwise fallback to an IoT sensor or the first station.
+    let targetSensor = hoveredLocation;
+    
+    // Fallback if not hovering, or if hovered location doesn't have the required ML telemetry
+    if (!targetSensor || targetSensor.pm25 === undefined) {
+      targetSensor = stations.find((s: any) => s.source === 'iot') || stations[0];
+    }
+    
+    if (!targetSensor) return;
 
     const payload = {
-      station_id: iotSensor.id,
+      station_id: targetSensor.id || 'Unknown',
       timestamp: new Date().toISOString(),
-      pm25: iotSensor.pm25,
-      pm10: iotSensor.pm25 * 1.5,
-      temp: 32.5,
-      humidity: 55.0,
-      pressure: 1008.2,
-      wind_speed: 2.5,
-      pblh: 850.0
+      pm25: targetSensor.pm25,
+      pm10: targetSensor.pm10 || (targetSensor.pm25 * 1.5),
+      temp: targetSensor.temp || 32.5,
+      humidity: targetSensor.humidity || 55.0,
+      pressure: targetSensor.pressure || 1008.2,
+      wind_speed: targetSensor.wind_speed || 2.5,
+      pblh: targetSensor.pblh || 850.0
     };
 
     fetch('http://127.0.0.1:8000/api/forecast', {
@@ -98,7 +105,7 @@ export default function ForecastPanel({ city = 'Delhi', userCoords, liveData, ci
     })
       .then(res => res.json())
       .then(result => {
-        if (result && result.horizon_h === 24) {
+        if (result && result.horizon_h === 72) {
           setLiveForecast(result);
         }
       })
@@ -119,14 +126,14 @@ export default function ForecastPanel({ city = 'Delhi', userCoords, liveData, ci
         setLiveConnection(false);
       });
 
-  }, [city, liveData, cityData]);
+  }, [city, liveData, cityData, hoveredLocation]);
 
   // Reactive scaling logic based on hover
   useEffect(() => {
     if (!liveForecast) return;
     
     // Anchor AQI is either the hovered location's ML AQI, or the city average ML AQI
-    const anchorAqi = hoveredLocation ? hoveredLocation.aqi : liveForecast.point;
+    const anchorAqi = hoveredLocation ? hoveredLocation.aqi : liveForecast.points[0];
     const viAnchor = liveForecast.ventilation_index;
 
     // Retrieve weather parameters from hovered location, or fallback to defaults
@@ -136,20 +143,50 @@ export default function ForecastPanel({ city = 'Delhi', userCoords, liveData, ci
     // Generate a mathematically unique curve shape based on this district's actual physics
     const districtBaseCurve = generateForecast(t, ws);
     
-    const baseTargetIndex = districtBaseCurve.findIndex(p => p.hour === 24);
-    if (baseTargetIndex !== -1) {
-       const basePoint = districtBaseCurve[baseTargetIndex].point;
-       const ratio = basePoint > 0 ? anchorAqi / basePoint : 1;
-       const viRatio = districtBaseCurve[baseTargetIndex].vi > 0 ? viAnchor / districtBaseCurve[baseTargetIndex].vi : 1;
-       
-       setData(districtBaseCurve.map(p => ({
-          ...p,
-          point: Math.max(0, Math.round(p.point * ratio)),
-          lower: Math.max(0, Math.round(p.lower * ratio)),
-          upper: Math.max(0, Math.round(p.upper * ratio)),
-          vi: Math.max(0, Math.round(p.vi * viRatio))
-       })));
-    }
+    const basePoint0 = districtBaseCurve[0].point;
+    const basePoint24 = districtBaseCurve.find(p => p.hour === 24)?.point || basePoint0;
+    const basePoint48 = districtBaseCurve.find(p => p.hour === 48)?.point || basePoint0;
+    const basePoint72 = districtBaseCurve.find(p => p.hour === 72)?.point || basePoint0;
+
+    // Use the 3-day ML trajectory points
+    const pts = liveForecast.points || [50, 50, 50];
+    const cityLiveAqi = (liveForecast as any)._cityLiveAqi || pts[0]; 
+    const spatialMultiplier = hoveredLocation ? hoveredLocation.aqi / cityLiveAqi : 1;
+    
+    const liveAqi = hoveredLocation ? hoveredLocation.aqi : cityLiveAqi;
+    const target24 = pts[0] * spatialMultiplier;
+    const target48 = (pts[1] || pts[0]) * spatialMultiplier;
+    const target72 = (pts[2] || pts[0]) * spatialMultiplier;
+
+    const ratio0 = basePoint0 > 0 ? liveAqi / basePoint0 : 1;
+    const ratio24 = basePoint24 > 0 ? target24 / basePoint24 : 1;
+    const ratio48 = basePoint48 > 0 ? target48 / basePoint48 : 1;
+    const ratio72 = basePoint72 > 0 ? target72 / basePoint72 : 1;
+
+    const basePoint24_vi = districtBaseCurve.find(p => p.hour === 24)?.vi || 1;
+    const viRatio = basePoint24_vi > 0 ? viAnchor / basePoint24_vi : 1;
+
+    setData(districtBaseCurve.map(p => {
+        let finalRatio = 1;
+        if (p.hour <= 24) {
+            const blend = p.hour / 24;
+            finalRatio = ratio0 * (1 - blend) + ratio24 * blend;
+        } else if (p.hour <= 48) {
+            const blend = (p.hour - 24) / 24;
+            finalRatio = ratio24 * (1 - blend) + ratio48 * blend;
+        } else {
+            const blend = Math.min(1, (p.hour - 48) / 24);
+            finalRatio = ratio48 * (1 - blend) + ratio72 * blend;
+        }
+
+        return {
+            ...p,
+            point: Math.max(0, Math.round(p.point * finalRatio)),
+            lower: Math.max(0, Math.round(p.lower * finalRatio)),
+            upper: Math.max(0, Math.round(p.upper * finalRatio)),
+            vi: Math.max(0, Math.round(p.vi * viRatio))
+        };
+    }));
   }, [hoveredLocation, liveForecast]);
 
   const currentVI = data[0]?.vi ?? 0;
@@ -174,7 +211,7 @@ export default function ForecastPanel({ city = 'Delhi', userCoords, liveData, ci
             <div className="panel-badge badge-green">Active</div>
           </div>
           <div style={{ fontSize: '0.72rem', display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6, color: 'var(--text-normal)' }}>
-            <div><strong>Forecast (XGBoost + MAPIE):</strong> 24h AQI Point = {liveForecast.point.toFixed(1)} | Conformal Interval = [{liveForecast.interval[0].toFixed(1)}, {liveForecast.interval[1].toFixed(1)}]</div>
+            <div><strong>Forecast (XGBoost + MAPIE):</strong> 24h AQI Point = {liveForecast.points[0].toFixed(1)} | Conformal Interval = [{liveForecast.intervals[0][0].toFixed(1)}, {liveForecast.intervals[0][1].toFixed(1)}]</div>
             <div><strong>Source Attribution (Random Forest):</strong> Predicted Sources = {liveAttribution.prediction_set.join(', ')} | Confidence = {(liveAttribution.confidence * 100).toFixed(0)}%</div>
           </div>
         </div>

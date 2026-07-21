@@ -63,7 +63,7 @@ export default function DeepDivePanel({ district, city, onReset }: { district: a
     })
       .then(res => res.json())
       .then(data => {
-        setSimulatedAqi(data.point);
+        setSimulatedAqi(data.points[0]);
         setSimLoading(false);
       })
       .catch(err => {

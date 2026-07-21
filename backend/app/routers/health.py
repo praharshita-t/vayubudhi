@@ -77,7 +77,8 @@ def get_health_advisory(req: AdvisoryRequest):
             "attribution": attribution,
             "language": req.language,
             "city": req.city,
-            "vulnerability": vuln_context
+            "vulnerability": vuln_context,
+            "reading": req.reading.dict()
         })
         return result
     else:

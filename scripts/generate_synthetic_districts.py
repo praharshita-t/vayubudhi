@@ -1,7 +1,7 @@
 import json
 import os
 
-def create_geojson_grid(city_name, min_lat, max_lat, min_lon, max_lon, rows=5, cols=5):
+def create_geojson_grid(city_name, min_lat, max_lat, min_lon, max_lon, rows, cols):
     features = []
     lat_step = (max_lat - min_lat) / rows
     lon_step = (max_lon - min_lon) / cols
@@ -36,17 +36,17 @@ def create_geojson_grid(city_name, min_lat, max_lat, min_lon, max_lon, rows=5, c
     return features
 
 if __name__ == "__main__":
-    # Hyderabad known CAAQMS bounding box with small padding (~5km)
+    # Hyderabad has 4 CAAQMS stations -> 2x2 grid (4 zones)
     hyd_min_lat, hyd_max_lat = 17.30, 17.48
     hyd_min_lon, hyd_max_lon = 78.40, 78.62
     
-    # Guwahati known CAAQMS bounding box with small padding (~5km)
+    # Guwahati has 2 CAAQMS stations -> 1x2 grid (2 zones)
     guw_min_lat, guw_max_lat = 26.10, 26.22
     guw_min_lon, guw_max_lon = 91.70, 91.85
     
-    # Generate 5x5 grids (25 perfectly adjacent sub-districts for each city)
-    hyd_grid = create_geojson_grid("Hyderabad", hyd_min_lat, hyd_max_lat, hyd_min_lon, hyd_max_lon, 5, 5)
-    guw_grid = create_geojson_grid("Guwahati", guw_min_lat, guw_max_lat, guw_min_lon, guw_max_lon, 5, 5)
+    # Generate grids to match exact number of CAAQMS stations!
+    hyd_grid = create_geojson_grid("Hyderabad", hyd_min_lat, hyd_max_lat, hyd_min_lon, hyd_max_lon, 2, 2)
+    guw_grid = create_geojson_grid("Guwahati", guw_min_lat, guw_max_lat, guw_min_lon, guw_max_lon, 1, 2)
     
     out_dir = r"C:\Users\Sai Koushik\Desktop\ET_Hackathon\vayubudhi\frontend\src\data"
     os.makedirs(out_dir, exist_ok=True)
@@ -57,4 +57,4 @@ if __name__ == "__main__":
     with open(os.path.join(out_dir, "guwahatiDistrictsGeo.json"), "w") as f:
         json.dump(guw_grid, f, indent=2)
         
-    print("Synthetic grids generated and saved.")
+    print("Exact CAAQMS-matched grids generated and saved.")

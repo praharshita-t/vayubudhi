@@ -23,9 +23,9 @@ class AttributionOutput(BaseModel):
 
 # Contract 3: ML -> Backend/Frontend (Forecast)
 class ForecastOutput(BaseModel):
-    horizon_h: int = Field(..., examples=[24])
-    point: float = Field(..., examples=[210.0])
-    interval: List[float] = Field(..., examples=[[180.0, 245.0]])
+    horizon_h: int = Field(..., examples=[72])
+    points: List[float] = Field(..., examples=[[210.0, 215.0, 190.0]])
+    intervals: List[List[float]] = Field(..., examples=[[[180.0, 245.0], [185.0, 250.0], [170.0, 210.0]]])
     ventilation_index: float = Field(..., examples=[850.0])
 
 # Contract 4: Dispersion Model

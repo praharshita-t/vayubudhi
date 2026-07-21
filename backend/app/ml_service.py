@@ -43,25 +43,34 @@ class MLService:
         return pd.DataFrame(data)
 
     def predict_forecast(self, reading):
-        if not self.forecaster:
-            return {"horizon_h": 24, "point": 0.0, "interval": [0.0, 0.0], "ventilation_index": 0.0}
+        if not self.forecaster or not isinstance(self.forecaster, dict):
+            return {"horizon_h": 72, "points": [0.0, 0.0, 0.0], "intervals": [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]], "ventilation_index": float(reading.pblh * reading.wind_speed)}
         
         df = self._prepare_features(reading)
         
         try:
-            # Use the base estimator directly
-            point = self.forecaster.predict(df)[0]
+            points = []
+            intervals = []
+            for label in ['24h', '48h', '72h']:
+                model = self.forecaster.get(label)
+                if model:
+                    point = model.predict(df)[0]
+                    points.append(float(point))
+                    intervals.append([float(point * 0.85), float(point * 1.15)])
+                else:
+                    points.append(0.0)
+                    intervals.append([0.0, 0.0])
+                    
             vent_idx = reading.pblh * reading.wind_speed
-            # Mock 90% conformal interval around the point prediction
             return {
-                "horizon_h": 24,
-                "point": float(point),
-                "interval": [float(point * 0.85), float(point * 1.15)],
+                "horizon_h": 72,
+                "points": points,
+                "intervals": intervals,
                 "ventilation_index": float(vent_idx)
             }
         except Exception as e:
             print(f"Forecast error: {e}")
-            return {"horizon_h": 24, "point": 0.0, "interval": [0.0, 0.0], "ventilation_index": float(reading.pblh * reading.wind_speed)}
+            return {"horizon_h": 72, "points": [0.0, 0.0, 0.0], "intervals": [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]], "ventilation_index": float(reading.pblh * reading.wind_speed)}
 
     def predict_attribution(self, reading):
         if not self.classifier:
@@ -71,8 +80,8 @@ class MLService:
         
         try:
             # Predict probabilities using the base estimator
-            probs = self.classifier.predict_proba(df)[0]
-            classes = self.classifier.classes_
+            probs = self.classifier._estimator.predict_proba(df)[0]
+            classes = self.classifier._estimator.classes_
             prob_dict = {str(classes[i]): float(probs[i]) for i in range(len(classes))}
             
             # Construct a mock conformal set (all classes with > 10% probability)

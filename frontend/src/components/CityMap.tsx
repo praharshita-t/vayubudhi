@@ -99,7 +99,7 @@ export default function CityMap({
         pm25: liveData.reading.pm25,
         pm10: liveData.reading.pm10,
         no2: 40, so2: 12, co: 1.5, o3: 30,
-        aqi: liveData.forecast.point,
+        aqi: liveData.live_aqi,
         source: 'iot' as const,
         status: 'online' as const
       }];

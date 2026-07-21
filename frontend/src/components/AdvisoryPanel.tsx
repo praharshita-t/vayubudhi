@@ -41,11 +41,11 @@ export default function AdvisoryPanel({ city = 'Delhi', userCoords, liveData, ci
           timestamp: new Date().toISOString(),
           pm25: maxStation.pm25,
           pm10: maxStation.pm10,
-          temp: 30.0,
-          humidity: 60.0,
-          pressure: 1010.0,
-          wind_speed: 2.0,
-          pblh: 800.0,
+          temp: maxStation.temp || 30.0,
+          humidity: maxStation.humidity || 60.0,
+          pressure: maxStation.pressure || 1010.0,
+          wind_speed: maxStation.wind_speed || 2.0,
+          pblh: maxStation.pblh || 800.0,
           traffic_density: 0.8,
           distance_to_industry: 1.5
         }

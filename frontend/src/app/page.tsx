@@ -133,8 +133,8 @@ export default function DashboardPage() {
   if (activeCity === 'My Location' && liveData) {
     stations = [{
       name: 'Local GPS',
-      aqi: liveData.forecast.point,
-      status: liveData.forecast.point > 200 ? 'alert' : 'online'
+      aqi: liveData.live_aqi,
+      status: liveData.live_aqi > 200 ? 'alert' : 'online'
     }];
   } else if (cityData && cityData.stations) {
     stations = cityData.stations;
@@ -147,10 +147,10 @@ export default function DashboardPage() {
 
   if (activeCity === 'My Location') {
     if (liveData) {
-      avgAqi = Math.round(liveData.forecast.point);
+      avgAqi = Math.round(liveData.live_aqi);
       worstStationName = 'Local GPS';
-      worstStationAqi = Math.round(liveData.forecast.point);
-      alertCount = liveData.forecast.point > 200 ? 1 : 0;
+      worstStationAqi = Math.round(liveData.live_aqi);
+      alertCount = liveData.live_aqi > 200 ? 1 : 0;
     } else {
       avgAqi = 0;
       worstStationName = 'Locating...';
@@ -252,7 +252,7 @@ export default function DashboardPage() {
               <SimulatorPanel onAlert={setAlertStation} city={activeCity} cityData={cityData} liveData={liveData} />
             </div>
             <div style={{ display: activeTab === 'forecast' ? 'block' : 'none', height: '100%', overflowY: 'auto' }}>
-              <ForecastPanel city={activeCity} userCoords={userCoords} liveData={liveData} cityData={cityData} hoveredLocation={hoveredLocation} />
+              <ForecastPanel city={activeCity} userCoords={userCoords} liveForecast={liveData ? {...liveData.forecast, _cityLiveAqi: liveData.live_aqi} : null} cityData={cityData} hoveredLocation={hoveredLocation} />
             </div>
             <div style={{ display: activeTab === 'deepdive' ? 'block' : 'none', height: '100%', overflowY: 'auto' }}>
               {selectedDistrict ? (

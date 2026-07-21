@@ -27,12 +27,14 @@ class AgentCoordinator:
         attribution = state.get("attribution", {})
         language = state.get("language", "English")
         city = state.get("city", "Delhi")
+        reading = state.get("reading", {})
         
         advisory_text = self.gemini_client.generate_advisory(
             forecast=forecast, 
             attribution=attribution, 
             language=language,
-            city=city
+            city=city,
+            reading=reading
         )
         
         return {

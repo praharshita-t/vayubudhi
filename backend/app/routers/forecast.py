@@ -21,17 +21,13 @@ def post_forecast(reading: schemas.SensorReading, horizon: int = 24, db: Session
     """
     prediction = ml_service.predict_forecast(reading)
     
-    # Scale for longer horizons (hackathon simulation for 48h/72h)
-    if horizon > 24:
-        scale_factor = 1.0 + (horizon - 24) * 0.005 # Slight decay or increase
-        prediction["point"] *= scale_factor
-        prediction["interval"] = [prediction["interval"][0]*0.9, prediction["interval"][1]*1.1]
-        prediction["horizon_h"] = horizon
+    # Scale for longer horizons (hackathon simulation for 48h/72h) - We don't need this simulation anymore!
+    # The XGBoost models natively forecast 24h, 48h, 72h.
 
     db_forecast = models.Forecast(
         horizon_h=prediction["horizon_h"],
-        point=prediction["point"],
-        interval=prediction["interval"],
+        points=prediction["points"],
+        intervals=prediction["intervals"],
         ventilation_index=prediction["ventilation_index"]
     )
     db.add(db_forecast)
@@ -59,32 +55,21 @@ def get_latest_forecast(db: Session = Depends(get_db)):
             wind_speed=3.0,
             pblh=1000.0
         )
-    else:
-        reading = schemas.SensorReading(
-            station_id="esp32_01",
-            timestamp="2026-07-17T15:00:00Z",
-            pm25=142.3,
-            pm10=168.9,
-            temp=31.2,
-            humidity=58.4,
-            pressure=1008.1,
-            wind_speed=3.0,
-            pblh=1000.0
-        )
+        prediction = ml_service.predict_forecast(reading)
         
-    prediction = ml_service.predict_forecast(reading)
+        db_forecast = models.Forecast(
+            horizon_h=prediction["horizon_h"],
+            points=prediction["points"],
+            intervals=prediction["intervals"],
+            ventilation_index=prediction["ventilation_index"]
+        )
+        db.add(db_forecast)
+        db.commit()
+        db.refresh(db_forecast)
+        
+        return prediction
     
-    db_forecast = models.Forecast(
-        horizon_h=prediction["horizon_h"],
-        point=prediction["point"],
-        interval=prediction["interval"],
-        ventilation_index=prediction["ventilation_index"]
-    )
-    db.add(db_forecast)
-    db.commit()
-    db.refresh(db_forecast)
-    
-    return prediction
+    return {"horizon_h": 72, "points": [0.0, 0.0, 0.0], "intervals": [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]], "ventilation_index": 0.0}
 
 from typing import List
 
@@ -96,11 +81,6 @@ def get_grid_forecast(readings: List[schemas.SensorReading], horizon: int = 24, 
     results = []
     for reading in readings:
         pred = ml_service.predict_forecast(reading)
-        if horizon > 24:
-            scale_factor = 1.0 + (horizon - 24) * 0.005
-            pred["point"] *= scale_factor
-            pred["interval"] = [pred["interval"][0]*0.9, pred["interval"][1]*1.1]
-            pred["horizon_h"] = horizon
         results.append(pred)
     return results
 
@@ -113,7 +93,7 @@ def get_dispersion_model(reading: schemas.SensorReading, lat: float = 28.6139, l
     Implements a simplified Gaussian plume dispersion model to map point forecasts across a 1km grid.
     """
     prediction = ml_service.predict_forecast(reading)
-    base_aqi = prediction["point"]
+    base_aqi = prediction["points"][0]
     wind_speed = max(reading.wind_speed, 1.0)
     
     # 5x5 grid roughly 1kmx1km centered on the provided lat/lon

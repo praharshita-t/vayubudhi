@@ -66,8 +66,11 @@ def get_health_advisory(req: AdvisoryRequest):
         {"type": "School", "name": "Primary Academy", "distance_km": 0.8, "students_at_risk": 1200}
     ]
     
-    if forecast["points"][0] > 200:
-        vuln_context = f"High alert for {vulnerable_centers[0]['name']} and {vulnerable_centers[1]['name']}."
+    if forecast.get("points") and len(forecast["points"]) > 0:
+        if forecast["points"][0] > 200:
+            vuln_context = f"High alert for {vulnerable_centers[0]['name']} and {vulnerable_centers[1]['name']}."
+        else:
+            vuln_context = "Vulnerable populations are not at critical risk currently."
     else:
         vuln_context = "Vulnerable populations are not at critical risk currently."
     

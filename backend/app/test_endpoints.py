@@ -116,7 +116,7 @@ def test_optimize():
     response = client.post("/api/optimize", json=payload)
     assert response.status_code == 200
     data = response.json()
-    assert data["route_id"] == "inspector_1"
+    assert data["route_id"] == "combined_enforcement_route"
     assert len(data["stops"]) >= 1
     
     # Verify route and ROI logs in SQLite

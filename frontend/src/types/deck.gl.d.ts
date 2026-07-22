@@ -13,6 +13,21 @@ declare module '@deck.gl/layers' {
   export class TextLayer<T = any> {
     constructor(config: any);
   }
+  export class PolygonLayer<T = any> {
+    constructor(config: any);
+  }
+  export class BitmapLayer<T = any> {
+    constructor(config: any);
+  }
+  export class IconLayer<T = any> {
+    constructor(config: any);
+  }
+  export class PathLayer<T = any> {
+    constructor(config: any);
+  }
+  export class GeoJsonLayer<T = any> {
+    constructor(config: any);
+  }
 }
 
 declare module '@deck.gl/core' {
@@ -25,4 +40,8 @@ declare module '@deck.gl/core' {
   export class DirectionalLight {
     constructor(config: any);
   }
+  export class FlyToInterpolator {
+    constructor(config?: any);
+  }
 }
+

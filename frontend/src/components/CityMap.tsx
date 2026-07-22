@@ -62,6 +62,10 @@ function aqiToColor(aqi: number, alpha: number = 120): [number, number, number, 
   return [185, 28, 28, alpha];                       // deep red
 }
 
+function aqiToHeight(aqi: number): number {
+  return Math.max(50, aqi * 15);
+}
+
 export default function CityMap({ 
   alertStation, 
   city = 'Delhi', 
@@ -71,7 +75,9 @@ export default function CityMap({
   liveLoading,
   onHover,
   onClick,
-  selectedDistrictId
+  selectedDistrictId,
+  onDistrictsComputed,
+  monitoringLocation
 }: { 
   alertStation?: Station | null, 
   city?: string, 
@@ -81,7 +87,9 @@ export default function CityMap({
   liveLoading?: boolean,
   onHover?: (data: any) => void,
   onClick?: (data: any) => void,
-  selectedDistrictId?: string | null
+  selectedDistrictId?: string | null,
+  onDistrictsComputed?: (districts: any[]) => void,
+  monitoringLocation?: { lat: number; lon: number; name?: string } | null
 }) {
   const [hoveredHex, setHoveredHex] = useState<HexDataPoint | null>(null);
   const [hoveredDistrict, setHoveredDistrict] = useState<District | null>(null);
@@ -113,6 +121,12 @@ export default function CityMap({
     if (city === 'Guwahati') return computeGuwahatiDistricts(stations);
     return [];
   }, [city, stations]);
+
+  React.useEffect(() => {
+    if (onDistrictsComputed) {
+      onDistrictsComputed(dynamicDistricts);
+    }
+  }, [dynamicDistricts, onDistrictsComputed]);
 
   const hexGrid = useMemo(() => {
     if (city === 'My Location' && liveData) {
@@ -301,7 +315,7 @@ export default function CityMap({
     // Layer 4: Station name labels (IoT + alert stations only)
     const labelLayer = new TextLayer<Station>({
       id: 'station-labels',
-      data: stations.filter(s => s.source === 'iot' || s.status === 'alert'),
+      data: stations.filter((s: Station) => s.source === 'iot' || s.status === 'alert'),
       pickable: false,
       getPosition: (d: Station) => [d.lon, d.lat],
       getText: (d: Station) => d.source === 'iot' ? `IoT  ${d.aqi}` : d.name,
@@ -338,12 +352,51 @@ export default function CityMap({
       );
     }
 
-    if (dynamicDistricts.length > 0) {
-      return [satelliteLayer, districtLayer, stationGlowLayer, stationDotLayer, labelLayer, ...alertLayers];
-    } else {
-      return [satelliteLayer, columnLayer, stationGlowLayer, stationDotLayer, labelLayer, ...alertLayers];
+    // Layer 6: Single Blue Portable IoT Sensor Deployment Marker
+    const monitoringLayers: any[] = [];
+    if (monitoringLocation) {
+      monitoringLayers.push(
+        new ScatterplotLayer({
+          id: 'monitoring-deployment-marker',
+          data: [monitoringLocation],
+          pickable: true,
+          opacity: 0.9,
+          stroked: true,
+          filled: true,
+          radiusMinPixels: 9,
+          radiusMaxPixels: 15,
+          lineWidthMinPixels: 3,
+          getPosition: (d: any) => [d.lon, d.lat],
+          getFillColor: [59, 130, 246, 240], // Bright Blue (#3B82F6)
+          getLineColor: [255, 255, 255, 255], // White border
+          getRadius: 400,
+        }),
+        new TextLayer({
+          id: 'monitoring-deployment-label',
+          data: [monitoringLocation],
+          pickable: false,
+          getPosition: (d: any) => [d.lon, d.lat],
+          getText: (d: any) => `📡 Deploy Sensor: ${d.name || ''}`,
+          getSize: 12,
+          getColor: [59, 130, 246, 255],
+          getTextAnchor: 'middle' as const,
+          getAlignmentBaseline: 'bottom' as const,
+          getPixelOffset: [0, -18],
+          fontFamily: 'Inter, system-ui, sans-serif',
+          fontWeight: 700,
+          outlineWidth: 3,
+          outlineColor: [6, 8, 15, 240],
+          billboard: true,
+        })
+      );
     }
-  }, [alertStation, stations, hexGrid, city, hoveredDistrict, dynamicDistricts, showSatellite]);
+
+    if (dynamicDistricts.length > 0) {
+      return [satelliteLayer, districtLayer, stationGlowLayer, stationDotLayer, labelLayer, ...alertLayers, ...monitoringLayers];
+    } else {
+      return [satelliteLayer, columnLayer, stationGlowLayer, stationDotLayer, labelLayer, ...alertLayers, ...monitoringLayers];
+    }
+  }, [alertStation, stations, hexGrid, city, hoveredDistrict, dynamicDistricts, showSatellite, monitoringLocation]);
 
   const onViewStateChange = useCallback(({ viewState: vs }: any) => {
     setViewState(vs);
@@ -377,11 +430,11 @@ export default function CityMap({
           so2: hoveredStation.so2,
           co: hoveredStation.co,
           o3: hoveredStation.o3,
-          temp: hoveredStation.temp,
-          humidity: hoveredStation.humidity,
-          pressure: hoveredStation.pressure,
-          wind_speed: hoveredStation.wind_speed,
-          pblh: hoveredStation.pblh,
+          temp: (hoveredStation as any).temp,
+          humidity: (hoveredStation as any).humidity,
+          pressure: (hoveredStation as any).pressure,
+          wind_speed: (hoveredStation as any).wind_speed,
+          pblh: (hoveredStation as any).pblh,
           type: hoveredStation.source === 'iot' ? 'IoT Sensor' : 'CAAQMS Station',
         }
       : null;
@@ -425,10 +478,10 @@ export default function CityMap({
           </button>
         )}
         <div className="map-stat-chip">
-          Stations Online: <span className="chip-value">{stations.filter(s => s.status !== 'offline').length}</span>
+          Stations Online: <span className="chip-value">{stations.filter((s: Station) => s.status !== 'offline').length}</span>
         </div>
         <div className="map-stat-chip">
-          Alerts Active: <span className="chip-value" style={{ color: 'var(--accent-red)' }}>{stations.filter(s => s.status === 'alert').length}</span>
+          Alerts Active: <span className="chip-value" style={{ color: 'var(--accent-red)' }}>{stations.filter((s: Station) => s.status === 'alert').length}</span>
         </div>
         <div className="map-stat-chip">
           {dynamicDistricts.length > 0 ? (

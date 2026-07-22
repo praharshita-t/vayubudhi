@@ -62,10 +62,17 @@ export default function DashboardPage() {
   const [hoveredLocation, setHoveredLocation] = useState<any>(null);
   const [selectedDistrict, setSelectedDistrict] = useState<any>(null);
   
-  // Geolocation states
   const [userCoords, setUserCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [liveData, setLiveData] = useState<any>(null);
   const [liveLoading, setLiveLoading] = useState<boolean>(false);
+  const [districts, setDistricts] = useState<any[]>([]);
+  const [monitoringLocation, setMonitoringLocation] = useState<{ lat: number; lon: number; name?: string } | null>(null);
+
+  // Clear monitoring location and districts list when activeCity changes
+  useEffect(() => {
+    setDistricts([]);
+    setMonitoringLocation(null);
+  }, [activeCity]);
 
   // Geolocate user when option selected
   useEffect(() => {
@@ -229,6 +236,8 @@ export default function DashboardPage() {
             if (d) setActiveTab('deepdive');
           }}
           selectedDistrictId={selectedDistrict?.id}
+          onDistrictsComputed={setDistricts}
+          monitoringLocation={monitoringLocation}
         />
 
         {/* Sidebar */}
@@ -252,7 +261,7 @@ export default function DashboardPage() {
               <SimulatorPanel onAlert={setAlertStation} city={activeCity} cityData={cityData} liveData={liveData} />
             </div>
             <div style={{ display: activeTab === 'forecast' ? 'block' : 'none', height: '100%', overflowY: 'auto' }}>
-              <ForecastPanel city={activeCity} userCoords={userCoords} liveForecast={liveData ? {...liveData.forecast, _cityLiveAqi: liveData.live_aqi} : null} cityData={cityData} hoveredLocation={hoveredLocation} />
+              <ForecastPanel city={activeCity} userCoords={userCoords} liveData={liveData} cityData={cityData} hoveredLocation={hoveredLocation} />
             </div>
             <div style={{ display: activeTab === 'deepdive' ? 'block' : 'none', height: '100%', overflowY: 'auto' }}>
               {selectedDistrict ? (
@@ -269,7 +278,7 @@ export default function DashboardPage() {
               )}
             </div>
             <div style={{ display: activeTab === 'enforce' ? 'block' : 'none', height: '100%', overflowY: 'auto' }}>
-              <OptimizerPanel city={activeCity} cityData={cityData} liveData={liveData} />
+              <OptimizerPanel city={activeCity} cityData={cityData} liveData={liveData} districts={districts} onSetMonitoringLocation={setMonitoringLocation} />
             </div>
             <div style={{ display: activeTab === 'advisory' ? 'block' : 'none', height: '100%', overflowY: 'auto' }}>
               <AdvisoryPanel city={activeCity} userCoords={userCoords} liveData={liveData} cityData={cityData} />

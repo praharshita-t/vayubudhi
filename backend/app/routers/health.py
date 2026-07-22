@@ -66,7 +66,7 @@ def get_health_advisory(req: AdvisoryRequest):
         {"type": "School", "name": "Primary Academy", "distance_km": 0.8, "students_at_risk": 1200}
     ]
     
-    if forecast["point"] > 200:
+    if forecast["points"][0] > 200:
         vuln_context = f"High alert for {vulnerable_centers[0]['name']} and {vulnerable_centers[1]['name']}."
     else:
         vuln_context = "Vulnerable populations are not at critical risk currently."
@@ -83,7 +83,7 @@ def get_health_advisory(req: AdvisoryRequest):
         return result
     else:
         # Generate multi-channel mock response simulating Gemini output
-        base_msg = f"Due to high {attribution.get('prediction_set', ['pollution'])[0]} in {req.city}, the AQI will be {forecast.get('point', 0):.0f}. {vuln_context}"
+        base_msg = f"Due to high {attribution.get('prediction_set', ['pollution'])[0]} in {req.city}, the AQI will be {forecast.get('points', [0])[0]:.0f}. {vuln_context}"
         
         if req.language.lower() == "kannada":
             base_msg = f"[Kannada translation pending Gemini integration] {base_msg}"

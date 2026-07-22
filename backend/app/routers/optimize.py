@@ -67,12 +67,14 @@ def generate_optimal_routes(request: OptimizeRequest, db: Session = Depends(get_
             "name": st.name
         })
     
-    # 3. Filter out MONITOR-only sources (severity < 200) from active routing
-    dispatchable_sources = [src for src in adjusted_sources if src["severity"] >= 200]
+    # 3. Filter out MONITOR-only sources from active routing dynamically
+    max_severity = max([src["severity"] for src in adjusted_sources]) if adjusted_sources else 0.0
+    threshold = 200.0 if max_severity >= 200.0 else max(10.0, max_severity * 0.85)
+    dispatchable_sources = [src for src in adjusted_sources if src["severity"] >= threshold]
     locations = [depot] + dispatchable_sources
 
     # 4. Instantiate and run Google OR-Tools CVRPTW solver
-    solver = RouteSolver(locations, depot_index=0)
+    solver = RouteSolver(locations, depot_index=0, threshold=threshold)
     routes = solver.solve_vrp()
 
     # 5. Save/update all generated routes and calculate their ROI metrics in database
@@ -105,11 +107,11 @@ def generate_optimal_routes(request: OptimizeRequest, db: Session = Depends(get_
                 # Retrieve the specific vehicle cost
                 v_type = route_data["vehicle_type"]
                 if v_type == "inspector":
-                    cost = 10000.0 + (severity - 200.0) * 36.0
+                    cost = 10000.0 + (severity - threshold) * 36.0
                 elif v_type == "van":
-                    cost = 9000.0 + (severity - 200.0) * 40.0
+                    cost = 9000.0 + (severity - threshold) * 40.0
                 else:
-                    cost = 5000.0 + (severity - 200.0) * 50.0
+                    cost = 5000.0 + (severity - threshold) * 50.0
                 
                 total_cost += cost
                 stop_rois.append(stop["roi"])

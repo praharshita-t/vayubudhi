@@ -38,7 +38,7 @@ def format_eta(minutes: int) -> str:
     return f"{h:02d}:{m:02d}"
 
 class RouteSolver:
-    def __init__(self, locations: List[Dict[str, Any]], depot_index: int = 0):
+    def __init__(self, locations: List[Dict[str, Any]], depot_index: int = 0, threshold: float = 200.0):
         """
         Args:
             locations: List of dicts representing nodes. The depot is at depot_index.
@@ -47,6 +47,7 @@ class RouteSolver:
         """
         self.locations = locations
         self.depot_index = depot_index
+        self.threshold = threshold
         
     def solve_vrp(self, time_matrix: List[List[int]] = None, demand: List[int] = None, vehicle_capacities: List[int] = [480, 480, 45]) -> Dict[str, Any]:
         """
@@ -141,7 +142,7 @@ class RouteSolver:
             severity = loc.get("severity", 0.0)
             set_size = loc.get("set_size", 0)
             
-            details = get_dispatch_details(severity, set_size)
+            details = get_dispatch_details(severity, set_size, self.threshold)
             allowed_idx = details["vehicle_index"]
             
             index = manager.NodeToIndex(i)

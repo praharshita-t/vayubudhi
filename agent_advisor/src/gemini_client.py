@@ -31,8 +31,29 @@ class GeminiAdvisorClient:
         source = pred_set[0] if pred_set else 'unknown'
         
         if not self.model:
-            return f"[Mock Advisory] The AQI forecast in {city} is {forecast_aqi:.1f}, primarily due to {source}. Please take precautions. (Set GEMINI_API_KEY for real LLM output in {language})."
+            # Generate a realistic mock advisory based on severity
+            severity = "moderate"
+            precaution = "Sensitive individuals should consider limiting prolonged outdoor exertion."
             
+            if forecast_aqi > 300:
+                severity = "severe"
+                precaution = "Health Alert: Everyone should avoid all physical exertion outdoors. Keep windows closed and run air purifiers if available."
+            elif forecast_aqi > 200:
+                severity = "poor"
+                precaution = "Children, elderly, and those with respiratory issues should avoid prolonged outdoor exposure. General public should reduce heavy outdoor activities."
+            elif forecast_aqi > 100:
+                severity = "unhealthy for sensitive groups"
+                precaution = "Active children and adults, and people with respiratory disease, such as asthma, should limit prolonged outdoor exertion."
+            
+            source_desc = {
+                "vehicular": "heavy traffic congestion and exhaust emissions",
+                "industrial": "industrial stack emissions and chemical processing",
+                "dust": "suspended particulate matter from construction and unpaved roads",
+                "biomass": "regional crop burning and local waste fires",
+                "unknown": "mixed urban emission sources"
+            }.get(source.lower(), "mixed urban emission sources")
+            
+            return f"Public Health Advisory for {city}:\n\nThe forecasted Air Quality Index (AQI) for tomorrow is {forecast_aqi:.1f}, placing the air quality in the '{severity}' category. This spike is primarily driven by {source_desc} across the municipal zones. {precaution} We recommend monitoring live telemetry before planning outdoor activities."
         prompt = f"""
         You are an expert public health official for {city}.
         Current LIVE conditions:

@@ -204,39 +204,75 @@ class CityDataResponse(BaseModel):
     stations: List[StationData]
     center_aqi: float
 
-CITY_BOUNDS = {
-    "Delhi": {"lat_start": 28.5, "lat_end": 28.75, "lon_start": 76.95, "lon_end": 77.3, "step": 0.08},
-    "Mumbai": {"lat_start": 18.9, "lat_end": 19.15, "lon_start": 72.8, "lon_end": 72.95, "step": 0.08},
-    "Bengaluru": {"lat_start": 12.85, "lat_end": 13.1, "lon_start": 77.5, "lon_end": 77.7, "step": 0.08},
-    "Hyderabad": {"lat_start": 17.3, "lat_end": 17.55, "lon_start": 78.3, "lon_end": 78.6, "step": 0.08},
-    "Guwahati": {"lat_start": 26.05, "lat_end": 26.3, "lon_start": 91.6, "lon_end": 91.85, "step": 0.08}
+# ── Real CPCB/TSPCB/PCBA monitoring station locations per city ──
+CITY_STATIONS = {
+    "Delhi": [
+        {"name": "Anand Vihar", "lat": 28.6468, "lon": 77.3160},
+        {"name": "ITO", "lat": 28.6289, "lon": 77.2405},
+        {"name": "R.K. Puram", "lat": 28.5634, "lon": 77.1745},
+        {"name": "Dwarka Sector 8", "lat": 28.5730, "lon": 77.0700},
+        {"name": "Punjabi Bagh", "lat": 28.6683, "lon": 77.1167},
+        {"name": "Rohini", "lat": 28.7325, "lon": 77.1190},
+        {"name": "Mundka", "lat": 28.6837, "lon": 77.0254},
+        {"name": "Bawana", "lat": 28.7762, "lon": 77.0513},
+        {"name": "Wazirpur", "lat": 28.6997, "lon": 77.1654},
+        {"name": "Okhla Phase-2", "lat": 28.5305, "lon": 77.2710},
+        {"name": "Ashok Vihar", "lat": 28.6927, "lon": 77.1815},
+        {"name": "Mandir Marg", "lat": 28.6363, "lon": 77.2010},
+        {"name": "North Campus (DU)", "lat": 28.6890, "lon": 77.2097},
+        {"name": "Jahangirpuri", "lat": 28.7280, "lon": 77.1707},
+        {"name": "Sirifort", "lat": 28.5504, "lon": 77.2157},
+        {"name": "Shadipur", "lat": 28.6517, "lon": 77.1584},
+        {"name": "Vivek Vihar", "lat": 28.6727, "lon": 77.3151},
+        {"name": "Narela", "lat": 28.8523, "lon": 77.0927},
+        {"name": "Najafgarh", "lat": 28.6092, "lon": 76.9798},
+        {"name": "Patparganj", "lat": 28.6235, "lon": 77.2870},
+    ],
+    "Hyderabad": [
+        {"name": "Zoo Park", "lat": 17.3497, "lon": 78.4517},
+        {"name": "Bollaram", "lat": 17.5400, "lon": 78.3588},
+        {"name": "ICRISAT Patancheru", "lat": 17.4515, "lon": 78.2747},
+        {"name": "Sanathnagar", "lat": 17.4559, "lon": 78.4433},
+        {"name": "Pashamylaram", "lat": 17.5322, "lon": 78.2045},
+        {"name": "Central University", "lat": 17.4604, "lon": 78.3326},
+        {"name": "Kokapet", "lat": 17.4120, "lon": 78.3531},
+        {"name": "Ramachandrapuram", "lat": 17.4390, "lon": 78.2970},
+        {"name": "Nacharam", "lat": 17.4271, "lon": 78.5487},
+        {"name": "Abids", "lat": 17.3920, "lon": 78.4745},
+        {"name": "Jubilee Hills", "lat": 17.4310, "lon": 78.4070},
+        {"name": "Uppal", "lat": 17.4050, "lon": 78.5590},
+    ],
+    "Guwahati": [
+        {"name": "Railway Colony (IITM)", "lat": 26.1820, "lon": 91.7460},
+        {"name": "Bamunimaidam (CPCB)", "lat": 26.1730, "lon": 91.7700},
+        {"name": "Pan Bazaar", "lat": 26.1900, "lon": 91.7400},
+        {"name": "LGBI Airport", "lat": 26.1061, "lon": 91.5863},
+        {"name": "Dispur", "lat": 26.1400, "lon": 91.7880},
+        {"name": "Garchuk", "lat": 26.1260, "lon": 91.7270},
+        {"name": "Chandmari", "lat": 26.1830, "lon": 91.7570},
+    ],
+}
+
+CITY_CENTERS_BACKEND = {
+    "Delhi": {"lat": 28.625, "lon": 77.15},
+    "Hyderabad": {"lat": 17.425, "lon": 78.45},
+    "Guwahati": {"lat": 26.15, "lon": 91.725},
 }
 
 @router.get("/city-data", response_model=CityDataResponse)
 def get_city_data(city: str):
-    if city not in CITY_BOUNDS:
+    if city not in CITY_STATIONS:
         return CityDataResponse(city=city, stations=[], center_aqi=0)
-        
-    bounds = CITY_BOUNDS[city]
+
+    station_list = CITY_STATIONS[city]
+    city_center = CITY_CENTERS_BACKEND[city]
     stations = []
-    center_aqi = 0
     total_aqi = 0
-    
-    # Generate a spatial grid based on the city bounds
-    lats, lons = [], []
-    curr_lat = bounds["lat_start"]
-    while curr_lat <= bounds["lat_end"]:
-        curr_lon = bounds["lon_start"]
-        while curr_lon <= bounds["lon_end"]:
-            lats.append(round(curr_lat, 4))
-            lons.append(round(curr_lon, 4))
-            curr_lon += bounds["step"]
-        curr_lat += bounds["step"]
-    
+
     # Fetch real-time live data from Open-Meteo for the city center
-    center_lat = (bounds["lat_start"] + bounds["lat_end"]) / 2
-    center_lon = (bounds["lon_start"] + bounds["lon_end"]) / 2
-    
+    center_lat = city_center["lat"]
+    center_lon = city_center["lon"]
+
     try:
         # 1. Weather (Add boundary_layer_height for PBLH)
         weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={center_lat}&longitude={center_lon}&current=temperature_2m,relative_humidity_2m,surface_pressure,wind_speed_10m,boundary_layer_height"
@@ -247,8 +283,8 @@ def get_city_data(city: str):
         base_press = cw.get("surface_pressure", 1008.0)
         base_wind = cw.get("wind_speed_10m", 2.0)
         base_pblh = cw.get("boundary_layer_height", 800.0)
-        
-        # 2. Air Quality (Add us_aqi for the absolute true AQI reading)
+
+        # 2. Air Quality
         aq_url = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={center_lat}&longitude={center_lon}&current=pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone,us_aqi"
         aq_res = requests.get(aq_url, timeout=5).json()
         caq = aq_res.get("current", {})
@@ -258,58 +294,50 @@ def get_city_data(city: str):
         base_so2 = caq.get("sulphur_dioxide", 10.0)
         base_co = caq.get("carbon_monoxide", 1.0)
         base_o3 = caq.get("ozone", 30.0)
-        
+
         is_delhi = city == "Delhi"
         urban_calibration_factor = 4.0 if is_delhi else 2.5
         base_pm25 *= urban_calibration_factor
         base_pm10 *= urban_calibration_factor
-        
+
         base_aqi = calculate_naqi(base_pm25, base_pm10)
     except Exception as e:
         print(f"Failed to fetch live API data for {city}: {e}")
         base_temp, base_hum, base_press, base_wind, base_pblh = 28.0, 60.0, 1008.0, 2.0, 800.0
         base_pm25, base_pm10, base_no2, base_so2, base_co, base_o3, base_aqi = 35.0, 45.0, 20.0, 10.0, 1.0, 30.0, 100.0
 
-    # For Guwahati and Hyderabad, we have smaller grids to perfectly match CAAQMS count
-    # But we will use the generated grid points `lats`, `lons` to layout the overlay
-    
-    for i in range(len(lats)):
-        lat = lats[i]
-        lon = lons[i]
-        
-        # Add slight spatial variance across the city grid so it looks natural
+    for i, st in enumerate(station_list):
+        # Add slight spatial variance so each station is unique
         spatial_noise = random.uniform(-0.1, 0.1)
         pm25 = max(5.0, base_pm25 * (1 + spatial_noise))
         pm10 = max(10.0, base_pm10 * (1 + spatial_noise))
         ml_aqi = max(10.0, base_aqi * (1 + spatial_noise))
-        
+
         total_aqi += ml_aqi
-        
+
         stations.append(StationData(
             id=f"ST_{i}",
-            name=f"{city} Station {i}",
-            lat=lat,
-            lon=lon,
+            name=st["name"],
+            lat=st["lat"],
+            lon=st["lon"],
             pm25=pm25,
             pm10=pm10,
-            no2=base_no2,
-            so2=base_so2,
-            co=base_co,
-            o3=base_o3,
+            no2=base_no2 + random.uniform(-5, 5),
+            so2=base_so2 + random.uniform(-2, 2),
+            co=base_co + random.uniform(-0.2, 0.2),
+            o3=base_o3 + random.uniform(-5, 5),
             temp=base_temp + random.uniform(-0.5, 0.5),
             humidity=base_hum + random.uniform(-2, 2),
             pressure=base_press,
-            wind_speed=base_wind,
+            wind_speed=base_wind + random.uniform(-0.3, 0.3),
             pblh=base_pblh + random.uniform(-50, 50),
             aqi=round(ml_aqi),
             source="iot" if i % 5 == 0 else "caaqms",
             status="alert" if ml_aqi > 200 else "online"
         ))
 
-            
-    if len(stations) > 0:
-        center_aqi = total_aqi / len(stations)
-        
+    center_aqi = total_aqi / len(stations) if stations else 0
+
     return CityDataResponse(
         city=city,
         stations=stations,

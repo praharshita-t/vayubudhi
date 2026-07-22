@@ -22,8 +22,8 @@ const CITY_CENTERS: Record<string, {longitude: number, latitude: number, zoom: n
   'Delhi': { longitude: 77.17, latitude: 28.62, zoom: 11 },
   'Mumbai': { longitude: 72.85, latitude: 19.08, zoom: 10.5 },
   'Bengaluru': { longitude: 77.59, latitude: 12.97, zoom: 11 },
-  'Hyderabad': { longitude: 78.48, latitude: 17.38, zoom: 11 },
-  'Guwahati': { longitude: 91.73, latitude: 26.14, zoom: 11 },
+  'Hyderabad': { longitude: 78.44, latitude: 17.42, zoom: 11 },
+  'Guwahati': { longitude: 91.73, latitude: 26.16, zoom: 11.5 },
 };
 
 const getInitialViewState = (city: string, userCoords?: { lat: number, lon: number } | null) => {
@@ -135,13 +135,52 @@ export default function CityMap({
     return cityData ? cityData.stations : [];
   }, [city, liveData, cityData]);
 
-  // Handle fly-to on city or coords change
+  // Track whether this is the first render (skip zoom-out animation on mount)
+  const isInitialRender = React.useRef(true);
+  const cityTransitionTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Handle fly-to on city or coords change — two-phase zoom-out → zoom-in
   React.useEffect(() => {
-    setViewState((prev: any) => ({
-      ...prev,
-      ...getInitialViewState(city, userCoords),
-      transitionDuration: 1500,
-    }));
+    // Clear any pending phase-2 timer from a previous rapid switch
+    if (cityTransitionTimer.current) {
+      clearTimeout(cityTransitionTimer.current);
+      cityTransitionTimer.current = null;
+    }
+
+    const target = getInitialViewState(city, userCoords);
+
+    if (isInitialRender.current) {
+      // First render: jump directly, no animation
+      isInitialRender.current = false;
+      setViewState((prev: any) => ({ ...prev, ...target }));
+      return;
+    }
+
+    // Phase 1: Zoom out to a bird's-eye view of India
+    setViewState({
+      longitude: 78.9,
+      latitude: 22.5,
+      zoom: 4.5,
+      pitch: 0,
+      bearing: 0,
+      minZoom: 3,    // temporarily allow zooming out far
+      maxZoom: 15,
+      transitionDuration: 1200,
+    });
+
+    // Phase 2: Fly into the new city after zoom-out completes
+    cityTransitionTimer.current = setTimeout(() => {
+      setViewState({
+        ...target,
+        transitionDuration: 1500,
+      });
+    }, 1300);
+
+    return () => {
+      if (cityTransitionTimer.current) {
+        clearTimeout(cityTransitionTimer.current);
+      }
+    };
   }, [city, userCoords]);
 
   // Handle fly-to on alert
@@ -210,11 +249,11 @@ export default function CityMap({
         const isHovered = hoveredDistrict && hoveredDistrict.id === d.id;
         
         // Dim unselected districts if a selection exists
-        let alpha = 100;
+        let alpha = 50;
         if (selectedDistrictId && !isSelected) {
-          alpha = 20; // dim drastically
+          alpha = 10; // dim drastically
         } else if (isHovered || isSelected) {
-          alpha = 180; // bright for hover or selected
+          alpha = 90; // bright for hover or selected
         }
         
         return aqiToColor(d.aqi, alpha);

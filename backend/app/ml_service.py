@@ -54,9 +54,20 @@ class MLService:
             for label in ['24h', '48h', '72h']:
                 model = self.forecaster.get(label)
                 if model:
-                    point = model.predict(df)[0]
-                    points.append(float(point))
-                    intervals.append([float(point * 0.85), float(point * 1.15)])
+                    # Request MAPIE predictions with alpha=0.15 (85% confidence)
+                    try:
+                        y_pred, y_pis = model.predict(df, alpha=0.15)
+                        point = float(y_pred[0])
+                        lower_bound = float(y_pis[0, 0, 0])
+                        upper_bound = float(y_pis[0, 1, 0])
+                        
+                        points.append(point)
+                        intervals.append([lower_bound, upper_bound])
+                    except TypeError:
+                        # Fallback if the model is not wrapped in MAPIE
+                        point = float(model.predict(df)[0])
+                        points.append(point)
+                        intervals.append([float(point * 0.85), float(point * 1.15)])
                 else:
                     points.append(0.0)
                     intervals.append([0.0, 0.0])

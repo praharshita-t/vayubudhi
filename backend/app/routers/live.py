@@ -1,5 +1,4 @@
 import requests
-import random
 import os
 import pandas as pd
 from fastapi import APIRouter, HTTPException
@@ -47,25 +46,30 @@ def get_sub_index(cp, breakpoints):
     bplo, bphi, ilo, ihi = breakpoints[-1]
     return round(((ihi - ilo) / (bphi - bplo)) * (cp - bplo) + ilo)
 
-def calculate_naqi(pm25: float, pm10: float) -> float:
-    pm25_bp = [
-        (0, 30, 0, 50), (31, 60, 51, 100), (61, 90, 101, 200),
-        (91, 120, 201, 300), (121, 250, 301, 400), (251, 500, 401, 500)
+def calculate_full_naqi(pm25: float, pm10: float, no2: float, so2: float, co: float, o3: float) -> float:
+    pm25_bp = [(0, 30, 0, 50), (31, 60, 51, 100), (61, 90, 101, 200), (91, 120, 201, 300), (121, 250, 301, 400), (251, 500, 401, 500)]
+    pm10_bp = [(0, 50, 0, 50), (51, 100, 51, 100), (101, 250, 101, 200), (251, 350, 201, 300), (351, 430, 301, 400), (431, 1000, 401, 500)]
+    no2_bp = [(0, 40, 0, 50), (41, 80, 51, 100), (81, 180, 101, 200), (181, 280, 201, 300), (281, 400, 301, 400), (401, 1000, 401, 500)]
+    so2_bp = [(0, 40, 0, 50), (41, 80, 51, 100), (81, 380, 101, 200), (381, 800, 201, 300), (801, 1600, 301, 400), (1601, 3000, 401, 500)]
+    co_bp = [(0, 1.0, 0, 50), (1.1, 2.0, 51, 100), (2.1, 10.0, 101, 200), (10.1, 17.0, 201, 300), (17.1, 34.0, 301, 400), (34.1, 100.0, 401, 500)]
+    o3_bp = [(0, 50, 0, 50), (51, 100, 51, 100), (101, 168, 101, 200), (169, 208, 201, 300), (209, 748, 301, 400), (749, 1000, 401, 500)]
+
+    indices = [
+        get_sub_index(pm25, pm25_bp),
+        get_sub_index(pm10, pm10_bp),
+        get_sub_index(no2, no2_bp),
+        get_sub_index(so2, so2_bp),
+        get_sub_index(co, co_bp),
+        get_sub_index(o3, o3_bp)
     ]
-    pm10_bp = [
-        (0, 50, 0, 50), (51, 100, 51, 100), (101, 250, 101, 200),
-        (251, 350, 201, 300), (351, 430, 301, 400), (431, 1000, 401, 500)
-    ]
-    i_pm25 = get_sub_index(pm25, pm25_bp)
-    i_pm10 = get_sub_index(pm10, pm10_bp)
-    return float(max(i_pm25, i_pm10))
+    return float(max(indices))
 
 @router.get("/live", response_model=LiveDataResponse)
 def get_live_data(lat: float, lon: float):
     # 1. Fetch live weather data from Open-Meteo Weather API (free, keyless)
     weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,surface_pressure,wind_speed_10m,boundary_layer_height"
     # 2. Fetch live air quality data from Open-Meteo Air Quality API (free, keyless)
-    aq_url = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lon}&current=pm2_5,pm10,us_aqi"
+    aq_url = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lon}&current=pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone,us_aqi"
     
     try:
         weather_res = requests.get(weather_url, timeout=5)
@@ -86,28 +90,24 @@ def get_live_data(lat: float, lon: float):
         current_aq = aq_data.get("current", {})
         pm25 = current_aq.get("pm2_5", 35.0)
         pm10 = current_aq.get("pm10", 45.0)
+        no2 = current_aq.get("nitrogen_dioxide", 20.0)
+        so2 = current_aq.get("sulphur_dioxide", 10.0)
+        co = current_aq.get("carbon_monoxide", 1.0) / 1000 # convert ug/m3 to mg/m3
+        o3 = current_aq.get("ozone", 30.0)
 
         # -------------------------------------------------------------------
-        # SATELLITE VS GROUND-SENSOR CALIBRATION (Urban Canyon Multiplier)
+        # CALIBRATION: Calculate full 6-pollutant NAQI for precise localization
         # -------------------------------------------------------------------
-        # Open-Meteo uses CAMS satellite data (10km grid average).
-        # Google uses ground IoT sensors at busy intersections (local hotspots).
-        # To bridge this resolution gap and closely match Google's localized AQI (~160 for Delhi),
-        # we apply an urban calibration factor.
-        # We determine the city based on approximate coordinates for Delhi
-        is_delhi = 28.5 <= lat <= 28.75 and 76.95 <= lon <= 77.3
-        urban_calibration_factor = 4.0 if is_delhi else 2.5
-        pm25 *= urban_calibration_factor
-        pm10 *= urban_calibration_factor
+        naqi = calculate_full_naqi(pm25, pm10, no2, so2, co, o3)
         # -------------------------------------------------------------------
 
-        aqi_val = current_aq.get("us_aqi", 100.0)
+        aqi_val = naqi
         
     except Exception as e:
         print(f"Failed to query Open-Meteo APIs: {e}")
         # Graceful fallback values
         temp, humidity, pressure, wind_speed, pblh = 28.0, 60.0, 1008.0, 2.0, 800.0
-        pm25, pm10, aqi_val = 35.0, 45.0, 100.0
+        pm25, pm10, aqi_val, naqi = 35.0, 45.0, 100.0, 100.0
         
     # 3. Create sensor reading schema object
     reading = schemas.SensorReading(
@@ -127,7 +127,6 @@ def get_live_data(lat: float, lon: float):
     attribution_data = ml_service.predict_attribution(reading)
     
     # Map raw dicts to schemas
-    naqi = calculate_naqi(pm25, pm10)
     forecast = schemas.ForecastOutput(
         horizon_h=forecast_data.get("horizon_h", 72),
         points=forecast_data.get("points", [naqi, naqi, naqi]),
@@ -158,8 +157,8 @@ def get_live_data(lat: float, lon: float):
                 cell_lat = lat + offset_lat
                 cell_lon = lon + offset_lon
                 
-                # Interpolate AQI with spatial noise
-                cell_aqi = max(10, center_aqi * (1.0 - dist_sq * 0.4) + random.uniform(-15, 15))
+                # Interpolate AQI purely on distance without fake noise
+                cell_aqi = max(10, center_aqi * (1.0 - dist_sq * 0.4))
                 
                 hex_grid.append({
                     "lat": round(cell_lat, 4),
@@ -261,80 +260,86 @@ CITY_CENTERS_BACKEND = {
 
 @router.get("/city-data", response_model=CityDataResponse)
 def get_city_data(city: str):
-    if city not in CITY_STATIONS:
+    station_list = CITY_STATIONS.get(city, [])
+    if not station_list:
         return CityDataResponse(city=city, stations=[], center_aqi=0)
 
-    station_list = CITY_STATIONS[city]
-    city_center = CITY_CENTERS_BACKEND[city]
     stations = []
     total_aqi = 0
 
-    # Fetch real-time live data from Open-Meteo for the city center
-    center_lat = city_center["lat"]
-    center_lon = city_center["lon"]
+    lats_str = ",".join(str(st["lat"]) for st in station_list)
+    lons_str = ",".join(str(st["lon"]) for st in station_list)
 
     try:
-        # 1. Weather (Add boundary_layer_height for PBLH)
-        weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={center_lat}&longitude={center_lon}&current=temperature_2m,relative_humidity_2m,surface_pressure,wind_speed_10m,boundary_layer_height"
-        w_res = requests.get(weather_url, timeout=5).json()
-        cw = w_res.get("current", {})
-        base_temp = cw.get("temperature_2m", 28.0)
-        base_hum = cw.get("relative_humidity_2m", 60.0)
-        base_press = cw.get("surface_pressure", 1008.0)
-        base_wind = cw.get("wind_speed_10m", 2.0)
-        base_pblh = cw.get("boundary_layer_height", 800.0)
+        # 1. Bulk Weather (PBLH, Temp, Humidity, Wind, Pressure)
+        weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={lats_str}&longitude={lons_str}&current=temperature_2m,relative_humidity_2m,surface_pressure,wind_speed_10m,boundary_layer_height"
+        w_res = requests.get(weather_url, timeout=10).json()
+        
+        # 2. Bulk Air Quality
+        aq_url = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lats_str}&longitude={lons_str}&current=pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone,us_aqi"
+        aq_res = requests.get(aq_url, timeout=10).json()
+        
+        # If the API returns a single object (e.g. only 1 station), wrap it in a list for consistent iteration
+        if isinstance(w_res, dict) and "current" in w_res:
+            w_res = [w_res]
+        if isinstance(aq_res, dict) and "current" in aq_res:
+            aq_res = [aq_res]
 
-        # 2. Air Quality
-        aq_url = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={center_lat}&longitude={center_lon}&current=pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone,us_aqi"
-        aq_res = requests.get(aq_url, timeout=5).json()
-        caq = aq_res.get("current", {})
-        base_pm25 = caq.get("pm2_5", 35.0)
-        base_pm10 = caq.get("pm10", 45.0)
-        base_no2 = caq.get("nitrogen_dioxide", 20.0)
-        base_so2 = caq.get("sulphur_dioxide", 10.0)
-        base_co = caq.get("carbon_monoxide", 1.0)
-        base_o3 = caq.get("ozone", 30.0)
+        for i, st in enumerate(station_list):
+            cw = w_res[i].get("current", {})
+            caq = aq_res[i].get("current", {})
 
-        is_delhi = city == "Delhi"
-        urban_calibration_factor = 4.0 if is_delhi else 2.5
-        base_pm25 *= urban_calibration_factor
-        base_pm10 *= urban_calibration_factor
+            base_temp = cw.get("temperature_2m", 28.0)
+            base_hum = cw.get("relative_humidity_2m", 60.0)
+            base_press = cw.get("surface_pressure", 1008.0)
+            base_wind = cw.get("wind_speed_10m", 2.0)
+            base_pblh = cw.get("boundary_layer_height", 800.0)
 
-        base_aqi = calculate_naqi(base_pm25, base_pm10)
+            base_pm25 = caq.get("pm2_5", 35.0)
+            base_pm10 = caq.get("pm10", 45.0)
+            base_no2 = caq.get("nitrogen_dioxide", 20.0)
+            base_so2 = caq.get("sulphur_dioxide", 10.0)
+            base_co = caq.get("carbon_monoxide", 1.0) / 1000 # convert ug/m3 to mg/m3 for NAQI
+            base_o3 = caq.get("ozone", 30.0)
+
+            # Calibrate using full 6-pollutant Indian NAQI
+            ml_aqi = calculate_full_naqi(base_pm25, base_pm10, base_no2, base_so2, base_co, base_o3)
+            total_aqi += ml_aqi
+
+            stations.append(StationData(
+                id=f"ST_{i}",
+                name=st["name"],
+                lat=st["lat"],
+                lon=st["lon"],
+                pm25=base_pm25,
+                pm10=base_pm10,
+                no2=base_no2,
+                so2=base_so2,
+                co=base_co,
+                o3=base_o3,
+                temp=base_temp,
+                humidity=base_hum,
+                pressure=base_press,
+                wind_speed=base_wind,
+                pblh=base_pblh,
+                aqi=round(ml_aqi),
+                source="iot" if i % 5 == 0 else "caaqms",
+                status="alert" if ml_aqi > 200 else "online"
+            ))
+
     except Exception as e:
-        print(f"Failed to fetch live API data for {city}: {e}")
-        base_temp, base_hum, base_press, base_wind, base_pblh = 28.0, 60.0, 1008.0, 2.0, 800.0
-        base_pm25, base_pm10, base_no2, base_so2, base_co, base_o3, base_aqi = 35.0, 45.0, 20.0, 10.0, 1.0, 30.0, 100.0
-
-    for i, st in enumerate(station_list):
-        # Add slight spatial variance so each station is unique
-        spatial_noise = random.uniform(-0.1, 0.1)
-        pm25 = max(5.0, base_pm25 * (1 + spatial_noise))
-        pm10 = max(10.0, base_pm10 * (1 + spatial_noise))
-        ml_aqi = max(10.0, base_aqi * (1 + spatial_noise))
-
-        total_aqi += ml_aqi
-
-        stations.append(StationData(
-            id=f"ST_{i}",
-            name=st["name"],
-            lat=st["lat"],
-            lon=st["lon"],
-            pm25=pm25,
-            pm10=pm10,
-            no2=base_no2 + random.uniform(-5, 5),
-            so2=base_so2 + random.uniform(-2, 2),
-            co=base_co + random.uniform(-0.2, 0.2),
-            o3=base_o3 + random.uniform(-5, 5),
-            temp=base_temp + random.uniform(-0.5, 0.5),
-            humidity=base_hum + random.uniform(-2, 2),
-            pressure=base_press,
-            wind_speed=base_wind + random.uniform(-0.3, 0.3),
-            pblh=base_pblh + random.uniform(-50, 50),
-            aqi=round(ml_aqi),
-            source="iot" if i % 5 == 0 else "caaqms",
-            status="alert" if ml_aqi > 200 else "online"
-        ))
+        import traceback
+        with open("error_log.txt", "w") as f:
+            f.write(traceback.format_exc())
+        print(f"Failed to fetch live API data in bulk for {city}: {e}")
+        # Graceful fallback in case Open-Meteo hits rate limits
+        for i, st in enumerate(station_list):
+            stations.append(StationData(
+                id=f"ST_{i}", name=st["name"], lat=st["lat"], lon=st["lon"],
+                pm25=35.0, pm10=45.0, no2=20.0, so2=10.0, co=1.0, o3=30.0,
+                temp=28.0, humidity=60.0, pressure=1008.0, wind_speed=2.0, pblh=800.0,
+                aqi=100.0, source="iot" if i % 5 == 0 else "caaqms", status="online"
+            ))
 
     center_aqi = total_aqi / len(stations) if stations else 0
 

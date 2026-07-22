@@ -554,7 +554,7 @@ export default function CityMap({
       </div>
 
       {/* Map Legend for Station Dots */}
-      <div className="map-legend">
+      <div className="map-legend" style={{ left: 'auto', right: 12, bottom: 12, gap: '12px' }}>
         <div className="legend-item"><div className="legend-dot" style={{ background: '#ef4444' }} />Traffic (NO2)</div>
         <div className="legend-item"><div className="legend-dot" style={{ background: '#a855f7' }} />Industry (SO2)</div>
         <div className="legend-item"><div className="legend-dot" style={{ background: '#eab308' }} />Dust (PM10)</div>

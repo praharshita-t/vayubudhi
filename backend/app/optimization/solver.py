@@ -150,8 +150,8 @@ class RouteSolver:
             routing.VehicleVar(index).SetValues([-1, allowed_idx])
 
         # 5. Add Disjunction penalties for each source node to maximize reward
-        # Reward = severity * confidence * population_exposed.
-        # Scale factor = 0.0001 (such that penalties are integers and balance well against travel minutes).
+        # To ensure the solver visits as many nodes as possible (even in clean cities like Hyderabad),
+        # the penalty for dropping a node must be much larger than the travel time cost.
         for i in range(num_locations):
             if i == self.depot_index:
                 continue
@@ -162,8 +162,8 @@ class RouteSolver:
             pop = loc.get("population_exposed", 0.0)
             
             reward = severity * confidence * pop
-            # Ensure the penalty is at least 1 so the solver has a reason to visit it
-            penalty = max(1, int(reward * 0.0001))
+            # Massive penalty ensures nodes are only dropped if the vehicle runs out of 8-hour shift time
+            penalty = 100000 + int(reward)
             
             index = manager.NodeToIndex(i)
             routing.AddDisjunction([index], penalty)
@@ -215,17 +215,18 @@ class RouteSolver:
                     pop = loc.get("population_exposed", 0.0)
                     set_size = loc.get("set_size", 0)
                     
-                    details = get_dispatch_details(severity, set_size)
+                    details = get_dispatch_details(severity, set_size, self.threshold)
                     action = details["action"]
                     
-                    # Compute ROI
+                    # Compute ROI dynamically
                     aqi_reduction = severity * 0.05
+                    sev_diff = max(0.0, severity - self.threshold)
                     if v == 0:
-                        cost = 10000.0 + (severity - 200.0) * 36.0
+                        cost = 10000.0 + sev_diff * 36.0
                     elif v == 1:
-                        cost = 9000.0 + (severity - 200.0) * 40.0
+                        cost = 9000.0 + sev_diff * 40.0
                     else:
-                        cost = 5000.0 + (severity - 200.0) * 50.0
+                        cost = 5000.0 + sev_diff * 50.0
                         
                     roi_val = calculate_inspection_roi(pop, aqi_reduction, cost)
                     

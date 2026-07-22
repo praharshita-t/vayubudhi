@@ -12,6 +12,8 @@ class SensorReading(BaseModel):
     pressure: float = Field(..., examples=[1008.1])
     wind_speed: float = Field(default=3.0, examples=[2.5])
     pblh: float = Field(default=1000.0, examples=[800.0])
+    lat: float = Field(default=28.6139, examples=[28.6139])
+    lon: float = Field(default=77.2090, examples=[77.2090])
 
 # Contract 2: ML -> Backend (Attribution)
 class AttributionOutput(BaseModel):

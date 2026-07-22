@@ -94,7 +94,7 @@ export default function CityMap({
   const [hoveredHex, setHoveredHex] = useState<HexDataPoint | null>(null);
   const [hoveredDistrict, setHoveredDistrict] = useState<District | null>(null);
   const [hoveredStation, setHoveredStation] = useState<Station | null>(null);
-  const [viewState, setViewState] = useState(getInitialViewState(city, userCoords));
+  const [viewState, setViewState] = useState<any>(getInitialViewState(city, userCoords));
   const [showSatellite, setShowSatellite] = useState(false);
 
   const stations = useMemo(() => {

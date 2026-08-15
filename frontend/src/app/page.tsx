@@ -105,11 +105,30 @@ export default function HomePage() {
   const { activeCity, cityData, liveData, stations, districts, liveLoading } = useCityContext();
   const [chartType, setChartType] = useState<'bar' | 'line'>('bar');
   const [now, setNow] = useState(new Date());
+  const [realHistory, setRealHistory] = useState<any[]>([]);
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60000);
     return () => clearInterval(id);
   }, []);
+
+  // Fetch real 24-hour historical hourly telemetry from the live API
+  useEffect(() => {
+    const fetchHistory = async () => {
+      try {
+        const res = await fetch(`http://127.0.0.1:8000/api/city-historical?city=${activeCity}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.history && data.history.length > 0) {
+            setRealHistory(data.history);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch real historical AQI data', err);
+      }
+    };
+    fetchHistory();
+  }, [activeCity]);
 
   // Compute aggregate metrics from stations
   const avgAqi = useMemo(() => {
@@ -153,11 +172,23 @@ export default function HomePage() {
     };
   }, [stations]);
 
-  const historicalData = useMemo(() => generateHistoricalData(avgAqi), [avgAqi]);
+  // Prefer real live hourly API telemetry over model extrapolation
+  const historicalData = useMemo(() => {
+    if (realHistory.length > 0) return realHistory;
+    return generateHistoricalData(avgAqi);
+  }, [realHistory, avgAqi]);
+
   const forecastData = useMemo(() => generateForecastData(avgAqi), [avgAqi]);
 
-  const minPoint = useMemo(() => historicalData.reduce((m, d) => d.aqi < m.aqi ? d : m, historicalData[0]), [historicalData]);
-  const maxPoint = useMemo(() => historicalData.reduce((m, d) => d.aqi > m.aqi ? d : m, historicalData[0]), [historicalData]);
+  const minPoint = useMemo(() => {
+    if (historicalData.length === 0) return { aqi: 0, time: '--' };
+    return historicalData.reduce((m, d) => d.aqi < m.aqi ? d : m, historicalData[0]);
+  }, [historicalData]);
+
+  const maxPoint = useMemo(() => {
+    if (historicalData.length === 0) return { aqi: 0, time: '--' };
+    return historicalData.reduce((m, d) => d.aqi > m.aqi ? d : m, historicalData[0]);
+  }, [historicalData]);
 
   const forecastEnd = forecastData[forecastData.length - 1]?.aqi ?? avgAqi;
   const trendUp = forecastEnd > avgAqi;

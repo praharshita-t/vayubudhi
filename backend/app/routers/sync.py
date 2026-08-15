@@ -17,36 +17,22 @@ DATASET_PATH = os.path.join(ML_DATA_DIR, 'dataset.csv')
 def run_sync_pipeline():
     print("Starting ML Synchronization Pipeline...")
     
-    # 1. Download live CSV
+    # 1. Run fetch_expanded_dataset.py
     try:
-        print(f"Downloading live dataset from Google Sheets...")
-        response = requests.get(SHEET_URL, timeout=15)
-        response.raise_for_status()
-        
-        os.makedirs(ML_DATA_DIR, exist_ok=True)
-        with open(DATASET_PATH, "wb") as f:
-            f.write(response.content)
-        print("Dataset downloaded successfully.")
-    except Exception as e:
-        print(f"Error downloading dataset: {e}")
-        return False
-        
-    # 2. Run fetch_pblh.py
-    try:
-        print("Fetching PBLH data...")
-        pblh_script = os.path.join(ML_SRC_DIR, "fetch_pblh.py")
-        subprocess.run([sys.executable, pblh_script], cwd=BASE_DIR, check=True)
+        print("Fetching latest data from Open-Meteo...")
+        fetch_script = os.path.join(BASE_DIR, 'scripts', 'fetch_expanded_dataset.py')
+        subprocess.run([sys.executable, fetch_script], cwd=BASE_DIR, check=True)
     except subprocess.CalledProcessError as e:
-        print(f"Error running fetch_pblh.py: {e}")
+        print(f"Error running fetch_expanded_dataset.py: {e}")
         return False
         
-    # 3. Run train_models.py
+    # 2. Run train_models_v2.py
     try:
         print("Training models...")
-        train_script = os.path.join(ML_SRC_DIR, "train_models.py")
+        train_script = os.path.join(ML_SRC_DIR, "train_models_v2.py")
         subprocess.run([sys.executable, train_script], cwd=BASE_DIR, check=True)
     except subprocess.CalledProcessError as e:
-        print(f"Error running train_models.py: {e}")
+        print(f"Error running train_models_v2.py: {e}")
         return False
         
     # 4. Hot-reload the models in the ML service

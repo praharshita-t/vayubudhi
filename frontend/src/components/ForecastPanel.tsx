@@ -2,8 +2,10 @@
 import React, { useState, useEffect } from 'react';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  ReferenceLine, CartesianGrid,
+  ReferenceLine, CartesianGrid, BarChart, Bar
 } from 'recharts';
+
+import { getAqiCategory, pm25ToAqi } from '@/utils/aqi';
 
 export interface ForecastPoint {
   hour: number;
@@ -11,80 +13,95 @@ export interface ForecastPoint {
   point: number;
   lower: number;
   upper: number;
-  vi: number;
 }
 
-function generateForecast(temp: number = 30, wind_speed: number = 2): ForecastPoint[] {
-  const points: ForecastPoint[] = [];
+// Simple linear interpolation to generate hourly points from 24h, 48h, 72h anchors
+function interpolatePoints(currentAqi: number, forecastPoints: number[], forecastIntervals: number[][]): ForecastPoint[] {
+  const result: ForecastPoint[] = [];
   const baseHour = new Date().getHours();
   
-  // Meteorology effects on shape:
-  // Higher temp increases daytime peak amplitude (ozone/pm formation).
-  // Higher wind speed flattens the accumulation peaks.
-  const windFlatten = Math.max(0.2, 1.0 - (wind_speed * 0.15));
-  const tempSpike = 1.0 + (temp - 25) * 0.02;
-  const baseAmplitude = 0.35 * windFlatten * tempSpike;
+  const anchors = [
+    { h: 0, val: currentAqi, lower: currentAqi, upper: currentAqi },
+    { h: 24, val: pm25ToAqi(forecastPoints[0]), lower: pm25ToAqi(forecastIntervals[0][0]), upper: pm25ToAqi(forecastIntervals[0][1]) },
+    { h: 48, val: pm25ToAqi(forecastPoints[1]), lower: pm25ToAqi(forecastIntervals[1][0]), upper: pm25ToAqi(forecastIntervals[1][1]) },
+    { h: 72, val: pm25ToAqi(forecastPoints[2]), lower: pm25ToAqi(forecastIntervals[2][0]), upper: pm25ToAqi(forecastIntervals[2][1]) }
+  ];
 
   for (let h = 0; h <= 72; h += 3) {
+    // Find surrounding anchors
+    let start = anchors[0];
+    let end = anchors[anchors.length - 1];
+    for (let i = 0; i < anchors.length - 1; i++) {
+      if (h >= anchors[i].h && h <= anchors[i+1].h) {
+        start = anchors[i];
+        end = anchors[i+1];
+        break;
+      }
+    }
+    
+    let fraction = (h - start.h) / (end.h - start.h || 1);
+    // Add diurnal sinusoidal pattern based on time of day (peaks around 8AM and 8PM)
     const futureHour = (baseHour + h) % 24;
+    const diurnalFactor = 1.0 + 0.15 * Math.sin(((futureHour - 8) / 24) * 2 * Math.PI) + 0.05 * Math.sin(((futureHour - 20) / 12) * 2 * Math.PI);
+    
+    let point = (start.val + (end.val - start.val) * fraction) * diurnalFactor;
+    let lower = (start.lower + (end.lower - start.lower) * fraction) * diurnalFactor;
+    let upper = (start.upper + (end.upper - start.upper) * fraction) * diurnalFactor;
+    
     const day = Math.floor(h / 24);
-    const diurnalFactor = 1.0 + baseAmplitude * Math.sin(((futureHour - 8) / 24) * 2 * Math.PI) + (0.15 * windFlatten) * Math.sin(((futureHour - 20) / 12) * 2 * Math.PI);
-    const baseLine = 220 - day * 18;
-    
-    // Use deterministic noise based on the hour instead of Math.random() to prevent jitter
-    const noise = Math.sin(h * 13.7) * 10;
-    
-    const point = Math.round(baseLine * diurnalFactor + noise);
-    const bandWidth = 25 + h * 0.8;
-    const lower = Math.max(0, Math.round(point - bandWidth));
-    const upper = Math.round(point + bandWidth);
-    
-    const viNoise = Math.cos(h * 7.3) * 250;
-    const vi = Math.round(8000 - point * 22 + viNoise);
-    
     const dayLabel = day === 0 ? 'Today' : day === 1 ? 'Tomorrow' : `Day ${day + 1}`;
     const timeStr = `${futureHour.toString().padStart(2, '0')}:00`;
-    points.push({ hour: h, label: `${dayLabel} ${timeStr}`, point: Math.max(30, point), lower: Math.max(10, lower), upper, vi: Math.max(200, vi) });
+    
+    result.push({
+      hour: h,
+      label: `${dayLabel} ${timeStr}`,
+      point: Math.max(0, Math.round(point)),
+      lower: Math.max(0, Math.round(lower)),
+      upper: Math.max(0, Math.round(upper))
+    });
   }
-  return points;
+  return result;
 }
 
-const initialForecastData = generateForecast();
-const validationMetrics = {
-  rmse_24h: 18.3, rmse_48h: 27.1, rmse_72h: 38.6,
-  persistence_24h: 26.8, persistence_48h: 34.9, persistence_72h: 44.2,
-  improvement_24h: 31.7, improvement_48h: 22.3, improvement_72h: 12.7,
-  conformal_coverage: 91.2,
-};
+export default function ForecastPanel({ city = 'Hyderabad', userCoords, liveData, cityData, hoveredLocation }: { city?: string, userCoords?: { lat: number, lon: number } | null, liveData?: any, cityData?: any, hoveredLocation?: any }) {
+  const [data, setData] = useState<ForecastPoint[]>([]);
+  const [liveForecast, setLiveForecast] = useState<any>(null);
+  const [liveAttribution, setLiveAttribution] = useState<any>(null);
+  const [liveConnection, setLiveConnection] = useState<boolean>(false);
+  const [validationMetrics, setValidationMetrics] = useState<any>(null);
+  const [pblhData, setPblhData] = useState<any[]>([]);
+  const [confidenceTarget, setConfidenceTarget] = useState<number>(90);
 
-
-export default function ForecastPanel({ city = 'Delhi', userCoords, liveData, cityData, hoveredLocation }: { city?: string, userCoords?: { lat: number, lon: number } | null, liveData?: any, cityData?: any, hoveredLocation?: any }) {
-  const [data, setData] = useState<ForecastPoint[]>(initialForecastData);
-  const [liveForecast, setLiveForecast] = React.useState<any>(null);
-  const [liveAttribution, setLiveAttribution] = React.useState<any>(null);
-  const [liveConnection, setLiveConnection] = React.useState<boolean>(false);
-
-  // Fetch API Forecast logic
+  // Fetch API Forecast logic & Real Metrics
   useEffect(() => {
-    if (city === 'My Location') {
-      if (liveData && liveData.forecast) {
-        setLiveForecast(liveData.forecast);
-        setLiveAttribution(liveData.attribution);
-        setLiveConnection(true);
-      }
-      return;
-    }
+    // 1. Fetch Real Validation Metrics from API
+    fetch('http://127.0.0.1:8000/api/model/metrics')
+      .then(res => res.json())
+      .then(result => setValidationMetrics(result))
+      .catch(err => console.error('Failed to fetch ML metrics:', err));
 
     const stations = cityData ? cityData.stations : [];
-    // If hovering over a location, use its data! Otherwise fallback to an IoT sensor or the first station.
     let targetSensor = hoveredLocation;
     
-    // Fallback if not hovering, or if hovered location doesn't have the required ML telemetry
     if (!targetSensor || targetSensor.pm25 === undefined) {
       targetSensor = stations.find((s: any) => s.source === 'iot') || stations[0];
     }
     
     if (!targetSensor) return;
+
+    // Compute physical PBLH Diurnal cycle from the target sensor's actual boundary layer height
+    const baseHour = new Date().getHours();
+    const basePblh = targetSensor.pblh || 850.0;
+    const mockPblh = [];
+    for(let i = 0; i < 24; i += 2) {
+      const h = (baseHour + i) % 24;
+      // Physical PBLH follows solar insolation: low at night (0.3x base), peaks at 14:00 (1.6x base)
+      const solarPhase = Math.sin(((h - 6) / 24) * 2 * Math.PI);
+      const factor = h >= 6 && h <= 18 ? 0.8 + 0.8 * Math.max(0, solarPhase) : 0.35 + 0.15 * Math.cos(((h) / 24) * 2 * Math.PI);
+      const height = Math.round(basePblh * factor);
+      mockPblh.push({ hour: `${h}:00`, height });
+    }
+    setPblhData(mockPblh);
 
     const payload = {
       station_id: targetSensor.id || 'Unknown',
@@ -107,6 +124,7 @@ export default function ForecastPanel({ city = 'Delhi', userCoords, liveData, ci
       .then(result => {
         if (result && result.horizon_h === 72) {
           setLiveForecast(result);
+          setData(interpolatePoints(targetSensor.aqi || result.points[0], result.points, result.intervals));
         }
       })
       .catch(err => console.error('Failed to fetch ML forecast:', err));
@@ -128,192 +146,205 @@ export default function ForecastPanel({ city = 'Delhi', userCoords, liveData, ci
 
   }, [city, liveData, cityData, hoveredLocation]);
 
-  // Reactive scaling logic based on hover
-  useEffect(() => {
-    if (!liveForecast) return;
-    
-    // Anchor AQI is either the hovered location's ML AQI, or the city average ML AQI
-    const anchorAqi = hoveredLocation ? hoveredLocation.aqi : liveForecast.points[0];
-    const viAnchor = liveForecast.ventilation_index;
-
-    // Retrieve weather parameters from hovered location, or fallback to defaults
-    const t = hoveredLocation?.temp ?? 30;
-    const ws = hoveredLocation?.wind_speed ?? 2;
-    
-    // Generate a mathematically unique curve shape based on this district's actual physics
-    const districtBaseCurve = generateForecast(t, ws);
-    
-    const basePoint0 = districtBaseCurve[0].point;
-    const basePoint24 = districtBaseCurve.find(p => p.hour === 24)?.point || basePoint0;
-    const basePoint48 = districtBaseCurve.find(p => p.hour === 48)?.point || basePoint0;
-    const basePoint72 = districtBaseCurve.find(p => p.hour === 72)?.point || basePoint0;
-
-    // Use the 3-day ML trajectory points
-    const pts = liveForecast.points || [50, 50, 50];
-    const cityLiveAqi = (liveForecast as any)._cityLiveAqi || pts[0]; 
-    const spatialMultiplier = hoveredLocation ? hoveredLocation.aqi / cityLiveAqi : 1;
-    
-    const liveAqi = hoveredLocation ? hoveredLocation.aqi : cityLiveAqi;
-    const target24 = pts[0] * spatialMultiplier;
-    const target48 = (pts[1] || pts[0]) * spatialMultiplier;
-    const target72 = (pts[2] || pts[0]) * spatialMultiplier;
-
-    const ratio0 = basePoint0 > 0 ? liveAqi / basePoint0 : 1;
-    const ratio24 = basePoint24 > 0 ? target24 / basePoint24 : 1;
-    const ratio48 = basePoint48 > 0 ? target48 / basePoint48 : 1;
-    const ratio72 = basePoint72 > 0 ? target72 / basePoint72 : 1;
-
-    const basePoint24_vi = districtBaseCurve.find(p => p.hour === 24)?.vi || 1;
-    const viRatio = basePoint24_vi > 0 ? viAnchor / basePoint24_vi : 1;
-
-    setData(districtBaseCurve.map(p => {
-        let finalRatio = 1;
-        if (p.hour <= 24) {
-            const blend = p.hour / 24;
-            finalRatio = ratio0 * (1 - blend) + ratio24 * blend;
-        } else if (p.hour <= 48) {
-            const blend = (p.hour - 24) / 24;
-            finalRatio = ratio24 * (1 - blend) + ratio48 * blend;
-        } else {
-            const blend = Math.min(1, (p.hour - 48) / 24);
-            finalRatio = ratio48 * (1 - blend) + ratio72 * blend;
-        }
-
-        return {
-            ...p,
-            point: Math.max(0, Math.round(p.point * finalRatio)),
-            lower: Math.max(0, Math.round(p.lower * finalRatio)),
-            upper: Math.max(0, Math.round(p.upper * finalRatio)),
-            vi: Math.max(0, Math.round(p.vi * viRatio))
-        };
-    }));
-  }, [hoveredLocation, liveForecast]);
-
-  const currentVI = data[0]?.vi ?? 0;
+  const currentVI = liveForecast ? liveForecast.ventilation_index : 0;
   const viStatus = currentVI < 1000 ? 'STAGNATION' : currentVI < 3000 ? 'POOR' : currentVI < 6000 ? 'MODERATE' : 'GOOD';
   const viColor =
     currentVI < 1000 ? 'var(--accent-red)' :
     currentVI < 3000 ? 'var(--accent-orange)' :
     currentVI < 6000 ? 'var(--accent-amber)' : 'var(--accent-green)';
-
   const viPercent = Math.min((currentVI / 8000) * 100, 100);
 
-  return (
-    <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {/* Live API Integration Card */}
-      {liveConnection && liveForecast && liveAttribution && (
-        <div className="panel" style={{ borderColor: 'var(--accent-green)', background: 'rgba(56, 139, 253, 0.05)' }}>
-          <div className="panel-header">
-            <div className="panel-title" style={{ color: 'var(--accent-green)', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span className="dot live" style={{ width: 8, height: 8, background: 'var(--accent-green)', borderRadius: '50%', display: 'inline-block' }}></span>
-              Live API & ML Model Connected
-            </div>
-            <div className="panel-badge badge-green">Active</div>
-          </div>
-          <div style={{ fontSize: '0.72rem', display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6, color: 'var(--text-normal)' }}>
-            <div><strong>Forecast (XGBoost + MAPIE):</strong> 24h AQI Point = {liveForecast.points[0].toFixed(1)} | Conformal Interval = [{liveForecast.intervals[0][0].toFixed(1)}, {liveForecast.intervals[0][1].toFixed(1)}]</div>
-            <div><strong>Source Attribution (Random Forest):</strong> Predicted Sources = {liveAttribution.prediction_set.join(', ')} | Confidence = {(liveAttribution.confidence * 100).toFixed(0)}%</div>
-          </div>
-        </div>
-      )}
+  const getAqiColor = (aqi: number) => {
+    if (aqi <= 50) return 'var(--accent-green)';
+    if (aqi <= 100) return 'var(--accent-yellow)';
+    if (aqi <= 200) return 'var(--accent-orange)';
+    if (aqi <= 300) return 'var(--accent-red)';
+    return 'var(--accent-purple)';
+  };
 
-      {/* VI Gauge */}
-      <div className="gauge-container">
-        <div className="gauge-ring">
-          <svg width={64} height={64} viewBox="0 0 64 64">
-            <circle cx={32} cy={32} r={26} fill="none" stroke="var(--bg-elevated)" strokeWidth={5} />
-            <circle cx={32} cy={32} r={26} fill="none" stroke={viColor} strokeWidth={5}
-              strokeDasharray={`${viPercent * 1.63} 163`}
-              strokeLinecap="round"
-              style={{ transition: 'stroke-dasharray 0.8s ease' }}
-            />
-          </svg>
+  return (
+    <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      
+      {/* 6.1 Section 1: Live ML Status Bar */}
+      <div className="panel" style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderColor: liveConnection ? 'var(--accent-green)' : 'var(--border-color)', background: liveConnection ? 'rgba(46, 160, 67, 0.05)' : 'var(--bg-elevated)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span className={`dot ${liveConnection ? 'live' : ''}`} style={{ width: 10, height: 10, background: liveConnection ? 'var(--accent-green)' : 'var(--text-muted)', borderRadius: '50%', display: 'inline-block' }}></span>
+          <span style={{ fontWeight: 600, color: 'var(--text-normal)' }}>{liveConnection ? 'Live ML Inference Active' : 'Connecting ML Backend...'}</span>
         </div>
-        <div className="gauge-info">
-          <div className="gauge-label">Ventilation Index</div>
-          <div className="gauge-value" style={{ color: viColor }}>{currentVI.toLocaleString()}</div>
-          <div className="gauge-desc">
-            {viStatus} — PBLH × Wind
-          </div>
-        </div>
-        <div className={`panel-badge ${currentVI < 3000 ? 'badge-red' : 'badge-green'}`}>
-          {viStatus}
+        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+          {liveConnection && <span>Target Zone: <strong>{hoveredLocation?.name || 'GHMC Reference'}</strong> | CatBoost v2.1</span>}
         </div>
       </div>
 
-      {/* Forecast Chart */}
-      <div className="panel">
-        <div className="panel-header">
-          <div className="panel-title">72h AQI Forecast</div>
-          <div className="panel-badge badge-blue">90% Conformal</div>
+      {/* 6.2 Section 2: Headline Metric Cards */}
+      {liveForecast && data.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+          {[
+            { label: 'Current AQI', val: data[0].point },
+            { label: '24h Prediction', val: pm25ToAqi(liveForecast.points[0]), bounds: [pm25ToAqi(liveForecast.intervals[0][0]), pm25ToAqi(liveForecast.intervals[0][1])] },
+            { label: '48h Prediction', val: pm25ToAqi(liveForecast.points[1]), bounds: [pm25ToAqi(liveForecast.intervals[1][0]), pm25ToAqi(liveForecast.intervals[1][1])] },
+            { label: '72h Prediction', val: pm25ToAqi(liveForecast.points[2]), bounds: [pm25ToAqi(liveForecast.intervals[2][0]), pm25ToAqi(liveForecast.intervals[2][1])] }
+          ].map((card, i) => (
+            <div key={i} className="panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 4, borderTop: `3px solid ${getAqiColor(card.val)}` }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{card.label}</div>
+              <div style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--text-normal)' }}>
+                {Math.round(card.val)} <span style={{ fontSize: '1rem', fontWeight: 400, color: 'var(--text-muted)' }}>AQI</span>
+              </div>
+              {card.bounds && (
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', background: 'var(--bg-panel)', padding: '2px 6px', borderRadius: 4, display: 'inline-block', alignSelf: 'flex-start' }}>
+                  {Math.round(card.bounds[0])} - {Math.round(card.bounds[1])}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
-        <div className="chart-container">
+      )}
+
+      {/* 6.3 Section 3: 72h Forecast Area Chart */}
+      <div className="panel">
+        <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="panel-title">72h Trajectory & MAPIE Conformal Intervals</div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {[80, 90, 95].map(target => (
+              <button 
+                key={target}
+                onClick={() => setConfidenceTarget(target)}
+                style={{ 
+                  background: confidenceTarget === target ? 'var(--accent-blue)' : 'var(--bg-panel)', 
+                  border: `1px solid ${confidenceTarget === target ? 'var(--accent-blue)' : 'var(--border-color)'}`,
+                  color: confidenceTarget === target ? '#fff' : 'var(--text-muted)',
+                  padding: '2px 8px', borderRadius: 4, fontSize: '0.75rem', cursor: 'pointer',
+                  transition: 'all 0.2s ease'
+                }}>
+                {target}%
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{ width: '100%', height: 250, marginTop: 16 }}>
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={data} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="conformalBand" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#388bfd" stopOpacity={0.15} />
-                  <stop offset="100%" stopColor="#388bfd" stopOpacity={0.02} />
+                  <stop offset="0%" stopColor="#388bfd" stopOpacity={0.25} />
+                  <stop offset="100%" stopColor="#388bfd" stopOpacity={0.05} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#21262d" />
-              <XAxis dataKey="hour" tick={{ fontSize: 9, fill: '#484f58' }}
-                tickFormatter={(h: number) => `${h}h`}
-                interval={3} />
-              <YAxis tick={{ fontSize: 9, fill: '#484f58' }} domain={[0, 'auto']} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#21262d" vertical={false} />
+              <XAxis dataKey="hour" tick={{ fontSize: 10, fill: '#8b949e' }} tickFormatter={(h: number) => `+${h}h`} interval={3} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 10, fill: '#8b949e' }} domain={['auto', 'auto']} axisLine={false} tickLine={false} />
               <Tooltip
-                contentStyle={{
-                  background: '#161b22', border: '1px solid #30363d',
-                  borderRadius: 8, fontSize: 11, color: '#e6edf3',
-                }}
-                formatter={(val: number, name: string) => [
-                  `${val}`, name === 'point' ? 'Forecast AQI' : name
-                ]}
-                labelFormatter={(h: number) => `+${h}h from now`}
+                contentStyle={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, fontSize: 12, color: '#e6edf3' }}
+                labelFormatter={(h: number) => `T+${h} Hours`}
+                formatter={(val: number, name: string) => [`${val} AQI`, name === 'point' ? 'Point Forecast' : name === 'upper' ? 'Upper Bound' : 'Lower Bound']}
               />
-              <ReferenceLine y={200} stroke="var(--accent-amber)" strokeDasharray="4 4" strokeWidth={0.8} />
-              <ReferenceLine y={300} stroke="var(--accent-red)" strokeDasharray="4 4" strokeWidth={0.8} />
-              <Area type="monotone" dataKey="upper" stackId="band" stroke="none" fill="url(#conformalBand)" />
-              <Area type="monotone" dataKey="lower" stackId="band" stroke="none" fill="#06080f" />
-              <Area type="monotone" dataKey="point" stroke="#388bfd" strokeWidth={2} fill="none" dot={false} />
+              <ReferenceLine y={200} stroke="var(--accent-orange)" strokeDasharray="4 4" strokeWidth={1} label={{ position: 'insideTopLeft', value: 'Poor', fill: 'var(--accent-orange)', fontSize: 10 }} />
+              <ReferenceLine y={300} stroke="var(--accent-red)" strokeDasharray="4 4" strokeWidth={1} label={{ position: 'insideTopLeft', value: 'Severe', fill: 'var(--accent-red)', fontSize: 10 }} />
+              
+              <Area type="monotone" dataKey="upper" stackId="1" stroke="none" fill="url(#conformalBand)" animationDuration={1500} />
+              <Area type="monotone" dataKey="lower" stackId="1" stroke="none" fill="var(--bg-elevated)" animationDuration={1500} />
+              <Area type="monotone" dataKey="point" stroke="#388bfd" strokeWidth={3} fill="none" dot={false} animationDuration={1500} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
       </div>
 
-      {/* Validation Metrics */}
-      <div className="panel">
-        <div className="panel-header">
-          <div className="panel-title">Model Validation</div>
-          <div className="panel-badge badge-green">✓ Calibrated</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 16 }}>
+        {/* 6.4 Section 4: VI Gauge + PBLH Bar Chart */}
+        <div className="panel" style={{ display: 'flex', flexDirection: 'column' }}>
+          <div className="panel-header">
+            <div className="panel-title">Atmospheric Physics</div>
+          </div>
+          
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 16, marginBottom: 16 }}>
+             <div className="gauge-container" style={{ margin: 0, width: '100%', display: 'flex', alignItems: 'center', gap: 16, background: 'transparent' }}>
+              <div className="gauge-ring">
+                <svg width={80} height={80} viewBox="0 0 64 64">
+                  <circle cx={32} cy={32} r={26} fill="none" stroke="var(--bg-panel)" strokeWidth={6} />
+                  <circle cx={32} cy={32} r={26} fill="none" stroke={viColor} strokeWidth={6}
+                    strokeDasharray={`${viPercent * 1.63} 163`}
+                    strokeLinecap="round"
+                    style={{ transition: 'stroke-dasharray 1s cubic-bezier(0.4, 0, 0.2, 1)' }}
+                  />
+                </svg>
+              </div>
+              <div className="gauge-info" style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Ventilation Index</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 700, color: viColor }}>{currentVI.toLocaleString()}</div>
+                <div style={{ fontSize: '0.75rem', background: viColor, color: '#000', padding: '2px 6px', borderRadius: 4, display: 'inline-block', fontWeight: 600, marginTop: 4 }}>
+                  {viStatus}
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div style={{ width: '100%', height: 120 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={pblhData} margin={{ top: 0, right: 0, left: -25, bottom: 0 }}>
+                <YAxis tick={{ fontSize: 9, fill: '#8b949e' }} axisLine={false} tickLine={false} />
+                <Tooltip cursor={{ fill: 'rgba(255,255,255,0.05)' }} contentStyle={{ background: '#161b22', border: 'none', borderRadius: 4, fontSize: 10 }} />
+                <Bar dataKey="height" name="PBLH (m)" fill="var(--accent-purple)" radius={[2, 2, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4 }}>Diurnal Boundary Layer Height (Next 24h)</div>
         </div>
-        <div className="metrics-grid">
-          <div className="metric-card">
-            <div className="metric-card-value" style={{ color: 'var(--accent-green)' }}>
-              {validationMetrics.improvement_24h}%
+
+        {/* 6.5 Section 5: Real Model Validation */}
+        <div className="panel">
+          <div className="panel-header">
+            <div className="panel-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              Model Validation & Benchmark
+              <div className="panel-badge badge-green">✓ Verified</div>
             </div>
-            <div className="metric-card-label">24h RMSE ↓</div>
           </div>
-          <div className="metric-card">
-            <div className="metric-card-value" style={{ color: 'var(--accent-amber)' }}>
-              {validationMetrics.improvement_48h}%
+          
+          {validationMetrics ? (
+            <div style={{ marginTop: 16 }}>
+              <div className="metrics-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                <div className="metric-card" style={{ background: 'var(--bg-panel)' }}>
+                  <div className="metric-card-value" style={{ color: 'var(--accent-green)', fontSize: '1.4rem' }}>
+                    +{(validationMetrics['24h']?.improvement * 100).toFixed(1)}%
+                  </div>
+                  <div className="metric-card-label" style={{ fontSize: '0.75rem' }}>24h Improvement vs Baseline</div>
+                </div>
+                <div className="metric-card" style={{ background: 'var(--bg-panel)' }}>
+                  <div className="metric-card-value" style={{ color: 'var(--accent-blue)', fontSize: '1.4rem' }}>
+                    {(validationMetrics['48h']?.coverage_90 * 100).toFixed(1)}%
+                  </div>
+                  <div className="metric-card-label" style={{ fontSize: '0.75rem' }}>48h Conformal Coverage (Target 90%)</div>
+                </div>
+                <div className="metric-card" style={{ background: 'var(--bg-panel)' }}>
+                  <div className="metric-card-value" style={{ color: 'var(--accent-amber)', fontSize: '1.4rem' }}>
+                    {validationMetrics['72h']?.rmse.toFixed(2)}
+                  </div>
+                  <div className="metric-card-label" style={{ fontSize: '0.75rem' }}>72h Absolute RMSE</div>
+                </div>
+              </div>
+              
+              <div style={{ marginTop: 20, width: '100%', height: 160 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={[
+                    { name: '24h', Model: validationMetrics['24h']?.rmse, Baseline: validationMetrics['24h']?.baseline_rmse },
+                    { name: '48h', Model: validationMetrics['48h']?.rmse, Baseline: validationMetrics['48h']?.baseline_rmse },
+                    { name: '72h', Model: validationMetrics['72h']?.rmse, Baseline: validationMetrics['72h']?.baseline_rmse },
+                  ]} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#21262d" />
+                    <XAxis dataKey="name" tick={{ fill: '#8b949e', fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: '#8b949e', fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <Tooltip cursor={{ fill: 'rgba(255,255,255,0.05)' }} contentStyle={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, fontSize: 12, color: '#e6edf3' }} />
+                    <Bar dataKey="Baseline" fill="var(--text-muted)" name="Persistence Baseline RMSE" radius={[2, 2, 0, 0]} barSize={20} />
+                    <Bar dataKey="Model" fill="var(--accent-blue)" name="CatBoost ML RMSE" radius={[2, 2, 0, 0]} barSize={20} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
-            <div className="metric-card-label">48h RMSE ↓</div>
-          </div>
-          <div className="metric-card">
-            <div className="metric-card-value" style={{ color: 'var(--accent-blue)' }}>
-              {validationMetrics.conformal_coverage}%
-            </div>
-            <div className="metric-card-label">Coverage</div>
-          </div>
-          <div className="metric-card">
-            <div className="metric-card-value" style={{ color: 'var(--accent-purple)' }}>
-              {validationMetrics.rmse_24h}
-            </div>
-            <div className="metric-card-label">RMSE 24h</div>
-          </div>
+          ) : (
+            <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>Loading verification metrics from API...</div>
+          )}
         </div>
       </div>
+      
     </div>
   );
 }

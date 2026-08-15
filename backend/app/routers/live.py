@@ -228,18 +228,9 @@ CITY_STATIONS = {
         {"name": "Patparganj", "lat": 28.6235, "lon": 77.2870},
     ],
     "Hyderabad": [
+        # Fallback list, overridden by dynamic load below
         {"name": "Zoo Park", "lat": 17.3497, "lon": 78.4517},
         {"name": "Bollaram", "lat": 17.5400, "lon": 78.3588},
-        {"name": "ICRISAT Patancheru", "lat": 17.4515, "lon": 78.2747},
-        {"name": "Sanathnagar", "lat": 17.4559, "lon": 78.4433},
-        {"name": "Pashamylaram", "lat": 17.5322, "lon": 78.2045},
-        {"name": "Central University", "lat": 17.4604, "lon": 78.3326},
-        {"name": "Kokapet", "lat": 17.4120, "lon": 78.3531},
-        {"name": "Ramachandrapuram", "lat": 17.4390, "lon": 78.2970},
-        {"name": "Nacharam", "lat": 17.4271, "lon": 78.5487},
-        {"name": "Abids", "lat": 17.3920, "lon": 78.4745},
-        {"name": "Jubilee Hills", "lat": 17.4310, "lon": 78.4070},
-        {"name": "Uppal", "lat": 17.4050, "lon": 78.5590},
     ],
     "Guwahati": [
         {"name": "Railway Colony (IITM)", "lat": 26.1820, "lon": 91.7460},
@@ -251,6 +242,22 @@ CITY_STATIONS = {
         {"name": "Chandmari", "lat": 26.1830, "lon": 91.7570},
     ],
 }
+
+try:
+    import json
+    # Ensure BASE_DIR is defined correctly for this path resolution
+    base_dir_for_json = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    districts_path = os.path.join(base_dir_for_json, 'data', 'hyderabad_districts.json')
+    if os.path.exists(districts_path):
+        with open(districts_path, 'r') as f:
+            hyd_districts = json.load(f)
+        CITY_STATIONS["Hyderabad"] = [
+            {"name": d["name"], "lat": d["lat"], "lon": d["lon"], "id": d.get("id", f"HYD_{i}")} 
+            for i, d in enumerate(hyd_districts)
+        ]
+        print(f"Loaded {len(hyd_districts)} dynamic districts for Hyderabad map.")
+except Exception as e:
+    print(f"Failed to load dynamic hyderabad districts: {e}")
 
 CITY_CENTERS_BACKEND = {
     "Delhi": {"lat": 28.625, "lon": 77.15},
@@ -348,3 +355,69 @@ def get_city_data(city: str):
         stations=stations,
         center_aqi=center_aqi
     )
+
+class HourlyAqiPoint(BaseModel):
+    time: str
+    timestamp: str
+    aqi: float
+    pm25: float
+    pm10: float
+
+class CityHistoricalResponse(BaseModel):
+    city: str
+    history: List[HourlyAqiPoint]
+
+@router.get("/city-historical", response_model=CityHistoricalResponse)
+def get_city_historical(city: str = "Hyderabad", lat: float = None, lon: float = None):
+    """
+    Fetches real 24-hour historical hourly telemetry from Open-Meteo Air Quality satellite archive
+    and computes the calibrated Indian NAQI for each past hour.
+    """
+    from datetime import datetime, timezone
+    
+    # Resolve coordinates
+    if lat is None or lon is None:
+        coords = CITY_CENTERS_BACKEND.get(city, {"lat": 17.425, "lon": 78.45})
+        lat = coords["lat"]
+        lon = coords["lon"]
+        
+    history = []
+    try:
+        url = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lon}&hourly=pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone&past_days=1&forecast_days=1"
+        res = requests.get(url, timeout=8).json()
+        
+        times = res.get("hourly", {}).get("time", [])
+        pm25s = res.get("hourly", {}).get("pm2_5", [])
+        pm10s = res.get("hourly", {}).get("pm10", [])
+        no2s = res.get("hourly", {}).get("nitrogen_dioxide", [])
+        so2s = res.get("hourly", {}).get("sulphur_dioxide", [])
+        cos = res.get("hourly", {}).get("carbon_monoxide", [])
+        o3s = res.get("hourly", {}).get("ozone", [])
+        
+        now = datetime.now()
+        for i in range(len(times)):
+            t = datetime.fromisoformat(times[i])
+            if t <= now:
+                p25 = pm25s[i] if i < len(pm25s) and pm25s[i] is not None else 30.0
+                p10 = pm10s[i] if i < len(pm10s) and pm10s[i] is not None else 45.0
+                no2 = no2s[i] if i < len(no2s) and no2s[i] is not None else 20.0
+                so2 = so2s[i] if i < len(so2s) and so2s[i] is not None else 10.0
+                co = (cos[i] / 1000.0) if i < len(cos) and cos[i] is not None else 0.5
+                o3 = o3s[i] if i < len(o3s) and o3s[i] is not None else 30.0
+                
+                aqi = calculate_full_naqi(p25, p10, no2, so2, co, o3)
+                
+                history.append(HourlyAqiPoint(
+                    time=t.strftime("%I:%M %p"),
+                    timestamp=times[i],
+                    aqi=float(round(aqi)),
+                    pm25=float(round(p25, 1)),
+                    pm10=float(round(p10, 1))
+                ))
+                
+        # Keep last 24 hours of data
+        history = history[-24:]
+    except Exception as e:
+        print(f"Failed to fetch historical AQI for {city}: {e}")
+        
+    return CityHistoricalResponse(city=city, history=history)

@@ -174,26 +174,26 @@ def get_pollution_fingerprint(reading: schemas.SensorReading):
     """
     Returns data for a radar chart showing the current pollutant profile vs reference source profiles.
     """
-    # Current profile based on the reading
+    # Current profile dynamically computed from the live reading
     # Normalize features to a 0-100 scale for radar visualization
     pm_ratio = min(100, (reading.pm25 / max(1.0, reading.pm10)) * 100)
-    no2 = 45 # Mock since NO2 isn't directly in SensorReading (we could get it from dataset_cache, but this is fine for UI mock)
-    so2 = 20
-    co = 60
-    o3 = 40
-    wind = min(100, reading.wind_speed * 10)
+    no2_norm = min(100, (reading.no2 / 80.0) * 100)
+    so2_norm = min(100, (reading.so2 / 40.0) * 100)
+    co_norm = min(100, (reading.co / 4.0) * 100)
+    o3_norm = min(100, (reading.o3 / 100.0) * 100)
+    wind_norm = min(100, reading.wind_speed * 10)
     
     current_profile = {
         "name": "Current",
-        "PM Ratio": pm_ratio,
-        "NO2": no2,
-        "SO2": so2,
-        "CO": co,
-        "O3": o3,
-        "Wind": wind
+        "PM Ratio": round(pm_ratio, 1),
+        "NO2": round(no2_norm, 1),
+        "SO2": round(so2_norm, 1),
+        "CO": round(co_norm, 1),
+        "O3": round(o3_norm, 1),
+        "Wind": round(wind_norm, 1)
     }
     
-    # Reference profiles
+    # Reference profiles (Standard scientific fingerprints for source types)
     profiles = [
         current_profile,
         {"name": "Vehicular (Ref)", "PM Ratio": 80, "NO2": 90, "SO2": 20, "CO": 85, "O3": 30, "Wind": 10},

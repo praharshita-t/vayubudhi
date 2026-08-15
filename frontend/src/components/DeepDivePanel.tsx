@@ -34,8 +34,12 @@ export default function DeepDivePanel({ district, city, onReset }: { district: a
       pressure: district.pressure || 1008.2,
       wind_speed: district.wind_speed || 2.5,
       pblh: district.pblh || 850.0,
-      lat: district.lat || 17.4156,
-      lon: district.lon || 78.4736
+      lat: district.lat || (district.centroid ? district.centroid[1] : 17.4156),
+      lon: district.lon || (district.centroid ? district.centroid[0] : 78.4736),
+      no2: district.no2 || 25.0,
+      so2: district.so2 || 10.0,
+      co: district.co || 1.0,
+      o3: district.o3 || 35.0,
     };
 
     // 1. Fetch Attribution & Geospatial Evidence
@@ -79,7 +83,8 @@ export default function DeepDivePanel({ district, city, onReset }: { district: a
         station_id: district.id, timestamp: new Date().toISOString(),
         pm25: district.pm25, pm10: district.pm10 || (district.pm25 * 1.5),
         temp: district.temp || 32.5, humidity: district.humidity || 55.0,
-        pressure: district.pressure || 1008.2, wind_speed: district.wind_speed || 2.5, pblh: district.pblh || 850.0
+        pressure: district.pressure || 1008.2, wind_speed: district.wind_speed || 2.5, pblh: district.pblh || 850.0,
+        no2: district.no2 || 25.0, so2: district.so2 || 10.0, co: district.co || 1.0, o3: district.o3 || 35.0,
       };
       
       const simulated = { ...baseline };
@@ -99,13 +104,13 @@ export default function DeepDivePanel({ district, city, onReset }: { district: a
 
   if (!district) return null;
 
-  // Pie chart data derived from sub-indices formula approximation
+  // Pie chart data derived directly from the active district pollutant telemetry
   const pieData = [
-    { name: 'PM2.5', value: district.pm25 * 1.2, fill: 'var(--accent-red)' },
-    { name: 'PM10', value: (district.pm10 || district.pm25*1.5) * 0.8, fill: 'var(--accent-orange)' },
-    { name: 'NO2', value: 45, fill: 'var(--accent-blue)' },
-    { name: 'SO2', value: 20, fill: 'var(--accent-yellow)' },
-    { name: 'O3', value: 30, fill: 'var(--accent-cyan)' }
+    { name: 'PM2.5', value: Math.round(district.pm25 || 0), fill: 'var(--accent-red)' },
+    { name: 'PM10', value: Math.round(district.pm10 || 0), fill: 'var(--accent-orange)' },
+    { name: 'NO2', value: Math.round(district.no2 || 25), fill: 'var(--accent-blue)' },
+    { name: 'SO2', value: Math.round(district.so2 || 10), fill: 'var(--accent-yellow)' },
+    { name: 'O3', value: Math.round(district.o3 || 35), fill: 'var(--accent-cyan)' }
   ];
 
   return (

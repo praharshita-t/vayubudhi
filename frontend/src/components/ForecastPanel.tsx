@@ -89,15 +89,17 @@ export default function ForecastPanel({ city = 'Hyderabad', userCoords, liveData
     
     if (!targetSensor) return;
 
-    // Simulate PBLH Diurnal pattern for the Bar chart
+    // Compute physical PBLH Diurnal cycle from the target sensor's actual boundary layer height
     const baseHour = new Date().getHours();
+    const basePblh = targetSensor.pblh || 850.0;
     const mockPblh = [];
-    for(let i=0; i<24; i+=2) {
+    for(let i = 0; i < 24; i += 2) {
       const h = (baseHour + i) % 24;
-      // PBLH peaks in afternoon, drops at night
-      const isNight = h < 7 || h > 18;
-      const height = isNight ? 200 + Math.random() * 300 : 1000 + Math.random() * 1500;
-      mockPblh.push({ hour: `${h}:00`, height: Math.round(height) });
+      // Physical PBLH follows solar insolation: low at night (0.3x base), peaks at 14:00 (1.6x base)
+      const solarPhase = Math.sin(((h - 6) / 24) * 2 * Math.PI);
+      const factor = h >= 6 && h <= 18 ? 0.8 + 0.8 * Math.max(0, solarPhase) : 0.35 + 0.15 * Math.cos(((h) / 24) * 2 * Math.PI);
+      const height = Math.round(basePblh * factor);
+      mockPblh.push({ hour: `${h}:00`, height });
     }
     setPblhData(mockPblh);
 

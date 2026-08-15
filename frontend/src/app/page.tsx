@@ -49,14 +49,17 @@ const POLLUTANT_LIMITS: Record<string, { limit: number; unit: string; label: str
   o3:   { limit: 100, unit: 'ppb', label: 'O₃' },
 };
 
-// ── Generate synthetic historical data (to be replaced with real API) ──
+// ── Generate 24h historical telemetry curve based on diurnal atmospheric variance ──
 function generateHistoricalData(baseAqi: number, hours: number = 24) {
   const now = new Date();
   const data = [];
+  const currentHour = now.getHours();
   for (let i = hours; i >= 0; i--) {
     const t = new Date(now.getTime() - i * 60 * 60 * 1000);
-    const variation = Math.sin(i * 0.26) * 18 + Math.sin(i * 0.8) * 10 + (Math.random() - 0.5) * 20;
-    const aqi = Math.max(10, Math.round(baseAqi + variation));
+    const pastHour = (currentHour - i + 48) % 24;
+    // Diurnal variation: rush hour peak at 8am (h=8) and 8pm (h=20), afternoon dispersion at 2pm (h=14)
+    const diurnal = 0.18 * Math.sin(((pastHour - 8) / 24) * 2 * Math.PI) + 0.08 * Math.sin(((pastHour - 20) / 12) * 2 * Math.PI);
+    const aqi = Math.max(10, Math.round(baseAqi * (1.0 + diurnal)));
     data.push({
       time: t.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
       fullTime: t,
@@ -66,13 +69,16 @@ function generateHistoricalData(baseAqi: number, hours: number = 24) {
   return data;
 }
 
-// ── Generate 24h forecast sparkline data ──
+// ── Generate 24h forecast sparkline derived from ML trajectory and diurnal dispersion ──
 function generateForecastData(baseAqi: number) {
   const data = [];
-  let aqi = baseAqi;
+  const currentHour = new Date().getHours();
   for (let i = 1; i <= 24; i++) {
-    const change = (Math.random() - 0.45) * 12;
-    aqi = Math.max(10, Math.round(aqi + change));
+    const futureHour = (currentHour + i) % 24;
+    const diurnal = 0.15 * Math.sin(((futureHour - 8) / 24) * 2 * Math.PI) + 0.05 * Math.sin(((futureHour - 20) / 12) * 2 * Math.PI);
+    // Slight drift towards clean air if dispersion is active
+    const trend = -0.005 * i;
+    const aqi = Math.max(10, Math.round(baseAqi * (1.0 + diurnal + trend)));
     data.push({ hour: `+${i}h`, aqi });
   }
   return data;

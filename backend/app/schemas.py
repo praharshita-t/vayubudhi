@@ -14,6 +14,10 @@ class SensorReading(BaseModel):
     pblh: float = Field(default=1000.0, examples=[800.0])
     lat: float = Field(default=28.6139, examples=[28.6139])
     lon: float = Field(default=77.2090, examples=[77.2090])
+    no2: float = Field(default=25.0, examples=[25.0])
+    so2: float = Field(default=10.0, examples=[10.0])
+    co: float = Field(default=1.0, examples=[1.0])
+    o3: float = Field(default=35.0, examples=[35.0])
 
 # Contract 2: ML -> Backend (Attribution)
 class AttributionOutput(BaseModel):

@@ -1,0 +1,117 @@
+'use client';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import { Station, CityId } from '@/types';
+import { computeDelhiDistricts } from '@/data/delhiDistricts';
+import { computeHyderabadDistricts, computeGuwahatiDistricts } from '@/data/otherDistricts';
+
+interface CityContextType {
+  activeCity: CityId;
+  setActiveCity: (city: CityId) => void;
+  cityData: any;
+  liveData: any;
+  userCoords: { lat: number; lon: number } | null;
+  liveLoading: boolean;
+  stations: Station[];
+  districts: any[];
+}
+
+const CityContext = createContext<CityContextType | null>(null);
+
+export function useCityContext() {
+  const ctx = useContext(CityContext);
+  if (!ctx) throw new Error('useCityContext must be used within CityProvider');
+  return ctx;
+}
+
+export function CityProvider({ children }: { children: React.ReactNode }) {
+  const [activeCity, setActiveCity] = useState<CityId>('Delhi');
+  const [cityData, setCityData] = useState<any>(null);
+  const [liveData, setLiveData] = useState<any>(null);
+  const [userCoords, setUserCoords] = useState<{ lat: number; lon: number } | null>(null);
+  const [liveLoading, setLiveLoading] = useState(false);
+
+  // Reset data on city change
+  useEffect(() => {
+    setCityData(null);
+    setLiveData(null);
+  }, [activeCity]);
+
+  // Geolocate for "My Location"
+  useEffect(() => {
+    if (activeCity === 'My Location') {
+      if (navigator.geolocation) {
+        setLiveLoading(true);
+        navigator.geolocation.getCurrentPosition(
+          (pos) => setUserCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+          () => {
+            alert('Failed to get location. Defaulting to Delhi.');
+            setActiveCity('Delhi');
+            setLiveLoading(false);
+          }
+        );
+      } else {
+        alert('Geolocation not supported. Defaulting to Delhi.');
+        setActiveCity('Delhi');
+      }
+    }
+  }, [activeCity]);
+
+  // Fetch live GPS data
+  useEffect(() => {
+    if (activeCity === 'My Location' && userCoords) {
+      setLiveLoading(true);
+      fetch(`http://127.0.0.1:8000/api/live?lat=${userCoords.lat}&lon=${userCoords.lon}`)
+        .then((r) => r.json())
+        .then((data) => { setLiveData(data); setLiveLoading(false); })
+        .catch(() => setLiveLoading(false));
+    }
+  }, [activeCity, userCoords]);
+
+  // Fetch city data for named cities
+  useEffect(() => {
+    if (activeCity !== 'My Location') {
+      setLiveLoading(true);
+      fetch(`http://127.0.0.1:8000/api/city-data?city=${activeCity}`)
+        .then((r) => r.json())
+        .then((data) => { setCityData(data); setLiveLoading(false); })
+        .catch(() => setLiveLoading(false));
+    }
+  }, [activeCity]);
+
+  // Derive stations from raw data
+  const stations: Station[] = useMemo(() => {
+    if (activeCity === 'My Location' && liveData) {
+      return [{
+        id: 'USER_GPS',
+        name: 'My Location',
+        lat: userCoords?.lat ?? 0,
+        lon: userCoords?.lon ?? 0,
+        pm25: liveData.reading.pm25,
+        pm10: liveData.reading.pm10,
+        no2: 40, so2: 12, co: 1.5, o3: 30,
+        aqi: liveData.live_aqi,
+        source: 'iot',
+        status: 'online',
+      }];
+    }
+    return cityData?.stations ?? [];
+  }, [activeCity, liveData, cityData, userCoords]);
+
+  // Compute districts (used by enforce page and leaderboard)
+  const districts = useMemo(() => {
+    if (activeCity === 'Delhi') return computeDelhiDistricts(stations);
+    if (activeCity === 'Hyderabad') return computeHyderabadDistricts(stations);
+    if (activeCity === 'Guwahati') return computeGuwahatiDistricts(stations);
+    return [];
+  }, [activeCity, stations]);
+
+  return (
+    <CityContext.Provider value={{
+      activeCity, setActiveCity,
+      cityData, liveData, userCoords, liveLoading,
+      stations, districts,
+    }}>
+      {children}
+    </CityContext.Provider>
+  );
+}

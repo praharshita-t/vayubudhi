@@ -231,6 +231,21 @@ export default function CityMap({
         getFillColor: { duration: 800 },
       },
       onHover: (info: any) => setHoveredHex(info.object || null),
+      onClick: (info: any) => {
+        if (info.object && onClick) {
+          onClick({ ...info.object, type: 'District' });
+          setViewState((prev: any) => ({
+            ...prev,
+            longitude: info.object.lon,
+            latitude: info.object.lat,
+            zoom: 12.5,
+            pitch: 30,
+            transitionDuration: 1200,
+          }));
+        } else if (!info.object && onClick) {
+          onClick(null); // Clear selection when clicking off
+        }
+      },
     });
 
     // Layer 1: District boundary polygons

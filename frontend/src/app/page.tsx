@@ -135,6 +135,39 @@ export default function DashboardPage() {
     }
   }, [activeCity]);
 
+  const [compareData, setCompareData] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchCompareData = async () => {
+      const citiesToCompare = ['Delhi', 'Hyderabad', 'Guwahati'];
+      try {
+        const dataPromises = citiesToCompare.map((city) =>
+          fetch(`http://127.0.0.1:8000/api/city-data?city=${city}`).then((res) => res.json())
+        );
+        const results = await Promise.all(dataPromises);
+        const formattedData = results.map((data, index) => {
+          let avgAqi = data.center_aqi || 0;
+          let alerts = 0;
+          if (data.stations && data.stations.length > 0) {
+            avgAqi = Math.round(data.stations.reduce((sum: number, st: any) => sum + st.aqi, 0) / data.stations.length);
+            alerts = data.stations.filter((s: any) => s.status === 'alert').length;
+          }
+          const rois = ['+84.2%', '+42.1%', '+21.5%'];
+          return {
+            city: citiesToCompare[index],
+            avgAqi,
+            alerts,
+            roi: rois[index]
+          };
+        });
+        setCompareData(formattedData);
+      } catch (err) {
+        console.error('Failed to fetch compare data', err);
+      }
+    };
+    fetchCompareData();
+  }, []);
+
   // Compute live metrics
   let stations = [];
   if (activeCity === 'My Location' && liveData) {
@@ -318,24 +351,21 @@ export default function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr style={{ borderBottom: '1px solid #21262d' }}>
-                    <td style={{ padding: '0.5rem', fontWeight: 600 }}>Delhi NCR</td>
-                    <td style={{ padding: '0.5rem', color: 'var(--accent-red)' }}>342</td>
-                    <td style={{ padding: '0.5rem' }}>12</td>
-                    <td style={{ padding: '0.5rem', color: 'var(--accent-green)' }}>+84.2%</td>
-                  </tr>
-                  <tr style={{ borderBottom: '1px solid #21262d' }}>
-                    <td style={{ padding: '0.5rem', fontWeight: 600 }}>Hyderabad</td>
-                    <td style={{ padding: '0.5rem', color: 'var(--accent-amber)' }}>156</td>
-                    <td style={{ padding: '0.5rem' }}>4</td>
-                    <td style={{ padding: '0.5rem', color: 'var(--accent-green)' }}>+42.1%</td>
-                  </tr>
-                  <tr style={{ borderBottom: '1px solid #21262d' }}>
-                    <td style={{ padding: '0.5rem', fontWeight: 600 }}>Guwahati</td>
-                    <td style={{ padding: '0.5rem', color: 'var(--accent-amber)' }}>112</td>
-                    <td style={{ padding: '0.5rem' }}>2</td>
-                    <td style={{ padding: '0.5rem', color: 'var(--accent-green)' }}>+21.5%</td>
-                  </tr>
+                  {compareData.length > 0 ? compareData.map((data, idx) => {
+                    const color = data.avgAqi > 200 ? 'var(--accent-red)' : data.avgAqi > 100 ? 'var(--accent-amber)' : 'var(--accent-green)';
+                    return (
+                      <tr key={idx} style={{ borderBottom: '1px solid #21262d' }}>
+                        <td style={{ padding: '0.5rem', fontWeight: 600 }}>{data.city === 'Delhi' ? 'Delhi NCR' : data.city}</td>
+                        <td style={{ padding: '0.5rem', color: color }}>{data.avgAqi}</td>
+                        <td style={{ padding: '0.5rem' }}>{data.alerts}</td>
+                        <td style={{ padding: '0.5rem', color: 'var(--accent-green)' }}>{data.roi}</td>
+                      </tr>
+                    );
+                  }) : (
+                    <tr>
+                      <td colSpan={4} style={{ padding: '1rem', textAlign: 'center', color: '#8b949e' }}>Loading compare data...</td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
               <p style={{ marginTop: '1rem', fontSize: '0.8rem', color: '#8b949e' }}>

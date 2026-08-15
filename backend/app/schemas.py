@@ -41,6 +41,22 @@ class DispersionOutput(BaseModel):
     center_lon: float
     grid: List[DispersionPoint]
 
+# New Contract: SHAP Explainability
+class SHAPFeature(BaseModel):
+    feature: str
+    value: float
+
+class SHAPOutput(BaseModel):
+    horizon_h: int
+    base_value: float
+    features: List[SHAPFeature]
+
+# New Contract: Intervention Simulation
+class SimulationOutput(BaseModel):
+    baseline_forecast: List[float]
+    simulated_forecast: List[float]
+    delta: List[float]
+
 # Contract 5: Backend -> Frontend (Optimizer)
 class RouteStop(BaseModel):
     source_id: str = Field(..., examples=["s7"])

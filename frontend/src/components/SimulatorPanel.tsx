@@ -35,12 +35,12 @@ export default function SimulatorPanel({ onAlert, city, cityData, liveData }: Si
       station_id: iotSensor.id,
       timestamp: new Date().toISOString(),
       pm25: iotSensor.pm25,
-      pm10: iotSensor.pm25 * 1.5,
-      temp: 32.5,
-      humidity: 55.0,
-      pressure: 1008.2,
-      wind_speed: 2.5,
-      pblh: 850.0
+      pm10: iotSensor.pm10 || iotSensor.pm25 * 1.5,
+      temp: iotSensor.temp || 32.5,
+      humidity: iotSensor.humidity || 55.0,
+      pressure: iotSensor.pressure || 1008.2,
+      wind_speed: iotSensor.wind_speed || 2.5,
+      pblh: iotSensor.pblh || 850.0
     };
 
     fetch('http://127.0.0.1:8000/api/attribution', {

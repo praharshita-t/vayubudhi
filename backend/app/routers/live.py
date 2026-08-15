@@ -228,18 +228,9 @@ CITY_STATIONS = {
         {"name": "Patparganj", "lat": 28.6235, "lon": 77.2870},
     ],
     "Hyderabad": [
+        # Fallback list, overridden by dynamic load below
         {"name": "Zoo Park", "lat": 17.3497, "lon": 78.4517},
         {"name": "Bollaram", "lat": 17.5400, "lon": 78.3588},
-        {"name": "ICRISAT Patancheru", "lat": 17.4515, "lon": 78.2747},
-        {"name": "Sanathnagar", "lat": 17.4559, "lon": 78.4433},
-        {"name": "Pashamylaram", "lat": 17.5322, "lon": 78.2045},
-        {"name": "Central University", "lat": 17.4604, "lon": 78.3326},
-        {"name": "Kokapet", "lat": 17.4120, "lon": 78.3531},
-        {"name": "Ramachandrapuram", "lat": 17.4390, "lon": 78.2970},
-        {"name": "Nacharam", "lat": 17.4271, "lon": 78.5487},
-        {"name": "Abids", "lat": 17.3920, "lon": 78.4745},
-        {"name": "Jubilee Hills", "lat": 17.4310, "lon": 78.4070},
-        {"name": "Uppal", "lat": 17.4050, "lon": 78.5590},
     ],
     "Guwahati": [
         {"name": "Railway Colony (IITM)", "lat": 26.1820, "lon": 91.7460},
@@ -251,6 +242,22 @@ CITY_STATIONS = {
         {"name": "Chandmari", "lat": 26.1830, "lon": 91.7570},
     ],
 }
+
+try:
+    import json
+    # Ensure BASE_DIR is defined correctly for this path resolution
+    base_dir_for_json = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    districts_path = os.path.join(base_dir_for_json, 'data', 'hyderabad_districts.json')
+    if os.path.exists(districts_path):
+        with open(districts_path, 'r') as f:
+            hyd_districts = json.load(f)
+        CITY_STATIONS["Hyderabad"] = [
+            {"name": d["name"], "lat": d["lat"], "lon": d["lon"], "id": d.get("id", f"HYD_{i}")} 
+            for i, d in enumerate(hyd_districts)
+        ]
+        print(f"Loaded {len(hyd_districts)} dynamic districts for Hyderabad map.")
+except Exception as e:
+    print(f"Failed to load dynamic hyderabad districts: {e}")
 
 CITY_CENTERS_BACKEND = {
     "Delhi": {"lat": 28.625, "lon": 77.15},

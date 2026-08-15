@@ -140,3 +140,87 @@ def get_dispersion_model(reading: schemas.SensorReading, lat: float = 28.6139, l
         center_lon=lon,
         grid=grid
     )
+
+import json
+from fastapi import HTTPException
+# We need to import shap_explainer for SHAP endpoint
+try:
+    from ml_model.src.shap_explainer import get_shap_values
+except ImportError:
+    pass
+
+@router.get("/model/metrics")
+def get_model_metrics():
+    """
+    Returns the real evaluation metrics for the forecast models (from Phase 4).
+    """
+    metrics_path = os.path.join(project_root, 'ml_model', 'data', 'evaluation_metrics.json')
+    try:
+        with open(metrics_path, 'r') as f:
+            return json.load(f)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Metrics not available yet")
+
+@router.post("/forecast/diurnal")
+def get_diurnal_pattern(lat: float, lon: float):
+    """
+    Returns a mock 24-hour diurnal pattern (today vs 7-day average) for the given lat/lon.
+    In production, this would query the Open-Meteo API or the database.
+    """
+    import random
+    hours = list(range(24))
+    
+    # Base pattern with morning peak and evening inversion
+    base_pattern = [
+        # Midnight to 6 AM (slowly rising)
+        40, 38, 35, 36, 42, 55, 
+        # 6 AM to 10 AM (morning rush)
+        75, 95, 110, 85, 
+        # 10 AM to 5 PM (daytime dispersion)
+        65, 55, 45, 40, 35, 38, 45,
+        # 5 PM to Midnight (evening inversion & rush)
+        60, 85, 120, 115, 95, 70, 50
+    ]
+    
+    today = [max(0, val + random.uniform(-10, 20)) for val in base_pattern]
+    seven_day_avg = [max(0, val + random.uniform(-5, 5)) for val in base_pattern]
+    
+    return {
+        "hours": hours,
+        "today": today,
+        "seven_day_avg": seven_day_avg
+    }
+
+@router.post("/forecast/shap", response_model=schemas.SHAPOutput)
+def get_forecast_shap(reading: schemas.SensorReading, horizon: int = 24):
+    """
+    Provides feature attributions using SHAP for the requested forecast horizon.
+    """
+    try:
+        from ml_model.src.shap_explainer import get_shap_values
+        df = ml_service._prepare_features(reading)
+        shap_res = get_shap_values(df, horizon=horizon)
+        return schemas.SHAPOutput(
+            horizon_h=horizon,
+            base_value=shap_res["base_value"],
+            features=[schemas.SHAPFeature(feature=f["feature"], value=f["value"]) for f in shap_res["features"]]
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/intervention/simulate", response_model=schemas.SimulationOutput)
+def simulate_intervention(baseline: schemas.SensorReading, simulated: schemas.SensorReading):
+    """
+    Accepts a baseline reading and a simulated reading (e.g. reduced PM2.5 or Traffic).
+    Returns the difference in the forecast trajectory.
+    """
+    base_pred = ml_service.predict_forecast(baseline)
+    sim_pred = ml_service.predict_forecast(simulated)
+    
+    delta = [sim_pred["points"][i] - base_pred["points"][i] for i in range(len(base_pred["points"]))]
+    
+    return schemas.SimulationOutput(
+        baseline_forecast=base_pred["points"],
+        simulated_forecast=sim_pred["points"],
+        delta=delta
+    )

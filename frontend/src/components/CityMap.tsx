@@ -1,7 +1,7 @@
 'use client';
 import React, { useState, useMemo, useCallback } from 'react';
 import { getAqiCategory } from '@/utils/aqi';
-import { Station } from '@/app/page';
+import { Station } from '@/types';
 import { computeDelhiDistricts, District } from '@/data/delhiDistricts';
 import { computeHyderabadDistricts, computeGuwahatiDistricts } from '@/data/otherDistricts';
 
@@ -510,7 +510,7 @@ export default function CityMap({
             style={{ 
               cursor: 'pointer', 
               border: showSatellite ? '1px solid var(--accent-cyan)' : '1px solid var(--border-primary)',
-              background: showSatellite ? 'rgba(57,210,192,0.1)' : 'rgba(13,17,23,0.88)'
+              background: showSatellite ? 'rgba(57,210,192,0.1)' : 'var(--bg-secondary)'
             }}
           >
             Sentinel-5P NO₂: <span className="chip-value" style={{ color: showSatellite ? 'var(--accent-cyan)' : 'inherit' }}>{showSatellite ? 'ON' : 'OFF'}</span>
@@ -534,7 +534,7 @@ export default function CityMap({
       {/* Color Legend */}
       <div style={{
         position: 'absolute', bottom: 12, left: 12, zIndex: 5,
-        background: 'rgba(13,17,23,0.88)', backdropFilter: 'blur(12px)',
+        background: 'var(--bg-surface)', backdropFilter: 'blur(12px)',
         border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)',
         padding: '10px 14px',
       }}>
@@ -565,7 +565,7 @@ export default function CityMap({
       {tooltipData && tooltipCat && (
         <div style={{
           position: 'absolute', bottom: 80, right: 12,
-          background: 'rgba(13,17,23,0.94)', backdropFilter: 'blur(14px)',
+          background: 'var(--bg-surface)', backdropFilter: 'blur(14px)',
           border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)',
           padding: '12px 16px', zIndex: 10, minWidth: 220, maxWidth: 280,
         }}>

@@ -1,349 +1,444 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import dynamic from 'next/dynamic';
+import { useCityContext } from '@/context/CityContext';
 import { getAqiCategory } from '@/utils/aqi';
+import { BarChart, Bar, LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
-// Dynamic imports to avoid SSR hydration mismatches (dynamic clocks, charts, etc.)
-const CityMap = dynamic(() => import('@/components/CityMap'), { ssr: false });
-const SimulatorPanel = dynamic(() => import('@/components/SimulatorPanel'), { ssr: false });
-const ForecastPanel = dynamic(() => import('@/components/ForecastPanel'), { ssr: false });
-const OptimizerPanel = dynamic(() => import('@/components/OptimizerPanel'), { ssr: false });
-const AdvisoryPanel = dynamic(() => import('@/components/AdvisoryPanel'), { ssr: false });
-const DeepDivePanel = dynamic(() => import('@/components/DeepDivePanel'), { ssr: false });
-
-export interface Station {
-  id: string;
-  name: string;
-  lat: number;
-  lon: number;
-  pm25: number;
-  pm10: number;
-  no2: number;
-  so2: number;
-  co: number;
-  o3: number;
-  aqi: number;
-  source: string;
-  status: string;
+// ── Health recommendations by AQI band ──
+function getHealthInfo(aqi: number) {
+  if (aqi <= 50) return {
+    icon: '✅', title: 'Air quality is Good',
+    message: 'Air quality is satisfactory. No health risks. Enjoy outdoor activities freely.',
+    bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.3)', color: '#22c55e'
+  };
+  if (aqi <= 100) return {
+    icon: '🟢', title: 'Air quality is Satisfactory',
+    message: 'Acceptable quality. Unusually sensitive individuals should consider limiting prolonged outdoor exertion.',
+    bg: 'rgba(132,204,22,0.1)', border: 'rgba(132,204,22,0.3)', color: '#84cc16'
+  };
+  if (aqi <= 200) return {
+    icon: '⚠️', title: 'Air quality is Moderate',
+    message: 'Breathing discomfort possible for sensitive groups. Children, elderly, and those with respiratory conditions should limit outdoor time.',
+    bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.3)', color: '#f59e0b'
+  };
+  if (aqi <= 300) return {
+    icon: '🟠', title: 'Air quality is Poor',
+    message: 'Breathing discomfort likely for most people on prolonged exposure. Avoid heavy outdoor exertion. Use an N95 mask outdoors.',
+    bg: 'rgba(249,115,22,0.1)', border: 'rgba(249,115,22,0.3)', color: '#f97316'
+  };
+  if (aqi <= 400) return {
+    icon: '🔴', title: 'Air quality is Very Poor',
+    message: 'Health alert: everyone may experience serious effects. Avoid all outdoor physical activity. Keep windows closed. Use air purifiers indoors.',
+    bg: 'rgba(239,68,68,0.1)', border: 'rgba(239,68,68,0.3)', color: '#ef4444'
+  };
+  return {
+    icon: '🚨', title: 'Air quality is Severe — Emergency',
+    message: 'Hazardous conditions. Everyone should avoid going outdoors. Serious respiratory and cardiovascular effects expected. Use N95 masks if you must step outside.',
+    bg: 'rgba(220,38,38,0.1)', border: 'rgba(220,38,38,0.3)', color: '#dc2626'
+  };
 }
 
-type TabId = 'simulate' | 'forecast' | 'deepdive' | 'enforce' | 'advisory' | 'compare';
-type CityId = 'Delhi' | 'Hyderabad' | 'Guwahati' | 'My Location' | string;
+// ── Pollutant safe limits (India NAAQS 24h avg) ──
+const POLLUTANT_LIMITS: Record<string, { limit: number; unit: string; label: string }> = {
+  pm25: { limit: 60, unit: 'µg/m³', label: 'PM2.5' },
+  pm10: { limit: 100, unit: 'µg/m³', label: 'PM10' },
+  no2:  { limit: 80, unit: 'ppb', label: 'NO₂' },
+  so2:  { limit: 80, unit: 'ppb', label: 'SO₂' },
+  co:   { limit: 4, unit: 'mg/m³', label: 'CO' },
+  o3:   { limit: 100, unit: 'ppb', label: 'O₃' },
+};
 
-const tabs: { id: TabId; label: string }[] = [
-  { id: 'simulate', label: 'Simulate' },
-  { id: 'forecast', label: 'Forecast' },
-  { id: 'deepdive', label: 'Deep Dive' },
-  { id: 'enforce', label: 'Enforce' },
-  { id: 'advisory', label: 'Advisory' },
-  { id: 'compare', label: 'Compare Cities' },
-];
+// ── Generate synthetic historical data (to be replaced with real API) ──
+function generateHistoricalData(baseAqi: number, hours: number = 24) {
+  const now = new Date();
+  const data = [];
+  for (let i = hours; i >= 0; i--) {
+    const t = new Date(now.getTime() - i * 60 * 60 * 1000);
+    const variation = Math.sin(i * 0.26) * 18 + Math.sin(i * 0.8) * 10 + (Math.random() - 0.5) * 20;
+    const aqi = Math.max(10, Math.round(baseAqi + variation));
+    data.push({
+      time: t.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
+      fullTime: t,
+      aqi,
+    });
+  }
+  return data;
+}
 
-function LiveClock() {
-  const [time, setTime] = useState('--:--:--');
-  React.useEffect(() => {
-    const tick = () => setTime(new Date().toLocaleTimeString('en-IN', { hour12: false }));
-    tick();
-    const id = setInterval(tick, 1000);
+// ── Generate 24h forecast sparkline data ──
+function generateForecastData(baseAqi: number) {
+  const data = [];
+  let aqi = baseAqi;
+  for (let i = 1; i <= 24; i++) {
+    const change = (Math.random() - 0.45) * 12;
+    aqi = Math.max(10, Math.round(aqi + change));
+    data.push({ hour: `+${i}h`, aqi });
+  }
+  return data;
+}
+
+function aqiBarColor(aqi: number): string {
+  if (aqi <= 50) return '#22c55e';
+  if (aqi <= 100) return '#84cc16';
+  if (aqi <= 200) return '#f59e0b';
+  if (aqi <= 300) return '#f97316';
+  if (aqi <= 400) return '#ef4444';
+  return '#dc2626';
+}
+
+function pollutantColor(value: number, limit: number): string {
+  const ratio = value / limit;
+  if (ratio <= 0.5) return '#22c55e';
+  if (ratio <= 1.0) return '#f59e0b';
+  if (ratio <= 1.5) return '#f97316';
+  return '#ef4444';
+}
+
+export default function HomePage() {
+  const { activeCity, cityData, liveData, stations, districts, liveLoading } = useCityContext();
+  const [chartType, setChartType] = useState<'bar' | 'line'>('bar');
+  const [now, setNow] = useState(new Date());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60000);
     return () => clearInterval(id);
   }, []);
-  return (
-    <span suppressHydrationWarning style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-      {time} IST
-    </span>
-  );
-}
 
+  // Compute aggregate metrics from stations
+  const avgAqi = useMemo(() => {
+    if (stations.length === 0) return 0;
+    return Math.round(stations.reduce((s, st) => s + st.aqi, 0) / stations.length);
+  }, [stations]);
 
-export default function DashboardPage() {
-  const [activeTab, setActiveTab] = useState<TabId>('simulate');
-  const [alertStation, setAlertStation] = useState<Station | null>(null);
-  const [activeCity, setActiveCity] = useState<CityId>('Delhi');
-  const [hoveredLocation, setHoveredLocation] = useState<any>(null);
-  const [selectedDistrict, setSelectedDistrict] = useState<any>(null);
-  
-  const [userCoords, setUserCoords] = useState<{ lat: number; lon: number } | null>(null);
-  const [liveData, setLiveData] = useState<any>(null);
-  const [liveLoading, setLiveLoading] = useState<boolean>(false);
-  const [districts, setDistricts] = useState<any[]>([]);
-  const [monitoringLocation, setMonitoringLocation] = useState<{ lat: number; lon: number; name?: string } | null>(null);
+  const avgPm25 = useMemo(() => {
+    if (stations.length === 0) return 0;
+    return Math.round(stations.reduce((s, st) => s + st.pm25, 0) / stations.length);
+  }, [stations]);
 
-  // Clear monitoring location and districts list when activeCity changes
-  useEffect(() => {
-    setDistricts([]);
-    setMonitoringLocation(null);
-  }, [activeCity]);
+  const avgPm10 = useMemo(() => {
+    if (stations.length === 0) return 0;
+    return Math.round(stations.reduce((s, st) => s + st.pm10, 0) / stations.length);
+  }, [stations]);
 
-  // Geolocate user when option selected
-  useEffect(() => {
-    if (activeCity === 'My Location') {
-      if (navigator.geolocation) {
-        setLiveLoading(true);
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
-            setUserCoords({
-              lat: position.coords.latitude,
-              lon: position.coords.longitude,
-            });
-          },
-          (error) => {
-            console.error('Geolocation error:', error);
-            alert('Failed to get location. Defaulting to Delhi.');
-            setActiveCity('Delhi');
-            setLiveLoading(false);
-          }
-        );
-      } else {
-        alert('Geolocation is not supported by your browser. Defaulting to Delhi.');
-        setActiveCity('Delhi');
-      }
-    }
-  }, [activeCity]);
+  const avgPollutants = useMemo(() => {
+    if (stations.length === 0) return { no2: 0, so2: 0, co: 0, o3: 0, pm25: 0, pm10: 0 };
+    const n = stations.length;
+    return {
+      pm25: Math.round(stations.reduce((s, st) => s + st.pm25, 0) / n),
+      pm10: Math.round(stations.reduce((s, st) => s + st.pm10, 0) / n),
+      no2: Math.round(stations.reduce((s, st) => s + st.no2, 0) / n),
+      so2: Math.round(stations.reduce((s, st) => s + st.so2, 0) / n),
+      co: +(stations.reduce((s, st) => s + st.co, 0) / n).toFixed(1),
+      o3: Math.round(stations.reduce((s, st) => s + st.o3, 0) / n),
+    };
+  }, [stations]);
 
-  // Fetch live Open-Meteo & ML prediction data when coordinates are available
-  useEffect(() => {
-    if (activeCity === 'My Location' && userCoords) {
-      setLiveLoading(true);
-      fetch(`http://127.0.0.1:8000/api/live?lat=${userCoords.lat}&lon=${userCoords.lon}`)
-        .then((res) => res.json())
-        .then((data) => {
-          setLiveData(data);
-          setLiveLoading(false);
-        })
-        .catch((err) => {
-          console.error('Failed to fetch live surroundings data:', err);
-          setLiveLoading(false);
-        });
-    }
-  }, [activeCity, userCoords]);
+  // Weather: avg from stations that have weather data
+  const weather = useMemo(() => {
+    const withWeather = stations.filter((s: any) => s.temp !== undefined);
+    if (withWeather.length === 0) return null;
+    const n = withWeather.length;
+    return {
+      temp: +(withWeather.reduce((s: number, st: any) => s + (st.temp ?? 0), 0) / n).toFixed(1),
+      humidity: Math.round(withWeather.reduce((s: number, st: any) => s + (st.humidity ?? 0), 0) / n),
+      wind_speed: +(withWeather.reduce((s: number, st: any) => s + (st.wind_speed ?? 0), 0) / n).toFixed(1),
+      pressure: Math.round(withWeather.reduce((s: number, st: any) => s + (st.pressure ?? 0), 0) / n),
+    };
+  }, [stations]);
 
-  const [cityData, setCityData] = useState<any>(null);
+  const historicalData = useMemo(() => generateHistoricalData(avgAqi), [avgAqi]);
+  const forecastData = useMemo(() => generateForecastData(avgAqi), [avgAqi]);
 
-  useEffect(() => {
-    if (activeCity !== 'My Location') {
-      setLiveLoading(true);
-      fetch(`http://127.0.0.1:8000/api/city-data?city=${activeCity}`)
-        .then((res) => res.json())
-        .then((data) => {
-          setCityData(data);
-          setLiveLoading(false);
-        })
-        .catch((err) => {
-          console.error('Failed to fetch city data:', err);
-          setLiveLoading(false);
-        });
-    }
-  }, [activeCity]);
+  const minPoint = useMemo(() => historicalData.reduce((m, d) => d.aqi < m.aqi ? d : m, historicalData[0]), [historicalData]);
+  const maxPoint = useMemo(() => historicalData.reduce((m, d) => d.aqi > m.aqi ? d : m, historicalData[0]), [historicalData]);
 
-  // Compute live metrics
-  let stations = [];
-  if (activeCity === 'My Location' && liveData) {
-    stations = [{
-      name: 'Local GPS',
-      aqi: liveData.live_aqi,
-      status: liveData.live_aqi > 200 ? 'alert' : 'online'
-    }];
-  } else if (cityData && cityData.stations) {
-    stations = cityData.stations;
-  }
-  
-  let avgAqi = 0;
-  let worstStationName = 'N/A';
-  let worstStationAqi = 0;
-  let alertCount = 0;
+  const forecastEnd = forecastData[forecastData.length - 1]?.aqi ?? avgAqi;
+  const trendUp = forecastEnd > avgAqi;
 
-  if (activeCity === 'My Location') {
-    if (liveData) {
-      avgAqi = Math.round(liveData.live_aqi);
-      worstStationName = 'Local GPS';
-      worstStationAqi = Math.round(liveData.live_aqi);
-      alertCount = liveData.live_aqi > 200 ? 1 : 0;
-    } else {
-      avgAqi = 0;
-      worstStationName = 'Locating...';
-      worstStationAqi = 0;
-      alertCount = 0;
-    }
-  } else if (stations.length > 0) {
-    avgAqi = Math.round(stations.reduce((s: any, st: any) => s + st.aqi, 0) / stations.length);
-    const maxStation = stations.reduce((max: any, st: any) => st.aqi > max.aqi ? st : max, stations[0]);
-    worstStationName = maxStation.name;
-    worstStationAqi = maxStation.aqi;
-    alertCount = stations.filter((s: any) => s.status === 'alert').length;
+  const aqiCat = getAqiCategory(avgAqi);
+  const healthInfo = getHealthInfo(avgAqi);
+  const scalePosition = Math.min(100, Math.max(0, (avgAqi / 500) * 100));
+
+  // Sort districts for leaderboard
+  const sortedDistricts = useMemo(() => {
+    return [...districts].sort((a, b) => a.aqi - b.aqi);
+  }, [districts]);
+
+  const best5 = sortedDistricts.slice(0, 5);
+  const worst5 = [...sortedDistricts].reverse().slice(0, 5);
+
+  if (liveLoading && stations.length === 0) {
+    return (
+      <div className="home-page">
+        <div className="home-loading">
+          <div className="home-loading-spinner" />
+          <div>Loading air quality data for {activeCity}...</div>
+        </div>
+      </div>
+    );
   }
 
-  const avgCat = getAqiCategory(avgAqi);
-
   return (
-    <div className="dashboard">
-      {/* ── Header ── */}
-      <header className="dashboard-header">
-        <div className="header-brand">
-          <div className="logo-dot" />
-          <h1>VayuBudhi</h1>
-          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 400 }}>
-            Commander Dashboard
-          </span>
-          <select 
-            value={activeCity} 
-            onChange={(e) => setActiveCity(e.target.value as CityId)}
-            style={{ marginLeft: '20px', padding: '5px', borderRadius: '5px', background: '#1c2128', color: 'white', border: '1px solid #30363d' }}
-          >
-            <option value="Delhi">Delhi NCR</option>
-            <option value="Hyderabad">Hyderabad</option>
-            <option value="Guwahati">Guwahati</option>
-            <option disabled style={{ borderTop: '1px solid #30363d', color: '#484f58' }}>── Tier 1 Cities ──</option>
-            <option value="Mumbai">Mumbai</option>
-            <option value="Bengaluru">Bengaluru</option>
-            <option value="Chennai">Chennai</option>
-            <option value="Kolkata">Kolkata</option>
-            <option value="Pune">Pune</option>
-            <option value="Ahmedabad">Ahmedabad</option>
-            <option value="Jaipur">Jaipur</option>
-            <option value="Lucknow">Lucknow</option>
-            <option value="Chandigarh">Chandigarh</option>
-            <option value="Thiruvananthapuram">Thiruvananthapuram</option>
-            <option disabled style={{ color: '#484f58' }}>── Tier 2 Cities ──</option>
-            <option value="Kanpur">Kanpur</option>
-            <option value="Nagpur">Nagpur</option>
-            <option value="Indore">Indore</option>
-            <option value="Bhopal">Bhopal</option>
-            <option value="Patna">Patna</option>
-            <option value="Vadodara">Vadodara</option>
-            <option value="Coimbatore">Coimbatore</option>
-            <option value="Visakhapatnam">Visakhapatnam</option>
-            <option value="Agra">Agra</option>
-            <option value="Varanasi">Varanasi</option>
-            <option disabled style={{ color: '#484f58' }}>───────────</option>
-            <option value="My Location">📍 My Location</option>
-          </select>
+    <div className="home-page">
+      <div className="home-inner">
+        {/* Live badge */}
+        <div className="home-live-badge">
+          <div className="dot" /> Live
         </div>
 
-        <div className="header-metrics">
-          <div className="metric-item">
-            <span className="metric-label">City Avg AQI</span>
-            <span className="metric-value" style={{ color: avgCat.color }}>{avgAqi}</span>
-          </div>
-          <div className="metric-item">
-            <span className="metric-label">Worst Station</span>
-            <span className="metric-value" style={{ color: 'var(--accent-red)' }}>{worstStationName} ({worstStationAqi})</span>
-          </div>
-          <div className="metric-item">
-            <span className="metric-label">Active Alerts</span>
-            <span className="metric-value" style={{ color: 'var(--accent-amber)' }}>{alertCount}</span>
-          </div>
-        </div>
+        {/* Title */}
+        <h1 className="home-title">{activeCity} Air Quality Index (AQI) | Air Pollution</h1>
+        <p className="home-subtitle">Real-time PM2.5, PM10 air pollution level in {activeCity}</p>
+        <p className="home-timestamp" suppressHydrationWarning>
+          Last Updated: {now.toLocaleDateString('en-IN')} {now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })} (Local Time)
+        </p>
 
-        <div className="header-status">
-          <div className="status-badge live">
-            <div className="dot" />
-            Live
-          </div>
-          <LiveClock />
-        </div>
-      </header>
-
-      {/* ── Body ── */}
-      <div className="dashboard-body">
-        {/* Map */}
-        <CityMap 
-          alertStation={alertStation} 
-          city={activeCity} 
-          userCoords={userCoords} 
-          liveData={liveData}
-          cityData={cityData}
-          liveLoading={liveLoading} 
-          onHover={setHoveredLocation}
-          onClick={(d) => {
-            setSelectedDistrict(d);
-            if (d) setActiveTab('deepdive');
-          }}
-          selectedDistrictId={selectedDistrict?.id}
-          onDistrictsComputed={setDistricts}
-          monitoringLocation={monitoringLocation}
-        />
-
-        {/* Sidebar */}
-        <aside className="sidebar">
-          {/* Tabs */}
-          <div className="sidebar-tabs">
-            {tabs.map(tab => (
-              <button
-                key={tab.id}
-                className={`sidebar-tab ${activeTab === tab.id ? 'active' : ''}`}
-                onClick={() => setActiveTab(tab.id)}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Tab Content */}
-          <div className="sidebar-content" style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
-            <div style={{ display: activeTab === 'simulate' ? 'block' : 'none', height: '100%', overflowY: 'auto' }}>
-              <SimulatorPanel onAlert={setAlertStation} city={activeCity} cityData={cityData} liveData={liveData} />
+        {/* ═══ Section 1: Hero AQI Card ═══ */}
+        <div className="home-hero">
+          <div className="home-hero-left">
+            <div className="home-aqi-indicator">
+              <div className="dot" style={{ background: aqiCat.color }} /> Live AQI
             </div>
-            <div style={{ display: activeTab === 'forecast' ? 'block' : 'none', height: '100%', overflowY: 'auto' }}>
-              <ForecastPanel city={activeCity} userCoords={userCoords} liveData={liveData} cityData={cityData} hoveredLocation={hoveredLocation} />
+            <div className="home-aqi-value" style={{ color: aqiCat.color }}>{avgAqi}</div>
+            <div className="home-aqi-unit">AQI (India)</div>
+          </div>
+
+          <div className="home-hero-right">
+            <div className="home-aqi-status" style={{ background: aqiCat.bg, color: aqiCat.color, border: `1px solid ${aqiCat.color}40` }}>
+              <span className="home-aqi-status-label">Air Quality is</span>
+              {aqiCat.label}
             </div>
-            <div style={{ display: activeTab === 'deepdive' ? 'block' : 'none', height: '100%', overflowY: 'auto' }}>
-              {selectedDistrict ? (
-                <DeepDivePanel district={selectedDistrict} city={activeCity} onReset={() => {
-                  setSelectedDistrict(null);
-                  setActiveTab('simulate');
-                }} />
-              ) : (
-                <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                  <div style={{ fontSize: '3rem', marginBottom: '1rem', opacity: 0.5 }}>🔍</div>
-                  <h3>Select a District</h3>
-                  <p>Click on any district boundary on the map to run a hyper-local ML analysis.</p>
+            <div className="home-pm-values">
+              <div className="home-pm-item">
+                <div className="home-pm-label">PM2.5</div>
+                <span className="home-pm-val">{avgPm25}</span>
+                <span className="home-pm-unit">µg/m³</span>
+              </div>
+              <div className="home-pm-item">
+                <div className="home-pm-label">PM10</div>
+                <span className="home-pm-val">{avgPm10}</span>
+                <span className="home-pm-unit">µg/m³</span>
+              </div>
+            </div>
+          </div>
+
+          {/* AQI Scale Bar */}
+          <div className="home-scale">
+            <div className="home-scale-bar-wrapper">
+              <div className="home-scale-bar">
+                <div style={{ background: '#22c55e' }} />
+                <div style={{ background: '#84cc16' }} />
+                <div style={{ background: '#eab308' }} />
+                <div style={{ background: '#f59e0b' }} />
+                <div style={{ background: '#f97316' }} />
+                <div style={{ background: '#ef4444' }} />
+                <div style={{ background: '#dc2626' }} />
+              </div>
+              <div className="home-scale-marker" style={{ left: `${scalePosition}%` }} />
+            </div>
+            <div className="home-scale-labels">
+              <span>Good</span><span>Satisfactory</span><span>Moderate</span><span>Poor</span><span>Very Poor</span><span>Severe</span>
+            </div>
+            <div className="home-scale-numbers">
+              <span>0</span><span>50</span><span>100</span><span>200</span><span>300</span><span>400</span><span>500+</span>
+            </div>
+          </div>
+        </div>
+
+        {/* ═══ Section 5: Health Impact Banner ═══ */}
+        <div className="home-health-banner" style={{ background: healthInfo.bg, borderColor: healthInfo.border, color: healthInfo.color }}>
+          <span className="home-health-icon">{healthInfo.icon}</span>
+          <div>
+            <div className="home-health-title">{healthInfo.title}</div>
+            <div style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{healthInfo.message}</div>
+          </div>
+        </div>
+
+        {/* ═══ Section 3: Pollutant Breakdown ═══ */}
+        <div className="home-section-title">Pollutant Breakdown</div>
+        <div className="home-grid-6">
+          {Object.entries(POLLUTANT_LIMITS).map(([key, info]) => {
+            const value = (avgPollutants as any)[key] ?? 0;
+            const pct = Math.min(100, (value / info.limit) * 100);
+            const clr = pollutantColor(value, info.limit);
+            return (
+              <div className="home-pollutant-card" key={key}>
+                <div className="home-pollutant-name">{info.label}</div>
+                <div className="home-pollutant-value" style={{ color: clr }}>{value}</div>
+                <span className="home-pollutant-unit">{info.unit}</span>
+                <div className="home-pollutant-bar">
+                  <div className="home-pollutant-bar-fill" style={{ width: `${pct}%`, background: clr }} />
                 </div>
-              )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* ═══ Section 4 + 7: Weather & Forecast Sparkline ═══ */}
+        <div className="home-grid-2">
+          {/* Weather */}
+          <div className="home-card">
+            <div className="home-card-title">Weather Conditions</div>
+            {weather ? (
+              <div className="home-weather-grid">
+                <div className="home-weather-item">
+                  <div>
+                    <div className="home-weather-label" style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>Temperature</div>
+                    <div className="home-weather-val">{weather.temp}°C</div>
+                  </div>
+                </div>
+                <div className="home-weather-item">
+                  <div>
+                    <div className="home-weather-label" style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>Humidity</div>
+                    <div className="home-weather-val">{weather.humidity}%</div>
+                  </div>
+                </div>
+                <div className="home-weather-item">
+                  <div>
+                    <div className="home-weather-label" style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>Wind Speed</div>
+                    <div className="home-weather-val">{weather.wind_speed} m/s</div>
+                  </div>
+                </div>
+                <div className="home-weather-item">
+                  <div>
+                    <div className="home-weather-label" style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>Pressure</div>
+                    <div className="home-weather-val">{weather.pressure} hPa</div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Weather data unavailable</div>
+            )}
+          </div>
+
+          {/* 24h Forecast Sparkline */}
+          <div className="home-card">
+            <div className="home-card-title">24h AQI Forecast</div>
+            <div style={{ width: '100%', height: 100 }}>
+              <ResponsiveContainer>
+                <AreaChart data={forecastData}>
+                  <defs>
+                    <linearGradient id="forecastGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor={aqiCat.color} stopOpacity={0.3} />
+                      <stop offset="95%" stopColor={aqiCat.color} stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <Area type="monotone" dataKey="aqi" stroke={aqiCat.color} fill="url(#forecastGrad)" strokeWidth={2} dot={false} />
+                  <XAxis dataKey="hour" hide />
+                  <YAxis hide domain={['dataMin - 20', 'dataMax + 20']} />
+                  <Tooltip
+                    contentStyle={{ background: 'var(--bg-surface)', border: '1px solid var(--border-primary)', borderRadius: 8, fontSize: '0.75rem', color: 'var(--text-primary)' }}
+                    itemStyle={{ color: 'var(--accent-blue)', fontWeight: 700 }}
+                    labelStyle={{ color: 'var(--text-secondary)' }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
-            <div style={{ display: activeTab === 'enforce' ? 'block' : 'none', height: '100%', overflowY: 'auto' }}>
-              <OptimizerPanel city={activeCity} cityData={cityData} liveData={liveData} districts={districts} onSetMonitoringLocation={setMonitoringLocation} />
-            </div>
-            <div style={{ display: activeTab === 'advisory' ? 'block' : 'none', height: '100%', overflowY: 'auto' }}>
-              <AdvisoryPanel city={activeCity} userCoords={userCoords} liveData={liveData} cityData={cityData} />
-            </div>
-            <div style={{ display: activeTab === 'compare' ? 'block' : 'none', height: '100%', overflowY: 'auto', padding: '1.5rem', color: '#c9d1d9' }}>
-              <h2 style={{ color: 'white', marginBottom: '1rem', borderBottom: '1px solid #30363d', paddingBottom: '0.5rem' }}>Multi-City Intelligence</h2>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid #30363d', color: '#8b949e' }}>
-                    <th style={{ padding: '0.5rem' }}>City</th>
-                    <th style={{ padding: '0.5rem' }}>Avg AQI</th>
-                    <th style={{ padding: '0.5rem' }}>Active Alerts</th>
-                    <th style={{ padding: '0.5rem' }}>Est. ROI Impact</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr style={{ borderBottom: '1px solid #21262d' }}>
-                    <td style={{ padding: '0.5rem', fontWeight: 600 }}>Delhi NCR</td>
-                    <td style={{ padding: '0.5rem', color: 'var(--accent-red)' }}>342</td>
-                    <td style={{ padding: '0.5rem' }}>12</td>
-                    <td style={{ padding: '0.5rem', color: 'var(--accent-green)' }}>+84.2%</td>
-                  </tr>
-                  <tr style={{ borderBottom: '1px solid #21262d' }}>
-                    <td style={{ padding: '0.5rem', fontWeight: 600 }}>Hyderabad</td>
-                    <td style={{ padding: '0.5rem', color: 'var(--accent-amber)' }}>156</td>
-                    <td style={{ padding: '0.5rem' }}>4</td>
-                    <td style={{ padding: '0.5rem', color: 'var(--accent-green)' }}>+42.1%</td>
-                  </tr>
-                  <tr style={{ borderBottom: '1px solid #21262d' }}>
-                    <td style={{ padding: '0.5rem', fontWeight: 600 }}>Guwahati</td>
-                    <td style={{ padding: '0.5rem', color: 'var(--accent-amber)' }}>112</td>
-                    <td style={{ padding: '0.5rem' }}>2</td>
-                    <td style={{ padding: '0.5rem', color: 'var(--accent-green)' }}>+21.5%</td>
-                  </tr>
-                </tbody>
-              </table>
-              <p style={{ marginTop: '1rem', fontSize: '0.8rem', color: '#8b949e' }}>
-                Note: This table cross-references our backend models across multiple geographic databases to provide city-level executive insights.
-              </p>
+            <div className="home-forecast-trend">
+              <span className="home-trend-arrow" style={{ color: trendUp ? '#ef4444' : '#22c55e' }}>
+                {trendUp ? '↗' : '↘'}
+              </span>
+              <span className="home-trend-text" style={{ color: trendUp ? '#ef4444' : '#22c55e' }}>
+                {trendUp ? 'Worsening trend' : 'Improving trend'} — predicted {forecastEnd} AQI in 24h
+              </span>
             </div>
           </div>
-        </aside>
+        </div>
+
+        {/* ═══ Section 2: Historical AQI Graph ═══ */}
+        <div className="home-historical">
+          <div className="home-historical-header">
+            <div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: 2 }}>AQI Graph</div>
+              <div className="home-historical-title">Historical Air Quality Data</div>
+            </div>
+            <div className="home-historical-controls">
+              <button className={`home-chart-toggle ${chartType === 'line' ? 'active' : ''}`} onClick={() => setChartType('line')}>📈</button>
+              <button className={`home-chart-toggle ${chartType === 'bar' ? 'active' : ''}`} onClick={() => setChartType('bar')}>📊</button>
+              <span className="home-chart-select">24 Hours</span>
+              <span className="home-chart-select">AQI (India)</span>
+            </div>
+          </div>
+          <div className="home-historical-subtitle">{activeCity}</div>
+
+          {/* Min/Max badges */}
+          <div className="home-minmax-row">
+            <div className="home-minmax-badge" style={{ background: 'rgba(34,197,94,0.1)' }}>
+              <span className="home-minmax-value" style={{ background: 'rgba(34,197,94,0.2)', color: '#22c55e' }}>{minPoint.aqi}</span>
+              <div className="home-minmax-info">
+                <span className="home-minmax-label" style={{ color: '#22c55e' }}>↓ Min. AQI</span>
+                <span className="home-minmax-time">⏱ {minPoint.time}</span>
+              </div>
+            </div>
+            <div className="home-minmax-badge" style={{ background: 'rgba(239,68,68,0.1)' }}>
+              <span className="home-minmax-value" style={{ background: 'rgba(239,68,68,0.2)', color: '#ef4444' }}>{maxPoint.aqi}</span>
+              <div className="home-minmax-info">
+                <span className="home-minmax-label" style={{ color: '#ef4444' }}>↑ Max. AQI</span>
+                <span className="home-minmax-time">⏱ {maxPoint.time}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Chart */}
+          <div className="home-chart-wrapper">
+            <ResponsiveContainer>
+              {chartType === 'bar' ? (
+                <BarChart data={historicalData}>
+                  <XAxis dataKey="time" tick={{ fill: '#8b949e', fontSize: 10 }} interval={2} />
+                  <YAxis tick={{ fill: '#8b949e', fontSize: 10 }} domain={[0, 'dataMax + 30']} />
+                  <Tooltip
+                    contentStyle={{ background: 'var(--bg-surface)', border: '1px solid var(--border-primary)', borderRadius: 8, fontSize: '0.75rem', color: 'var(--text-primary)' }}
+                    itemStyle={{ color: 'var(--accent-blue)', fontWeight: 700 }}
+                    labelStyle={{ color: 'var(--text-secondary)' }}
+                  />
+                  <Bar dataKey="aqi" radius={[3, 3, 0, 0]}>
+                    {historicalData.map((entry, i) => (
+                      <Cell key={i} fill={aqiBarColor(entry.aqi)} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              ) : (
+                <LineChart data={historicalData}>
+                  <XAxis dataKey="time" tick={{ fill: '#8b949e', fontSize: 10 }} interval={2} />
+                  <YAxis tick={{ fill: '#8b949e', fontSize: 10 }} domain={[0, 'dataMax + 30']} />
+                  <Tooltip
+                    contentStyle={{ background: 'var(--bg-surface)', border: '1px solid var(--border-primary)', borderRadius: 8, fontSize: '0.75rem', color: 'var(--text-primary)' }}
+                    itemStyle={{ color: 'var(--accent-blue)', fontWeight: 700 }}
+                    labelStyle={{ color: 'var(--text-secondary)' }}
+                  />
+                  <Line type="monotone" dataKey="aqi" stroke={aqiCat.color} strokeWidth={2.5} dot={false} />
+                </LineChart>
+              )}
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* ═══ Section 6: District Leaderboard ═══ */}
+        {sortedDistricts.length > 0 && (
+          <div className="home-leaderboard">
+            <div className="home-leaderboard-section">
+              <div className="home-leaderboard-title">🟢 Cleanest Districts</div>
+              {best5.map((d, i) => (
+                <div className="home-leaderboard-item" key={d.id}>
+                  <span className="home-leaderboard-rank">{i + 1}</span>
+                  <span className="home-leaderboard-name">{d.name}</span>
+                  <span className="home-leaderboard-aqi" style={{ color: getAqiCategory(d.aqi).color }}>{d.aqi}</span>
+                </div>
+              ))}
+            </div>
+            <div className="home-leaderboard-section">
+              <div className="home-leaderboard-title">🔴 Most Polluted Districts</div>
+              {worst5.map((d, i) => (
+                <div className="home-leaderboard-item" key={d.id}>
+                  <span className="home-leaderboard-rank">{i + 1}</span>
+                  <span className="home-leaderboard-name">{d.name}</span>
+                  <span className="home-leaderboard-aqi" style={{ color: getAqiCategory(d.aqi).color }}>{d.aqi}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

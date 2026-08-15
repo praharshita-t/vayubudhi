@@ -219,9 +219,18 @@ export default function HomePage() {
   return (
     <div className="home-page">
       <div className="home-inner">
-        {/* Live badge */}
-        <div className="home-live-badge">
-          <div className="dot" /> Live
+        {/* Top Branding Row */}
+        <div className="home-brand-row">
+          <div className="home-brand-left">
+            <img src="/logo-emblem.png" alt="VayuBudhi" className="home-brand-logo" />
+            <div className="home-brand-title-wrap">
+              <span className="home-brand-title">VayuBudhi</span>
+              <span className="home-since-badge">SINCE 2026</span>
+            </div>
+          </div>
+          <div className="home-live-badge">
+            <div className="dot" /> Live Telemetry
+          </div>
         </div>
 
         {/* Title */}

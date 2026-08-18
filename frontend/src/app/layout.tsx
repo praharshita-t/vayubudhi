@@ -3,6 +3,7 @@ import React from 'react'
 import { CityProvider } from '@/context/CityContext'
 import Sidebar from '@/components/Sidebar'
 import EntrySplash from '@/components/EntrySplash'
+import ThemeToggle from '@/components/ThemeToggle'
 
 export const metadata = {
   title: 'VayuBudhi — Air Quality Intelligence',
@@ -23,6 +24,9 @@ export default function RootLayout({
       <body suppressHydrationWarning>
         <CityProvider>
           <EntrySplash />
+          <div className="global-top-right-controls">
+            <ThemeToggle />
+          </div>
           <div className="app-layout">
             <Sidebar />
             <main className="main-content">{children}</main>

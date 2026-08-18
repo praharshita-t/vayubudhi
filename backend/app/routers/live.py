@@ -64,10 +64,20 @@ def calculate_full_naqi(pm25: float, pm10: float, no2: float, so2: float, co: fl
     ]
     return float(max(indices))
 
+def apply_humidity_correction(pm25: float, humidity: float) -> float:
+    """
+    Applies κ-Köhler theory to correct PM2.5 readings for hygroscopic growth due to high humidity.
+    Prevents fog from being falsely reported as severe particulate pollution.
+    """
+    kappa = 0.3 # Typical urban aerosol hygroscopicity parameter
+    rh = min(humidity, 95.0) # Clamp to avoid division by zero
+    growth_factor = 1.0 + kappa * (rh / (100.0 - rh))
+    return pm25 / growth_factor
+
 @router.get("/live", response_model=LiveDataResponse)
 def get_live_data(lat: float, lon: float):
     # 1. Fetch live weather data from Open-Meteo Weather API (free, keyless)
-    weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,surface_pressure,wind_speed_10m,boundary_layer_height"
+    weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,surface_pressure,wind_speed_10m,wind_direction_10m,boundary_layer_height"
     # 2. Fetch live air quality data from Open-Meteo Air Quality API (free, keyless)
     aq_url = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lon}&current=pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone,us_aqi"
     
@@ -84,6 +94,7 @@ def get_live_data(lat: float, lon: float):
         humidity = current_weather.get("relative_humidity_2m", 60.0)
         pressure = current_weather.get("surface_pressure", 1008.0)
         wind_speed = current_weather.get("wind_speed_10m", 2.0)
+        wind_dir = current_weather.get("wind_direction_10m", 0.0)
         pblh = current_weather.get("boundary_layer_height", 800.0)
         
         # Parse air quality values
@@ -97,8 +108,10 @@ def get_live_data(lat: float, lon: float):
 
         # -------------------------------------------------------------------
         # CALIBRATION: Calculate full 6-pollutant NAQI for precise localization
+        # Apply Humidity Correction to PM2.5
         # -------------------------------------------------------------------
-        naqi = calculate_full_naqi(pm25, pm10, no2, so2, co, o3)
+        corrected_pm25 = apply_humidity_correction(pm25, humidity)
+        naqi = calculate_full_naqi(corrected_pm25, pm10, no2, so2, co, o3)
         # -------------------------------------------------------------------
 
         aqi_val = naqi
@@ -119,6 +132,7 @@ def get_live_data(lat: float, lon: float):
         humidity=humidity,
         pressure=pressure,
         wind_speed=wind_speed,
+        wind_dir=wind_dir,
         pblh=pblh
     )
     
@@ -241,6 +255,18 @@ CITY_STATIONS = {
         {"name": "Garchuk", "lat": 26.1260, "lon": 91.7270},
         {"name": "Chandmari", "lat": 26.1830, "lon": 91.7570},
     ],
+    "Bengaluru": [
+        {"name": "Silk Board", "lat": 12.9172, "lon": 77.6228},
+        {"name": "BTM Layout", "lat": 12.9166, "lon": 77.6101},
+        {"name": "Peenya", "lat": 13.0285, "lon": 77.5197},
+        {"name": "Hebbal", "lat": 13.0354, "lon": 77.5988},
+        {"name": "Jayanagar", "lat": 12.9299, "lon": 77.5826},
+        {"name": "City Railway Station", "lat": 12.9771, "lon": 77.5671},
+        {"name": "Indiranagar", "lat": 12.9784, "lon": 77.6408},
+        {"name": "Koramangala", "lat": 12.9279, "lon": 77.6271},
+        {"name": "Whitefield", "lat": 12.9698, "lon": 77.7499},
+        {"name": "Electronic City", "lat": 12.8452, "lon": 77.6602},
+    ],
 }
 
 try:
@@ -263,6 +289,7 @@ CITY_CENTERS_BACKEND = {
     "Delhi": {"lat": 28.625, "lon": 77.15},
     "Hyderabad": {"lat": 17.425, "lon": 78.45},
     "Guwahati": {"lat": 26.15, "lon": 91.725},
+    "Bengaluru": {"lat": 12.97, "lon": 77.59},
 }
 
 @router.get("/city-data", response_model=CityDataResponse)
@@ -279,7 +306,7 @@ def get_city_data(city: str):
 
     try:
         # 1. Bulk Weather (PBLH, Temp, Humidity, Wind, Pressure)
-        weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={lats_str}&longitude={lons_str}&current=temperature_2m,relative_humidity_2m,surface_pressure,wind_speed_10m,boundary_layer_height"
+        weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={lats_str}&longitude={lons_str}&current=temperature_2m,relative_humidity_2m,surface_pressure,wind_speed_10m,wind_direction_10m,boundary_layer_height"
         w_res = requests.get(weather_url, timeout=10).json()
         
         # 2. Bulk Air Quality
@@ -309,8 +336,11 @@ def get_city_data(city: str):
             base_co = caq.get("carbon_monoxide", 1.0) / 1000 # convert ug/m3 to mg/m3 for NAQI
             base_o3 = caq.get("ozone", 30.0)
 
+            # Apply Humidity Correction to PM2.5
+            corrected_pm25 = apply_humidity_correction(base_pm25, base_hum)
+
             # Calibrate using full 6-pollutant Indian NAQI
-            ml_aqi = calculate_full_naqi(base_pm25, base_pm10, base_no2, base_so2, base_co, base_o3)
+            ml_aqi = calculate_full_naqi(corrected_pm25, base_pm10, base_no2, base_so2, base_co, base_o3)
             total_aqi += ml_aqi
 
             stations.append(StationData(

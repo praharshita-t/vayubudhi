@@ -165,8 +165,20 @@ class MLService:
             return {"horizon_h": 72, "points": [0.0, 0.0, 0.0], "intervals": [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]], "ventilation_index": float(vent_idx)}
 
     def predict_attribution(self, reading):
+        from app.physics_engine import plume_inversion_pinn_mock
+        
+        # Calculate PINN Source regardless of classifier
+        pinn = plume_inversion_pinn_mock(
+            sensor_lat=reading.lat,
+            sensor_lon=reading.lon,
+            concentration=reading.pm25,
+            wind_dir=getattr(reading, 'wind_dir', 0.0),
+            wind_speed=reading.wind_speed,
+            temp=reading.temp
+        )
+
         if not self.classifier:
-            return {"prediction_set": [], "set_size": 0, "confidence": 0.90, "probabilities": {}}
+            return {"prediction_set": [], "set_size": 0, "confidence": 0.90, "probabilities": {}, "pinn_source": pinn}
             
         df = self._prepare_features(reading)
         
@@ -189,11 +201,12 @@ class MLService:
                 "prediction_set": prediction_set,
                 "set_size": len(prediction_set),
                 "confidence": 0.90,
-                "probabilities": prob_dict
+                "probabilities": prob_dict,
+                "pinn_source": pinn
             }
         except Exception as e:
             print(f"Attribution error: {e}")
-            return {"prediction_set": [], "set_size": 0, "confidence": 0.90, "probabilities": {}}
+            return {"prediction_set": [], "set_size": 0, "confidence": 0.90, "probabilities": {}, "pinn_source": pinn}
 
 # Singleton instance
 ml_service = MLService()

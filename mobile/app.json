@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "VayuBudhi",
+    "slug": "vayubudhi-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#090d16"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.vayubudhi.enforcement"
+    },
+    "android": {
+      "package": "com.vayubudhi.enforcement",
+      "adaptiveIcon": {
+        "backgroundColor": "#090d16"
+      }
+    },
+    "plugins": [
+      "@maplibre/maplibre-react-native"
+    ]
+  }
+}

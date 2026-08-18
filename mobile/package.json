@@ -1,0 +1,28 @@
+{
+  "name": "vayubudhi-mobile",
+  "version": "1.0.0",
+  "main": "node_modules/expo/AppEntry.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web"
+  },
+  "dependencies": {
+    "@maplibre/maplibre-react-native": "^11.3.6",
+    "expo": "~54.0.36",
+    "expo-status-bar": "~3.0.9",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-safe-area-context": "^5.9.0",
+    "react-native-web": "^0.21.0",
+    "react-native-webview": "^14.0.1"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.20.0",
+    "@types/react": "~19.1.10",
+    "typescript": "^5.7.3"
+  },
+  "private": true
+}

@@ -1581,7 +1581,13 @@ select.home-chart-select option {
 }
 
 .livemap-body.with-panel {
-  grid-template-columns: 1fr 420px;
+  grid-template-columns: 1fr 480px;
+}
+
+@media (min-width: 1600px) {
+  .livemap-body.with-panel {
+    grid-template-columns: 1fr 520px;
+  }
 }
 
 .livemap-deep-panel {
@@ -1589,6 +1595,7 @@ select.home-chart-select option {
   border-left: 1px solid var(--border-primary);
   overflow-y: auto;
   overflow-x: hidden;
+  height: 100%;
   animation: slide-in-right 0.3s ease-out;
 }
 

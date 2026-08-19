@@ -1395,6 +1395,23 @@ body.dark {
   transition: var(--transition-fast);
 }
 
+select.home-chart-select {
+  padding: 5px 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+}
+
+select.home-chart-select option {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
 .home-chart-toggle:hover,
 .home-chart-select:hover {
   border-color: var(--accent-blue);

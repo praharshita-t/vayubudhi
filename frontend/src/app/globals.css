@@ -1621,13 +1621,26 @@ select.home-chart-select option {
   flex-shrink: 0;
 }
 
+.page-header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.page-header-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--border-primary);
+}
+
 .page-title {
-  font-size: 1.2rem;
+  font-size: 1.15rem;
   font-weight: 700;
   color: var(--text-primary);
   display: flex;
   align-items: center;
   gap: 10px;
+  margin: 0;
 }
 
 .page-city-badge {

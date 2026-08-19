@@ -11,7 +11,17 @@ export default function SimulatePage() {
   return (
     <div className="page-wrapper">
       <div className="page-header">
-        <h1 className="page-title">Simulate</h1>
+        <div className="page-header-left">
+          <div className="header-brand">
+            <img src="/logo-emblem.png" alt="VayuBudhi" className="header-logo-emblem" />
+            <div className="header-brand-title-wrap">
+              <h1>VayuBudhi</h1>
+              <span className="header-since-badge">SINCE 2026</span>
+            </div>
+          </div>
+          <div className="page-header-divider" />
+          <h2 className="page-title">Simulate</h2>
+        </div>
         <div className="page-city-badge">{activeCity}</div>
       </div>
       <div className="page-content">

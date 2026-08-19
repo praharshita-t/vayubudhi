@@ -3,6 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useCityContext } from '@/context/CityContext';
 import { getAqiCategory } from '@/utils/aqi';
+import { CityId } from '@/types';
 import { BarChart, Bar, LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 // ── Health recommendations by AQI band ──
@@ -106,7 +107,7 @@ function pollutantColor(value: number, limit: number): string {
 }
 
 export default function HomePage() {
-  const { activeCity, cityData, liveData, stations, districts, liveLoading } = useCityContext();
+  const { activeCity, setActiveCity, cityData, liveData, stations, districts, liveLoading } = useCityContext();
   const [chartType, setChartType] = useState<'bar' | 'line'>('bar');
   const [timeRange, setTimeRange] = useState<'6h' | '12h' | '24h'>('24h');
   const [chartMetric, setChartMetric] = useState<'aqi' | 'pm25' | 'pm10'>('aqi');
@@ -243,6 +244,41 @@ export default function HomePage() {
             <div className="home-brand-title-wrap">
               <span className="home-brand-title">VayuBudhi</span>
               <span className="home-since-badge">SINCE 2026</span>
+            </div>
+            {/* City Selector Dropdown */}
+            <div className="home-city-select-wrap">
+              <span className="home-city-select-icon">📍</span>
+              <select
+                className="home-city-select"
+                value={activeCity}
+                onChange={(e) => setActiveCity(e.target.value as CityId)}
+                aria-label="Select City"
+              >
+                <optgroup label="Core Monitored Cities">
+                  <option value="Delhi">Delhi NCR</option>
+                  <option value="Hyderabad">Hyderabad</option>
+                  <option value="Guwahati">Guwahati</option>
+                </optgroup>
+                <optgroup label="Tier 1 Cities">
+                  <option value="Mumbai">Mumbai</option>
+                  <option value="Bengaluru">Bengaluru</option>
+                  <option value="Chennai">Chennai</option>
+                  <option value="Kolkata">Kolkata</option>
+                  <option value="Pune">Pune</option>
+                  <option value="Ahmedabad">Ahmedabad</option>
+                  <option value="Jaipur">Jaipur</option>
+                  <option value="Lucknow">Lucknow</option>
+                  <option value="Chandigarh">Chandigarh</option>
+                  <option value="Thiruvananthapuram">Thiruvananthapuram</option>
+                </optgroup>
+                <optgroup label="Tier 2 Cities">
+                  <option value="Kanpur">Kanpur</option>
+                  <option value="Nagpur">Nagpur</option>
+                  <option value="Indore">Indore</option>
+                  <option value="Bhopal">Bhopal</option>
+                  <option value="Patna">Patna</option>
+                </optgroup>
+              </select>
             </div>
           </div>
           <div className="home-live-badge">

@@ -49,10 +49,8 @@ export default function Sidebar() {
           <div className={`sidebar-brand${expanded ? ' visible' : ''}`}>
             <img src="/logo-emblem.png" alt="VayuBudhi" className="sidebar-logo-img" />
             <div className="sidebar-brand-text-col">
-              <div className="sidebar-brand-title-row">
-                <span className="sidebar-brand-name">VayuBudhi</span>
-                <span className="sidebar-since-badge">SINCE 2026</span>
-              </div>
+              <span className="sidebar-brand-name">VayuBudhi</span>
+              <span className="sidebar-since-badge">SINCE 2026</span>
             </div>
           </div>
         </div>

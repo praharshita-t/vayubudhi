@@ -47,7 +47,7 @@ export default function ThemeToggle({ className = '' }: { className?: string }) 
     <button
       className={`theme-toggle-btn ${isDark ? 'is-dark' : 'is-light'} ${className}`}
       onClick={toggleTheme}
-      title={isDark ? 'Switch to Sky Blue Light Mode' : 'Switch to #212121 Dark Mode'}
+      title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
       aria-label="Toggle Light / Dark Mode"
     >
       <div className="theme-toggle-track">
@@ -59,7 +59,7 @@ export default function ThemeToggle({ className = '' }: { className?: string }) 
           )}
         </div>
         <span className="theme-toggle-label">
-          {isDark ? 'Dark #212121' : 'Sky Light'}
+          {isDark ? 'Dark' : 'Light'}
         </span>
       </div>
     </button>

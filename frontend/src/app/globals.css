@@ -964,7 +964,7 @@ body.dark {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  margin-bottom: 16px;
+  margin-bottom: 0;
   border: 1px solid rgba(248, 81, 73, 0.3);
 }
 
@@ -1591,7 +1591,7 @@ body.dark {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 28px;
+  padding: 16px 110px 16px 28px;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border-primary);
   flex-shrink: 0;
@@ -1748,6 +1748,7 @@ body.dark {
   align-items: center;
   margin-bottom: 16px;
   padding-bottom: 12px;
+  padding-right: 110px;
   border-bottom: 1px solid rgba(56, 139, 253, 0.12);
 }
 

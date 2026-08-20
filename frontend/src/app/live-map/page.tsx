@@ -65,9 +65,12 @@ export default function LiveMapPage() {
       {/* ── Commander Header ── */}
       <header className="dashboard-header">
         <div className="header-brand">
-          <div className="logo-dot" />
-          <h1>VayuBudhi</h1>
-          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 400 }}>
+          <img src="/logo-emblem.png" alt="VayuBudhi" className="header-logo-emblem" />
+          <div className="header-brand-title-wrap">
+            <h1>VayuBudhi</h1>
+            <span className="header-since-badge">SINCE 2026</span>
+          </div>
+          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 400, marginLeft: '6px' }}>
             Commander Dashboard
           </span>
           <select

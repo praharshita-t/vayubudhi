@@ -3,6 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { useCityContext } from '@/context/CityContext';
 import { getAqiCategory } from '@/utils/aqi';
+import { CityId } from '@/types';
 import { BarChart, Bar, LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 // ── Health recommendations by AQI band ──
@@ -60,10 +61,14 @@ function generateHistoricalData(baseAqi: number, hours: number = 24) {
     // Diurnal variation: rush hour peak at 8am (h=8) and 8pm (h=20), afternoon dispersion at 2pm (h=14)
     const diurnal = 0.18 * Math.sin(((pastHour - 8) / 24) * 2 * Math.PI) + 0.08 * Math.sin(((pastHour - 20) / 12) * 2 * Math.PI);
     const aqi = Math.max(10, Math.round(baseAqi * (1.0 + diurnal)));
+    const pm25 = Math.max(5, Math.round((baseAqi * 0.45) * (1.0 + diurnal)));
+    const pm10 = Math.max(10, Math.round((baseAqi * 0.85) * (1.0 + diurnal)));
     data.push({
       time: t.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
       fullTime: t,
       aqi,
+      pm25,
+      pm10,
     });
   }
   return data;
@@ -102,8 +107,10 @@ function pollutantColor(value: number, limit: number): string {
 }
 
 export default function HomePage() {
-  const { activeCity, cityData, liveData, stations, districts, liveLoading } = useCityContext();
+  const { activeCity, setActiveCity, cityData, liveData, stations, districts, liveLoading } = useCityContext();
   const [chartType, setChartType] = useState<'bar' | 'line'>('bar');
+  const [timeRange, setTimeRange] = useState<'6h' | '12h' | '24h'>('24h');
+  const [chartMetric, setChartMetric] = useState<'aqi' | 'pm25' | 'pm10'>('aqi');
   const [now, setNow] = useState(new Date());
   const [realHistory, setRealHistory] = useState<any[]>([]);
 
@@ -173,22 +180,33 @@ export default function HomePage() {
   }, [stations]);
 
   // Prefer real live hourly API telemetry over model extrapolation
-  const historicalData = useMemo(() => {
+  const rawHistoricalData = useMemo(() => {
     if (realHistory.length > 0) return realHistory;
-    return generateHistoricalData(avgAqi);
+    return generateHistoricalData(avgAqi, 24);
   }, [realHistory, avgAqi]);
 
-  const forecastData = useMemo(() => generateForecastData(avgAqi), [avgAqi]);
+  const historicalData = useMemo(() => {
+    const count = timeRange === '6h' ? 7 : timeRange === '12h' ? 13 : 25;
+    return rawHistoricalData.slice(-count);
+  }, [rawHistoricalData, timeRange]);
 
   const minPoint = useMemo(() => {
-    if (historicalData.length === 0) return { aqi: 0, time: '--' };
-    return historicalData.reduce((m, d) => d.aqi < m.aqi ? d : m, historicalData[0]);
-  }, [historicalData]);
+    if (historicalData.length === 0) return { val: 0, time: '--' };
+    return historicalData.reduce((m, d) => {
+      const v = Math.round(d[chartMetric] ?? d.aqi);
+      return v < m.val ? { val: v, time: d.time } : m;
+    }, { val: Math.round(historicalData[0][chartMetric] ?? historicalData[0].aqi), time: historicalData[0].time });
+  }, [historicalData, chartMetric]);
 
   const maxPoint = useMemo(() => {
-    if (historicalData.length === 0) return { aqi: 0, time: '--' };
-    return historicalData.reduce((m, d) => d.aqi > m.aqi ? d : m, historicalData[0]);
-  }, [historicalData]);
+    if (historicalData.length === 0) return { val: 0, time: '--' };
+    return historicalData.reduce((m, d) => {
+      const v = Math.round(d[chartMetric] ?? d.aqi);
+      return v > m.val ? { val: v, time: d.time } : m;
+    }, { val: Math.round(historicalData[0][chartMetric] ?? historicalData[0].aqi), time: historicalData[0].time });
+  }, [historicalData, chartMetric]);
+
+  const forecastData = useMemo(() => generateForecastData(avgAqi), [avgAqi]);
 
   const forecastEnd = forecastData[forecastData.length - 1]?.aqi ?? avgAqi;
   const trendUp = forecastEnd > avgAqi;
@@ -219,9 +237,53 @@ export default function HomePage() {
   return (
     <div className="home-page">
       <div className="home-inner">
-        {/* Live badge */}
-        <div className="home-live-badge">
-          <div className="dot" /> Live
+        {/* Top Branding Row */}
+        <div className="home-brand-row">
+          <div className="home-brand-left">
+            <img src="/logo-emblem.png" alt="VayuBudhi" className="home-brand-logo" />
+            <div className="home-brand-title-wrap">
+              <span className="home-brand-title">VayuBudhi</span>
+              <span className="home-since-badge">SINCE 2026</span>
+            </div>
+            {/* City Selector Dropdown */}
+            <div className="home-city-select-wrap">
+              <span className="home-city-select-icon">📍</span>
+              <select
+                className="home-city-select"
+                value={activeCity}
+                onChange={(e) => setActiveCity(e.target.value as CityId)}
+                aria-label="Select City"
+              >
+                <optgroup label="Core Monitored Cities">
+                  <option value="Delhi">Delhi NCR</option>
+                  <option value="Hyderabad">Hyderabad</option>
+                  <option value="Guwahati">Guwahati</option>
+                </optgroup>
+                <optgroup label="Tier 1 Cities">
+                  <option value="Mumbai">Mumbai</option>
+                  <option value="Bengaluru">Bengaluru</option>
+                  <option value="Chennai">Chennai</option>
+                  <option value="Kolkata">Kolkata</option>
+                  <option value="Pune">Pune</option>
+                  <option value="Ahmedabad">Ahmedabad</option>
+                  <option value="Jaipur">Jaipur</option>
+                  <option value="Lucknow">Lucknow</option>
+                  <option value="Chandigarh">Chandigarh</option>
+                  <option value="Thiruvananthapuram">Thiruvananthapuram</option>
+                </optgroup>
+                <optgroup label="Tier 2 Cities">
+                  <option value="Kanpur">Kanpur</option>
+                  <option value="Nagpur">Nagpur</option>
+                  <option value="Indore">Indore</option>
+                  <option value="Bhopal">Bhopal</option>
+                  <option value="Patna">Patna</option>
+                </optgroup>
+              </select>
+            </div>
+          </div>
+          <div className="home-live-badge">
+            <div className="dot" /> Live Telemetry
+          </div>
         </div>
 
         {/* Title */}
@@ -391,10 +453,40 @@ export default function HomePage() {
               <div className="home-historical-title">Historical Air Quality Data</div>
             </div>
             <div className="home-historical-controls">
-              <button className={`home-chart-toggle ${chartType === 'line' ? 'active' : ''}`} onClick={() => setChartType('line')}>📈</button>
-              <button className={`home-chart-toggle ${chartType === 'bar' ? 'active' : ''}`} onClick={() => setChartType('bar')}>📊</button>
-              <span className="home-chart-select">24 Hours</span>
-              <span className="home-chart-select">AQI (India)</span>
+              <button 
+                className={`home-chart-toggle ${chartType === 'line' ? 'active' : ''}`} 
+                onClick={() => setChartType('line')}
+                title="Line Chart View"
+              >
+                📈
+              </button>
+              <button 
+                className={`home-chart-toggle ${chartType === 'bar' ? 'active' : ''}`} 
+                onClick={() => setChartType('bar')}
+                title="Bar Chart View"
+              >
+                📊
+              </button>
+              <select
+                className="home-chart-select"
+                value={timeRange}
+                onChange={(e) => setTimeRange(e.target.value as any)}
+                aria-label="Select Historical Time Range"
+              >
+                <option value="6h">6 Hours</option>
+                <option value="12h">12 Hours</option>
+                <option value="24h">24 Hours</option>
+              </select>
+              <select
+                className="home-chart-select"
+                value={chartMetric}
+                onChange={(e) => setChartMetric(e.target.value as any)}
+                aria-label="Select Air Quality Metric"
+              >
+                <option value="aqi">AQI (India)</option>
+                <option value="pm25">PM2.5 (µg/m³)</option>
+                <option value="pm10">PM10 (µg/m³)</option>
+              </select>
             </div>
           </div>
           <div className="home-historical-subtitle">{activeCity}</div>
@@ -402,16 +494,20 @@ export default function HomePage() {
           {/* Min/Max badges */}
           <div className="home-minmax-row">
             <div className="home-minmax-badge" style={{ background: 'rgba(34,197,94,0.1)' }}>
-              <span className="home-minmax-value" style={{ background: 'rgba(34,197,94,0.2)', color: '#22c55e' }}>{minPoint.aqi}</span>
+              <span className="home-minmax-value" style={{ background: 'rgba(34,197,94,0.2)', color: '#22c55e' }}>{minPoint.val}</span>
               <div className="home-minmax-info">
-                <span className="home-minmax-label" style={{ color: '#22c55e' }}>↓ Min. AQI</span>
+                <span className="home-minmax-label" style={{ color: '#22c55e' }}>
+                  ↓ Min. {chartMetric === 'aqi' ? 'AQI' : chartMetric.toUpperCase()}
+                </span>
                 <span className="home-minmax-time">⏱ {minPoint.time}</span>
               </div>
             </div>
             <div className="home-minmax-badge" style={{ background: 'rgba(239,68,68,0.1)' }}>
-              <span className="home-minmax-value" style={{ background: 'rgba(239,68,68,0.2)', color: '#ef4444' }}>{maxPoint.aqi}</span>
+              <span className="home-minmax-value" style={{ background: 'rgba(239,68,68,0.2)', color: '#ef4444' }}>{maxPoint.val}</span>
               <div className="home-minmax-info">
-                <span className="home-minmax-label" style={{ color: '#ef4444' }}>↑ Max. AQI</span>
+                <span className="home-minmax-label" style={{ color: '#ef4444' }}>
+                  ↑ Max. {chartMetric === 'aqi' ? 'AQI' : chartMetric.toUpperCase()}
+                </span>
                 <span className="home-minmax-time">⏱ {maxPoint.time}</span>
               </div>
             </div>
@@ -422,29 +518,52 @@ export default function HomePage() {
             <ResponsiveContainer>
               {chartType === 'bar' ? (
                 <BarChart data={historicalData}>
-                  <XAxis dataKey="time" tick={{ fill: '#8b949e', fontSize: 10 }} interval={2} />
-                  <YAxis tick={{ fill: '#8b949e', fontSize: 10 }} domain={[0, 'dataMax + 30']} />
+                  <XAxis dataKey="time" tick={{ fill: '#8b949e', fontSize: 10 }} interval={timeRange === '6h' ? 0 : 2} />
+                  <YAxis tick={{ fill: '#8b949e', fontSize: 10 }} domain={[0, 'dataMax + 20']} />
                   <Tooltip
                     contentStyle={{ background: 'var(--bg-surface)', border: '1px solid var(--border-primary)', borderRadius: 8, fontSize: '0.75rem', color: 'var(--text-primary)' }}
                     itemStyle={{ color: 'var(--accent-blue)', fontWeight: 700 }}
                     labelStyle={{ color: 'var(--text-secondary)' }}
+                    formatter={(value: any) => [
+                      `${value} ${chartMetric === 'aqi' ? 'AQI' : 'µg/m³'}`,
+                      chartMetric === 'aqi' ? 'Air Quality Index' : chartMetric.toUpperCase()
+                    ]}
                   />
-                  <Bar dataKey="aqi" radius={[3, 3, 0, 0]}>
+                  <Bar dataKey={chartMetric} radius={[3, 3, 0, 0]}>
                     {historicalData.map((entry, i) => (
-                      <Cell key={i} fill={aqiBarColor(entry.aqi)} />
+                      <Cell 
+                        key={i} 
+                        fill={
+                          chartMetric === 'aqi' 
+                            ? aqiBarColor(entry.aqi) 
+                            : chartMetric === 'pm25' 
+                            ? pollutantColor(entry.pm25 ?? entry.aqi * 0.45, 60) 
+                            : pollutantColor(entry.pm10 ?? entry.aqi * 0.85, 100)
+                        } 
+                      />
                     ))}
                   </Bar>
                 </BarChart>
               ) : (
                 <LineChart data={historicalData}>
-                  <XAxis dataKey="time" tick={{ fill: '#8b949e', fontSize: 10 }} interval={2} />
-                  <YAxis tick={{ fill: '#8b949e', fontSize: 10 }} domain={[0, 'dataMax + 30']} />
+                  <XAxis dataKey="time" tick={{ fill: '#8b949e', fontSize: 10 }} interval={timeRange === '6h' ? 0 : 2} />
+                  <YAxis tick={{ fill: '#8b949e', fontSize: 10 }} domain={[0, 'dataMax + 20']} />
                   <Tooltip
                     contentStyle={{ background: 'var(--bg-surface)', border: '1px solid var(--border-primary)', borderRadius: 8, fontSize: '0.75rem', color: 'var(--text-primary)' }}
                     itemStyle={{ color: 'var(--accent-blue)', fontWeight: 700 }}
                     labelStyle={{ color: 'var(--text-secondary)' }}
+                    formatter={(value: any) => [
+                      `${value} ${chartMetric === 'aqi' ? 'AQI' : 'µg/m³'}`,
+                      chartMetric === 'aqi' ? 'Air Quality Index' : chartMetric.toUpperCase()
+                    ]}
                   />
-                  <Line type="monotone" dataKey="aqi" stroke={aqiCat.color} strokeWidth={2.5} dot={false} />
+                  <Line 
+                    type="monotone" 
+                    dataKey={chartMetric} 
+                    stroke={chartMetric === 'aqi' ? aqiCat.color : '#38bdf8'} 
+                    strokeWidth={2.5} 
+                    dot={timeRange === '6h'} 
+                  />
                 </LineChart>
               )}
             </ResponsiveContainer>

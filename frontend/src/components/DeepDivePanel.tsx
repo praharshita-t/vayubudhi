@@ -77,7 +77,6 @@ export default function DeepDivePanel({ district, city, onReset }: { district: a
     }
     
     setSimLoading(true);
-    // Debounce this in a real app, but for now we just call it
     const timer = setTimeout(() => {
       const baseline = {
         station_id: district.id, timestamp: new Date().toISOString(),
@@ -114,178 +113,204 @@ export default function DeepDivePanel({ district, city, onReset }: { district: a
   ];
 
   return (
-    <div className="fade-in" style={{ padding: '0px 20px 20px', color: '#c9d1d9', display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div className="fade-in" style={{ padding: '16px 18px 40px', color: 'var(--text-primary)', display: 'flex', flexDirection: 'column', gap: 16 }}>
       
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid var(--border-primary)', paddingBottom: 12 }}>
         <div>
-            <h2 style={{ color: 'white', marginBottom: '2px', fontSize: '1.4rem' }}>{district.name || district.id}</h2>
-            <div style={{ fontSize: '0.75rem', color: 'var(--accent-blue)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Hyperlocal ML Intelligence</div>
+          <h2 style={{ color: 'var(--text-primary)', margin: '0 0 2px', fontSize: '1.35rem', fontWeight: 800 }}>
+            {district.name || district.id}
+          </h2>
+          <div style={{ fontSize: '0.72rem', color: 'var(--accent-blue)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
+            Hyperlocal ML Intelligence
+          </div>
         </div>
-        <button onClick={onReset} style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-color)', color: 'var(--text-normal)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '0.8rem', transition: 'all 0.2s' }}>
-          ← Back to Map
+        <button 
+          onClick={onReset} 
+          style={{ 
+            background: 'var(--bg-elevated)', 
+            border: '1px solid var(--border-primary)', 
+            color: 'var(--text-primary)', 
+            padding: '6px 12px', 
+            borderRadius: '6px', 
+            cursor: 'pointer', 
+            fontSize: '0.75rem',
+            fontWeight: 600,
+            transition: 'var(--transition-fast)' 
+          }}
+        >
+          ✕ Close
         </button>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-        
-        {/* Left Column */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          
-          {/* Section 1: Headline Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            <div className="panel" style={{ padding: '15px' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '5px' }}>CURRENT AQI</div>
-              <div style={{ fontSize: '2.2rem', fontWeight: 800, color: 'var(--accent-red)' }}>{district.aqi || Math.round(district.pm25 * 1.3)}</div>
-            </div>
-            <div className="panel" style={{ padding: '15px' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '5px' }}>METEOROLOGY</div>
-              <div style={{ fontSize: '0.85rem', marginBottom: '2px' }}>Temp: <span style={{ color: 'white' }}>{district.temp || 32}°C</span></div>
-              <div style={{ fontSize: '0.85rem', marginBottom: '2px' }}>Wind: <span style={{ color: 'white' }}>{district.wind_speed || 2.5} m/s</span></div>
-              <div style={{ fontSize: '0.85rem' }}>PBLH: <span style={{ color: 'white' }}>{district.pblh || 850} m</span></div>
-            </div>
+      {/* Section 1: Headline Cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <div className="panel" style={{ padding: '14px', background: 'var(--bg-surface)' }}>
+          <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginBottom: 4, textTransform: 'uppercase', fontWeight: 600 }}>CURRENT AQI</div>
+          <div style={{ fontSize: '2.2rem', fontWeight: 800, color: 'var(--accent-red)', lineHeight: 1.1 }}>
+            {district.aqi || Math.round(district.pm25 * 1.3)}
           </div>
-
-          {/* Section 2: Attribution Bars */}
-          <div className="panel">
-            <div className="panel-header"><div className="panel-title">Source Attribution (CatBoost GPU)</div></div>
-            <div style={{ padding: 16 }}>
-                {loading ? <div style={{ color: 'var(--text-muted)' }}>Running classifier...</div> : attribution ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        {Object.entries(attribution.probabilities).sort((a: any, b: any) => b[1] - a[1]).map(([source, prob]: any) => (
-                        <div key={source}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginBottom: '4px' }}>
-                            <span style={{ textTransform: 'capitalize', color: 'white' }}>{source.replace('_', ' ')}</span>
-                            <span>{(prob * 100).toFixed(1)}%</span>
-                            </div>
-                            <div style={{ width: '100%', height: '6px', background: 'var(--bg-elevated)', borderRadius: '3px', overflow: 'hidden' }}>
-                            <div style={{ width: `${prob * 100}%`, height: '100%', background: attribution.prediction_set.includes(source) ? 'var(--accent-red)' : 'var(--accent-cyan)' }} />
-                            </div>
-                        </div>
-                        ))}
-                    </div>
-                ) : null}
-            </div>
-          </div>
-
-          {/* Section 7: Geospatial Evidence */}
-          {attribution?.geospatial_evidence && (
-            <div className="panel">
-                <div className="panel-header"><div className="panel-title">Satellite & Geospatial Cross-Check</div></div>
-                <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {Object.entries(attribution.geospatial_evidence).map(([key, val]: any) => (
-                        <div key={key} style={{ background: 'var(--bg-elevated)', padding: '8px 12px', borderRadius: 6, fontSize: '0.75rem' }}>
-                            <strong style={{ color: 'var(--accent-blue)', display: 'block', marginBottom: 2 }}>{key.replace(/_/g, ' ')}</strong>
-                            <span style={{ color: 'var(--text-normal)' }}>{val}</span>
-                        </div>
-                    ))}
-                </div>
-            </div>
-          )}
-
-          {/* Section 5: Pollutant Breakdown */}
-          <div className="panel">
-            <div className="panel-header"><div className="panel-title">Sub-Index Breakdown</div></div>
-            <div style={{ width: '100%', height: 180 }}>
-                <ResponsiveContainer>
-                    <PieChart>
-                        <Pie data={pieData} innerRadius={50} outerRadius={70} paddingAngle={5} dataKey="value" stroke="none">
-                            {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.fill} />)}
-                        </Pie>
-                        <Tooltip contentStyle={{ background: '#161b22', border: 'none', borderRadius: 6, fontSize: 12 }} />
-                        <Legend wrapperStyle={{ fontSize: 11 }} />
-                    </PieChart>
-                </ResponsiveContainer>
-            </div>
-          </div>
-
         </div>
-
-        {/* Right Column */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            
-            {/* Section 3: Fingerprint Radar */}
-            <div className="panel">
-                <div className="panel-header"><div className="panel-title">Pollutant Fingerprint Radar</div></div>
-                <div style={{ width: '100%', height: 250, marginTop: 10 }}>
-                    {fingerprint ? (
-                        <ResponsiveContainer>
-                            <RadarChart outerRadius={90} data={Object.keys(fingerprint[0]).filter(k=>k!=='name').map(k => ({ subject: k, A: fingerprint[0][k], B: fingerprint[1][k] }))}>
-                                <PolarGrid stroke="#30363d" />
-                                <PolarAngleAxis dataKey="subject" tick={{ fill: '#8b949e', fontSize: 10 }} />
-                                <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
-                                <Radar name="Current" dataKey="A" stroke="#388bfd" fill="#388bfd" fillOpacity={0.4} />
-                                <Radar name="Reference (Vehicular)" dataKey="B" stroke="#f85149" fill="none" strokeDasharray="3 3" />
-                                <Tooltip contentStyle={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, fontSize: 11 }} />
-                            </RadarChart>
-                        </ResponsiveContainer>
-                    ) : <div style={{ padding: 20, textAlign: 'center' }}>Loading Fingerprint...</div>}
-                </div>
-            </div>
-
-            {/* Section 4: SHAP Feature Importance */}
-            <div className="panel">
-                <div className="panel-header"><div className="panel-title">SHAP Explainer (Why is AQI high?)</div></div>
-                <div style={{ width: '100%', height: 200, padding: '10px 0' }}>
-                    {shap ? (
-                        <ResponsiveContainer>
-                            <BarChart data={shap.features.slice(0,6)} layout="vertical" margin={{ left: 30, right: 20 }}>
-                                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#21262d" />
-                                <XAxis type="number" tick={{ fill: '#8b949e', fontSize: 10 }} />
-                                <YAxis dataKey="feature" type="category" tick={{ fill: '#e6edf3', fontSize: 10 }} axisLine={false} tickLine={false} />
-                                <Tooltip cursor={{ fill: 'rgba(255,255,255,0.05)' }} contentStyle={{ background: '#161b22', border: 'none', borderRadius: 4, fontSize: 11 }} />
-                                <Bar dataKey="value" name="SHAP Value (+/- AQI)">
-                                    {shap.features.slice(0,6).map((entry: any, index: number) => (
-                                        <Cell key={`cell-${index}`} fill={entry.value > 0 ? 'var(--accent-red)' : 'var(--accent-green)'} />
-                                    ))}
-                                </Bar>
-                            </BarChart>
-                        </ResponsiveContainer>
-                    ) : <div style={{ padding: 20, textAlign: 'center' }}>Loading SHAP values...</div>}
-                </div>
-            </div>
-
-            {/* Section 8: Intervention Simulator */}
-            <div className="panel" style={{ border: '1px solid rgba(239, 68, 68, 0.3)' }}>
-                <div className="panel-header" style={{ background: 'rgba(239, 68, 68, 0.1)', padding: '10px 16px' }}>
-                    <div className="panel-title" style={{ color: '#ef4444' }}>Policy Intervention Simulator</div>
-                </div>
-                <div style={{ padding: '16px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                            {[
-                                { label: 'Traffic Restriction (%)', val: simTraffic, set: setSimTraffic, color: 'var(--accent-blue)' },
-                                { label: 'Dust Suppression (%)', val: simDust, set: setSimDust, color: 'var(--accent-orange)' },
-                                { label: 'Industrial Cap (%)', val: simIndustrial, set: setSimIndustrial, color: 'var(--accent-red)' },
-                            ].map((s, i) => (
-                                <div key={i}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: 6 }}>
-                                        <span>{s.label}</span>
-                                        <span style={{ color: s.color, fontWeight: 'bold' }}>{s.val}%</span>
-                                    </div>
-                                    <input type="range" min="0" max="100" value={s.val} onChange={e => s.set(parseInt(e.target.value))} style={{ width: '100%', accentColor: s.color }} />
-                                </div>
-                            ))}
-                            <button onClick={() => {setSimTraffic(0); setSimDust(0); setSimIndustrial(0);}} style={{ background: 'transparent', border: '1px solid var(--border-color)', color: 'var(--text-muted)', padding: '4px', borderRadius: 4, cursor: 'pointer', fontSize: '0.7rem', marginTop: 8 }}>Reset Sliders</button>
-                        </div>
-                        
-                        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', background: 'var(--bg-elevated)', borderRadius: 8, border: '1px solid var(--border-primary)', padding: 16 }}>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 4 }}>{simTraffic > 0 || simDust > 0 || simIndustrial > 0 ? 'Projected +24h AQI' : 'Baseline +24h AQI'}</div>
-                            <div style={{ fontSize: '2.5rem', fontWeight: 800, color: (simResult && simResult.delta[0] < -10) ? 'var(--accent-green)' : 'var(--text-normal)' }}>
-                                {simLoading ? '...' : (simResult ? Math.round(simResult.simulated_forecast[0]) : Math.round(district.aqi || 150))}
-                            </div>
-                            {(simResult && simResult.delta[0] !== 0) && (
-                                <div style={{ fontSize: '0.85rem', color: 'var(--accent-green)', marginTop: 4, fontWeight: 600 }}>
-                                    {Math.round(simResult.delta[0])} points
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            </div>
-
+        <div className="panel" style={{ padding: '14px', background: 'var(--bg-surface)' }}>
+          <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginBottom: 4, textTransform: 'uppercase', fontWeight: 600 }}>METEOROLOGY</div>
+          <div style={{ fontSize: '0.78rem', marginBottom: 2, color: 'var(--text-secondary)' }}>Temp: <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{district.temp || 32}°C</span></div>
+          <div style={{ fontSize: '0.78rem', marginBottom: 2, color: 'var(--text-secondary)' }}>Wind: <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{district.wind_speed || 2.5} m/s</span></div>
+          <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>PBLH: <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{district.pblh || 850} m</span></div>
         </div>
       </div>
+
+      {/* Section 2: Attribution Bars */}
+      <div className="panel" style={{ background: 'var(--bg-surface)' }}>
+        <div className="panel-header" style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-primary)' }}>
+          <div className="panel-title" style={{ fontSize: '0.82rem', fontWeight: 700 }}>Source Attribution (CatBoost GPU)</div>
+        </div>
+        <div style={{ padding: '14px' }}>
+          {loading ? (
+            <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>Running classifier...</div>
+          ) : attribution ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {Object.entries(attribution.probabilities).sort((a: any, b: any) => b[1] - a[1]).map(([source, prob]: any) => (
+                <div key={source}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', marginBottom: 4 }}>
+                    <span style={{ textTransform: 'capitalize', color: 'var(--text-primary)', fontWeight: 500 }}>{source.replace('_', ' ')}</span>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{(prob * 100).toFixed(1)}%</span>
+                  </div>
+                  <div style={{ width: '100%', height: 6, background: 'var(--bg-elevated)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ width: `${prob * 100}%`, height: '100%', background: attribution.prediction_set.includes(source) ? 'var(--accent-red)' : 'var(--accent-cyan)', borderRadius: 3 }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Section 3: Intervention Simulator */}
+      <div className="panel" style={{ border: '1px solid rgba(239, 68, 68, 0.3)', background: 'var(--bg-surface)' }}>
+        <div className="panel-header" style={{ background: 'rgba(239, 68, 68, 0.1)', padding: '10px 14px' }}>
+          <div className="panel-title" style={{ color: 'var(--accent-red)', fontSize: '0.82rem', fontWeight: 700 }}>Policy Intervention Simulator</div>
+        </div>
+        <div style={{ padding: '14px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 14, alignItems: 'center' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {[
+                { label: 'Traffic Restriction (%)', val: simTraffic, set: setSimTraffic, color: 'var(--accent-blue)' },
+                { label: 'Dust Suppression (%)', val: simDust, set: setSimDust, color: 'var(--accent-orange)' },
+                { label: 'Industrial Cap (%)', val: simIndustrial, set: setSimIndustrial, color: 'var(--accent-red)' },
+              ].map((s, i) => (
+                <div key={i}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', marginBottom: 4 }}>
+                    <span style={{ color: 'var(--text-primary)' }}>{s.label}</span>
+                    <span style={{ color: s.color, fontWeight: 700 }}>{s.val}%</span>
+                  </div>
+                  <input type="range" min="0" max="100" value={s.val} onChange={e => s.set(parseInt(e.target.value))} style={{ width: '100%', accentColor: s.color, cursor: 'pointer' }} />
+                </div>
+              ))}
+              <button 
+                onClick={() => {setSimTraffic(0); setSimDust(0); setSimIndustrial(0);}} 
+                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-primary)', color: 'var(--text-secondary)', padding: '4px 8px', borderRadius: 4, cursor: 'pointer', fontSize: '0.7rem', marginTop: 4 }}
+              >
+                Reset Sliders
+              </button>
+            </div>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', background: 'var(--bg-elevated)', borderRadius: 8, border: '1px solid var(--border-primary)', padding: '12px 8px', textAlign: 'center' }}>
+              <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: 4, fontWeight: 600 }}>
+                {simTraffic > 0 || simDust > 0 || simIndustrial > 0 ? 'Projected +24h AQI' : 'Baseline +24h AQI'}
+              </div>
+              <div style={{ fontSize: '2rem', fontWeight: 800, color: (simResult && simResult.delta[0] < -10) ? 'var(--accent-green)' : 'var(--text-primary)', lineHeight: 1.1 }}>
+                {simLoading ? '...' : (simResult ? Math.round(simResult.simulated_forecast[0]) : Math.round(district.aqi || 150))}
+              </div>
+              {(simResult && simResult.delta[0] !== 0) && (
+                <div style={{ fontSize: '0.75rem', color: 'var(--accent-green)', marginTop: 4, fontWeight: 700 }}>
+                  {Math.round(simResult.delta[0])} points
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Section 4: SHAP Feature Importance */}
+      <div className="panel" style={{ background: 'var(--bg-surface)' }}>
+        <div className="panel-header" style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-primary)' }}>
+          <div className="panel-title" style={{ fontSize: '0.82rem', fontWeight: 700 }}>SHAP Explainer (Why is AQI high?)</div>
+        </div>
+        <div style={{ width: '100%', height: 210, padding: '10px 6px' }}>
+          {shap ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={shap.features.slice(0, 6)} layout="vertical" margin={{ left: 10, right: 20, top: 5, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--border-primary)" />
+                <XAxis type="number" tick={{ fill: 'var(--text-secondary)', fontSize: 10 }} />
+                <YAxis dataKey="feature" type="category" width={85} tick={{ fill: 'var(--text-primary)', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <Tooltip cursor={{ fill: 'rgba(255,255,255,0.05)' }} contentStyle={{ background: 'var(--bg-surface)', border: '1px solid var(--border-primary)', borderRadius: 6, fontSize: 11, color: 'var(--text-primary)' }} />
+                <Bar dataKey="value" name="SHAP Value (+/- AQI)">
+                  {shap.features.slice(0, 6).map((entry: any, index: number) => (
+                    <Cell key={`cell-${index}`} fill={entry.value > 0 ? 'var(--accent-red)' : 'var(--accent-green)'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : <div style={{ padding: 20, textAlign: 'center', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Loading SHAP values...</div>}
+        </div>
+      </div>
+
+      {/* Section 5: Fingerprint Radar */}
+      <div className="panel" style={{ background: 'var(--bg-surface)' }}>
+        <div className="panel-header" style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-primary)' }}>
+          <div className="panel-title" style={{ fontSize: '0.82rem', fontWeight: 700 }}>Pollutant Fingerprint Radar</div>
+        </div>
+        <div style={{ width: '100%', height: 230, padding: '10px 0' }}>
+          {fingerprint ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <RadarChart outerRadius={70} data={Object.keys(fingerprint[0]).filter(k => k !== 'name').map(k => ({ subject: k, A: fingerprint[0][k], B: fingerprint[1][k] }))}>
+                <PolarGrid stroke="var(--border-primary)" />
+                <PolarAngleAxis dataKey="subject" tick={{ fill: 'var(--text-secondary)', fontSize: 10 }} />
+                <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
+                <Radar name="Current" dataKey="A" stroke="var(--accent-blue)" fill="var(--accent-blue)" fillOpacity={0.4} />
+                <Radar name="Reference (Vehicular)" dataKey="B" stroke="var(--accent-red)" fill="none" strokeDasharray="3 3" />
+                <Tooltip contentStyle={{ background: 'var(--bg-surface)', border: '1px solid var(--border-primary)', borderRadius: 8, fontSize: 11, color: 'var(--text-primary)' }} />
+              </RadarChart>
+            </ResponsiveContainer>
+          ) : <div style={{ padding: 20, textAlign: 'center', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Loading Fingerprint...</div>}
+        </div>
+      </div>
+
+      {/* Section 6: Geospatial Evidence */}
+      {attribution?.geospatial_evidence && (
+        <div className="panel" style={{ background: 'var(--bg-surface)' }}>
+          <div className="panel-header" style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-primary)' }}>
+            <div className="panel-title" style={{ fontSize: '0.82rem', fontWeight: 700 }}>Satellite & Geospatial Cross-Check</div>
+          </div>
+          <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {Object.entries(attribution.geospatial_evidence).map(([key, val]: any) => (
+              <div key={key} style={{ background: 'var(--bg-elevated)', padding: '8px 12px', borderRadius: 6, fontSize: '0.75rem' }}>
+                <strong style={{ color: 'var(--accent-blue)', display: 'block', marginBottom: 2 }}>{key.replace(/_/g, ' ')}</strong>
+                <span style={{ color: 'var(--text-primary)' }}>{val}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Section 7: Pollutant Breakdown Pie */}
+      <div className="panel" style={{ background: 'var(--bg-surface)' }}>
+        <div className="panel-header" style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-primary)' }}>
+          <div className="panel-title" style={{ fontSize: '0.82rem', fontWeight: 700 }}>Sub-Index Breakdown</div>
+        </div>
+        <div style={{ width: '100%', height: 180 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie data={pieData} innerRadius={42} outerRadius={62} paddingAngle={4} dataKey="value" stroke="none">
+                {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.fill} />)}
+              </Pie>
+              <Tooltip contentStyle={{ background: 'var(--bg-surface)', border: '1px solid var(--border-primary)', borderRadius: 6, fontSize: 11, color: 'var(--text-primary)' }} />
+              <Legend wrapperStyle={{ fontSize: 11, color: 'var(--text-secondary)' }} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
     </div>
   );
 }

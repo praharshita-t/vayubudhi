@@ -47,8 +47,11 @@ export default function Sidebar() {
             {pinned ? <PanelLeftClose size={20} /> : <Menu size={20} />}
           </button>
           <div className={`sidebar-brand${expanded ? ' visible' : ''}`}>
-            <div className="sidebar-logo-dot" />
-            <span className="sidebar-brand-name">VayuBudhi</span>
+            <img src="/logo-emblem.png" alt="VayuBudhi" className="sidebar-logo-img" />
+            <div className="sidebar-brand-text-col">
+              <span className="sidebar-brand-name">VayuBudhi</span>
+              <span className="sidebar-since-badge">SINCE 2026</span>
+            </div>
           </div>
         </div>
 

@@ -191,10 +191,29 @@ export default function CityMap({
       longitude: alertStation.lon,
       latitude: alertStation.lat,
       zoom: 13,
-      pitch: 0,
+      pitch: 45,
+      bearing: -15,
       transitionDuration: 1500,
     }));
   }, [alertStation, city]);
+
+  // Handle camera restoration when Deep Dive panel is dismissed (selectedDistrictId becomes null)
+  const prevSelectedDistrictId = React.useRef<string | null | undefined>(selectedDistrictId);
+  React.useEffect(() => {
+    if (prevSelectedDistrictId.current && !selectedDistrictId) {
+      const target = getInitialViewState(city, userCoords);
+      setViewState((prev: any) => ({
+        ...prev,
+        longitude: target.longitude,
+        latitude: target.latitude,
+        zoom: target.zoom,
+        pitch: target.pitch,       // 55 deg slanted 3D perspective
+        bearing: target.bearing,   // -20 deg
+        transitionDuration: 1200,
+      }));
+    }
+    prevSelectedDistrictId.current = selectedDistrictId;
+  }, [selectedDistrictId, city, userCoords]);
 
   // Build deck.gl layers
   const layers = useMemo(() => {
@@ -238,12 +257,23 @@ export default function CityMap({
             ...prev,
             longitude: info.object.lon,
             latitude: info.object.lat,
-            zoom: 12.5,
-            pitch: 30,
+            zoom: 12,
+            pitch: 50,
+            bearing: -20,
             transitionDuration: 1200,
           }));
         } else if (!info.object && onClick) {
           onClick(null); // Clear selection when clicking off
+          const target = getInitialViewState(city, userCoords);
+          setViewState((prev: any) => ({
+            ...prev,
+            longitude: target.longitude,
+            latitude: target.latitude,
+            zoom: target.zoom,
+            pitch: target.pitch,
+            bearing: target.bearing,
+            transitionDuration: 1200,
+          }));
         }
       },
     });
@@ -291,12 +321,23 @@ export default function CityMap({
             ...prev,
             longitude: info.object.centroid[0],
             latitude: info.object.centroid[1],
-            zoom: 12.5,
-            pitch: 30,
+            zoom: 12,
+            pitch: 50,
+            bearing: -20,
             transitionDuration: 1200,
           }));
         } else if (!info.object && onClick) {
           onClick(null); // Clear selection when clicking off
+          const target = getInitialViewState(city, userCoords);
+          setViewState((prev: any) => ({
+            ...prev,
+            longitude: target.longitude,
+            latitude: target.latitude,
+            zoom: target.zoom,
+            pitch: target.pitch,
+            bearing: target.bearing,
+            transitionDuration: 1200,
+          }));
         }
       },
       transitions: {
@@ -450,7 +491,7 @@ export default function CityMap({
     } else {
       return [satelliteLayer, columnLayer, stationGlowLayer, stationDotLayer, labelLayer, ...alertLayers, ...monitoringLayers];
     }
-  }, [alertStation, stations, hexGrid, city, hoveredDistrict, dynamicDistricts, showSatellite, monitoringLocation]);
+  }, [alertStation, stations, hexGrid, city, hoveredDistrict, dynamicDistricts, showSatellite, monitoringLocation, selectedDistrictId]);
 
   const onViewStateChange = useCallback(({ viewState: vs }: any) => {
     setViewState(vs);

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Dict
+from typing import List, Dict, Any
 
 # Contract 1: Sensor -> Backend
 class SensorReading(BaseModel):
@@ -11,6 +11,7 @@ class SensorReading(BaseModel):
     humidity: float = Field(..., examples=[58.4])
     pressure: float = Field(..., examples=[1008.1])
     wind_speed: float = Field(default=3.0, examples=[2.5])
+    wind_dir: float = Field(default=0.0, examples=[180.0])
     pblh: float = Field(default=1000.0, examples=[800.0])
     lat: float = Field(default=28.6139, examples=[28.6139])
     lon: float = Field(default=77.2090, examples=[77.2090])
@@ -26,6 +27,7 @@ class AttributionOutput(BaseModel):
     confidence: float = Field(..., examples=[0.90])
     probabilities: Dict[str, float] = Field(..., examples=[{"biomass_burning": 0.82, "vehicular": 0.11}])
     geospatial_evidence: Dict[str, str] = Field(default=None, description="Correlated geospatial data from TomTom, NASA FIRMS, etc.")
+    pinn_source: Dict[str, float] = Field(default=None, description="Plume Inversion PINN origin estimation")
 
 # Contract 3: ML -> Backend/Frontend (Forecast)
 class ForecastOutput(BaseModel):

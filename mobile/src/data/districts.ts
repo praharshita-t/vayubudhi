@@ -95,3 +95,141 @@ export function computeDistricts(city: string, stations: Station[]): District[] 
     };
   });
 }
+
+/**
+ * Standard Ray-casting point-in-polygon test.
+ * @param point [lon, lat]
+ * @param polygon array of [lon, lat] vertices
+ */
+export function isPointInPolygon(point: [number, number], polygon: [number, number][]): boolean {
+  if (!polygon || polygon.length < 3) return false;
+  const [x, y] = point;
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i][0];
+    const yi = polygon[i][1];
+    const xj = polygon[j][0];
+    const yj = polygon[j][1];
+
+    const intersect = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+export type SpatialTelemetry = Omit<District, 'polygon' | 'centroid'> & {
+  districtName?: string;
+  districtId?: string;
+};
+
+/**
+ * Finds spatial AQI and telemetry at a specific geographic coordinate [lat, lon]
+ * using the existing heatmap polygon coverage and underlying IDW interpolation.
+ */
+export function getSpatialDataAtCoordinate(
+  lat: number,
+  lon: number,
+  districts: District[] = [],
+  stations: Station[] = []
+): SpatialTelemetry | null {
+  if (typeof lat !== 'number' || typeof lon !== 'number' || isNaN(lat) || isNaN(lon)) {
+    return null;
+  }
+
+  const safeDistricts = Array.isArray(districts) ? districts : [];
+  const safeStations = Array.isArray(stations) ? stations : [];
+
+  // 1. Check if the coordinate falls inside any heatmap district polygon
+  for (const dist of safeDistricts) {
+    if (dist.polygon && dist.polygon.length >= 3) {
+      if (isPointInPolygon([lon, lat], dist.polygon)) {
+        return {
+          id: dist.id,
+          name: dist.name,
+          districtId: dist.id,
+          districtName: dist.name,
+          aqi: dist.aqi,
+          pm25: dist.pm25,
+          pm10: dist.pm10,
+          no2: dist.no2,
+          so2: dist.so2,
+          co: dist.co,
+          o3: dist.o3,
+          temp: dist.temp,
+          humidity: dist.humidity,
+          pressure: dist.pressure,
+          wind_speed: dist.wind_speed,
+          pblh: dist.pblh,
+        };
+      }
+    }
+  }
+
+  // 2. If outside all polygons but districts exist, find the nearest district centroid
+  if (safeDistricts.length > 0) {
+    let closestDist: District | null = null;
+    let minDistance = Infinity;
+
+    for (const dist of safeDistricts) {
+      if (dist.centroid && Array.isArray(dist.centroid) && dist.centroid.length >= 2) {
+        const dx = (dist.centroid[0] - lon) * 85;
+        const dy = (dist.centroid[1] - lat) * 111;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d < minDistance) {
+          minDistance = d;
+          closestDist = dist;
+        }
+      }
+    }
+
+    if (closestDist && minDistance < 60) {
+      return {
+        id: closestDist.id,
+        name: closestDist.name,
+        districtId: closestDist.id,
+        districtName: closestDist.name,
+        aqi: closestDist.aqi,
+        pm25: closestDist.pm25,
+        pm10: closestDist.pm10,
+        no2: closestDist.no2,
+        so2: closestDist.so2,
+        co: closestDist.co,
+        o3: closestDist.o3,
+        temp: closestDist.temp,
+        humidity: closestDist.humidity,
+        pressure: closestDist.pressure,
+        wind_speed: closestDist.wind_speed,
+        pblh: closestDist.pblh,
+      };
+    }
+  }
+
+  // 3. If stations exist, compute spatial IDW at this exact coordinate
+  if (safeStations.length > 0) {
+    const interpolated = idwForDistrict([lon, lat], safeStations);
+    if (interpolated && typeof interpolated.aqi === 'number' && interpolated.aqi > 0) {
+      return {
+        id: 'SPATIAL_INTERPOLATED',
+        name: 'Spatial Grid',
+        ...interpolated,
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Returns the AQI corresponding to the geographic position from the heatmap/spatial data.
+ * Returns null if no spatial data is available.
+ */
+export function getAQIAtCoordinate(
+  lat: number,
+  lon: number,
+  districts: District[] = [],
+  stations: Station[] = []
+): number | null {
+  const data = getSpatialDataAtCoordinate(lat, lon, districts, stations);
+  return data && typeof data.aqi === 'number' ? data.aqi : null;
+}
+

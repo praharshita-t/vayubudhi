@@ -45,8 +45,8 @@ function interpolatePoints(currentAqi: number, forecastPoints: number[], forecas
     const diurnalFactor = 1.0 + 0.15 * Math.sin(((futureHour - 8) / 24) * 2 * Math.PI) + 0.05 * Math.sin(((futureHour - 20) / 12) * 2 * Math.PI);
     
     let point = (start.val + (end.val - start.val) * fraction) * diurnalFactor;
-    let lower = (start.lower + (end.lower - start.lower) * fraction) * diurnalFactor;
-    let upper = (start.upper + (end.upper - start.upper) * fraction) * diurnalFactor;
+    let lower = (start.lower + (end.lower - start.lower) * fraction);
+    let upper = (start.upper + (end.upper - start.upper) * fraction);
     
     const day = Math.floor(h / 24);
     const dayLabel = day === 0 ? 'Today' : day === 1 ? 'Tomorrow' : `Day ${day + 1}`;
@@ -172,7 +172,7 @@ export default function ForecastPanel({ city = 'Hyderabad', userCoords, liveData
           <span style={{ fontWeight: 600, color: 'var(--text-normal)' }}>{liveConnection ? 'Live ML Inference Active' : 'Connecting ML Backend...'}</span>
         </div>
         <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-          {liveConnection && <span>Target Zone: <strong>{hoveredLocation?.name || 'GHMC Reference'}</strong> | CatBoost v2.1</span>}
+          {liveConnection && <span>Target: <strong>{hoveredLocation?.name || `${city} Reference Station`}</strong> | Atmospheric CatBoost Model</span>}
         </div>
       </div>
 
@@ -203,23 +203,18 @@ export default function ForecastPanel({ city = 'Hyderabad', userCoords, liveData
       {/* 6.3 Section 3: 72h Forecast Area Chart */}
       <div className="panel">
         <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div className="panel-title">72h Trajectory & MAPIE Conformal Intervals</div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            {[80, 90, 95].map(target => (
-              <button 
-                key={target}
-                onClick={() => setConfidenceTarget(target)}
-                style={{ 
-                  background: confidenceTarget === target ? 'var(--accent-blue)' : 'var(--bg-panel)', 
-                  border: `1px solid ${confidenceTarget === target ? 'var(--accent-blue)' : 'var(--border-color)'}`,
-                  color: confidenceTarget === target ? '#fff' : 'var(--text-muted)',
-                  padding: '2px 8px', borderRadius: 4, fontSize: '0.75rem', cursor: 'pointer',
-                  transition: 'all 0.2s ease'
-                }}>
-                {target}%
-              </button>
-            ))}
-          </div>
+          <div className="panel-title">72-Hour AQI Forecast & Uncertainty Range</div>
+          <span style={{ 
+            fontSize: '0.75rem', 
+            background: 'rgba(56, 139, 253, 0.12)', 
+            color: 'var(--accent-blue)', 
+            padding: '3px 10px', 
+            borderRadius: 6, 
+            border: '1px solid rgba(56, 139, 253, 0.25)',
+            fontWeight: 500
+          }}>
+            90% Conformal Interval
+          </span>
         </div>
         <div style={{ width: '100%', height: 250, marginTop: 16 }}>
           <ResponsiveContainer width="100%" height="100%">
@@ -253,7 +248,7 @@ export default function ForecastPanel({ city = 'Hyderabad', userCoords, liveData
         {/* 6.4 Section 4: VI Gauge + PBLH Bar Chart */}
         <div className="panel" style={{ display: 'flex', flexDirection: 'column' }}>
           <div className="panel-header">
-            <div className="panel-title">Atmospheric Physics</div>
+            <div className="panel-title">Atmospheric Dispersion Physics</div>
           </div>
           
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 16, marginBottom: 16 }}>
@@ -270,7 +265,7 @@ export default function ForecastPanel({ city = 'Hyderabad', userCoords, liveData
               </div>
               <div className="gauge-info" style={{ textAlign: 'left' }}>
                 <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Ventilation Index</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 700, color: viColor }}>{currentVI.toLocaleString()}</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 700, color: viColor }}>{currentVI.toLocaleString()} <span style={{ fontSize: '0.8rem', fontWeight: 400 }}>m²/s</span></div>
                 <div style={{ fontSize: '0.75rem', background: viColor, color: '#000', padding: '2px 6px', borderRadius: 4, display: 'inline-block', fontWeight: 600, marginTop: 4 }}>
                   {viStatus}
                 </div>
@@ -287,7 +282,7 @@ export default function ForecastPanel({ city = 'Hyderabad', userCoords, liveData
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4 }}>Diurnal Boundary Layer Height (Next 24h)</div>
+          <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4 }}>Boundary Layer Height (PBLH in m) Next 24h</div>
         </div>
 
         {/* 6.5 Section 5: Real Model Validation */}
@@ -295,7 +290,7 @@ export default function ForecastPanel({ city = 'Hyderabad', userCoords, liveData
           <div className="panel-header">
             <div className="panel-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               Model Validation & Benchmark
-              <div className="panel-badge badge-green">✓ Verified</div>
+              <div className="panel-badge badge-green">✓ Evaluated</div>
             </div>
           </div>
           
@@ -337,6 +332,9 @@ export default function ForecastPanel({ city = 'Hyderabad', userCoords, liveData
                     <Bar dataKey="Model" fill="var(--accent-blue)" name="CatBoost ML RMSE" radius={[2, 2, 0, 0]} barSize={20} />
                   </BarChart>
                 </ResponsiveContainer>
+              </div>
+              <div style={{ textAlign: 'center', fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 8 }}>
+                Benchmark against temporal persistence baselines over 2,620 validated observations.
               </div>
             </div>
           ) : (

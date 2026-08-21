@@ -3,10 +3,12 @@ import React from 'react';
 import dynamic from 'next/dynamic';
 import { useCityContext } from '@/context/CityContext';
 
+import { CityId } from '@/types';
+
 const ForecastPanel = dynamic(() => import('@/components/ForecastPanel'), { ssr: false });
 
 export default function ForecastPage() {
-  const { activeCity, userCoords, liveData, cityData } = useCityContext();
+  const { activeCity, setActiveCity, userCoords, liveData, cityData } = useCityContext();
 
   return (
     <div className="page-wrapper">
@@ -20,7 +22,16 @@ export default function ForecastPage() {
             </div>
           </div>
           <div className="page-header-divider" />
-          <h2 className="page-title">Forecast</h2>
+          <h2 className="page-title">{activeCity} Forecast</h2>
+          <select
+            value={activeCity}
+            onChange={(e) => setActiveCity(e.target.value as CityId)}
+            style={{ marginLeft: '16px', padding: '5px 10px', borderRadius: '6px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-primary)', fontSize: '0.85rem' }}
+          >
+            <option value="Delhi">Delhi NCR</option>
+            <option value="Hyderabad">Hyderabad</option>
+            <option value="Bengaluru">Bengaluru</option>
+          </select>
         </div>
         <div className="page-city-badge">{activeCity}</div>
       </div>

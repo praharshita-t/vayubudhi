@@ -28,7 +28,8 @@ interface OptimizerPanelProps {
 const CITY_DEFAULT_CENTERS: Record<string, { lat: number; lon: number }> = {
   'Delhi': { lat: 28.6139, lon: 77.2090 },
   'Hyderabad': { lat: 17.3850, lon: 78.4867 },
-  'Guwahati': { lat: 26.1444, lon: 91.7362 }
+  'Guwahati': { lat: 26.1444, lon: 91.7362 },
+  'Bengaluru': { lat: 12.9716, lon: 77.5946 }
 };
 
 export default function OptimizerPanel({ city = 'Delhi', cityData, liveData, districts = [], onSetMonitoringLocation }: OptimizerPanelProps) {

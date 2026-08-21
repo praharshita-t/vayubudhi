@@ -29,12 +29,46 @@ class MLService:
         self._load_models()
         self._load_dataset()
 
+    def _resolve_city(self, reading):
+        lat = getattr(reading, 'lat', 17.425)
+        lon = getattr(reading, 'lon', 78.45)
+        if 12.0 <= lat <= 14.0 and 76.5 <= lon <= 78.5:
+            return "Bengaluru"
+        elif 16.5 <= lat <= 18.5 and 77.5 <= lon <= 79.5:
+            return "Hyderabad"
+        elif 25.5 <= lat <= 29.5 and 76.0 <= lon <= 78.0:
+            return "Delhi"
+        elif 25.0 <= lat <= 27.5 and 90.5 <= lon <= 93.0:
+            return "Guwahati"
+        elif 25.5 <= lat <= 29.5:
+            return "Delhi"
+        elif 12.0 <= lat <= 14.0:
+            return "Bengaluru"
+        return "Hyderabad"
+
     def _load_models(self):
         try:
+            cities = ["Delhi", "Hyderabad", "Bengaluru", "Guwahati"]
+            
+            # Load default base models (which are Hyderabad-trained)
             for h in [24, 48, 72]:
                 path = os.path.join(ML_DATA_DIR, f'forecast_model_{h}h.pkl')
                 if os.path.exists(path):
-                    self.forecasters[f'{h}h'] = joblib.load(path)
+                    model = joblib.load(path)
+                    self.forecasters[f'{h}h'] = model
+                    self.forecasters[f'Hyderabad_{h}h'] = model
+
+            # Load city-specific models if they exist
+            for city in cities:
+                for h in [24, 48, 72]:
+                    path = os.path.join(ML_DATA_DIR, f'forecast_model_{city.lower()}_{h}h.pkl')
+                    if os.path.exists(path):
+                        self.forecasters[f'{city}_{h}h'] = joblib.load(path)
+                    else:
+                        # Fallback to general model if city-specific doesn't exist
+                        fallback_path = os.path.join(ML_DATA_DIR, f'forecast_model_{h}h.pkl')
+                        if os.path.exists(fallback_path) and f'{city}_{h}h' not in self.forecasters:
+                            self.forecasters[f'{city}_{h}h'] = joblib.load(fallback_path)
                     
             classifier_path = os.path.join(ML_DATA_DIR, 'classifier_v2.pkl')
             if os.path.exists(classifier_path):
@@ -87,7 +121,13 @@ class MLService:
         latest_row['pblh'] = reading.pblh
         latest_row['no2'] = getattr(reading, 'no2', 20.0)
         latest_row['so2'] = getattr(reading, 'so2', 10.0)
-        latest_row['co'] = getattr(reading, 'co', 300.0)
+        
+        # Scale CO to ppb if it's passed in mg/m3 to match training data scale
+        co_val = getattr(reading, 'co', 300.0)
+        if co_val < 10.0:
+            co_val = co_val * 1000.0
+        latest_row['co'] = co_val
+        
         latest_row['o3'] = getattr(reading, 'o3', 40.0)
         
         # Recompute derived physics/chemistry
@@ -108,24 +148,39 @@ class MLService:
         latest_row['month_sin'] = np.sin(2 * np.pi * month / 12.0)
         latest_row['month_cos'] = np.cos(2 * np.pi * month / 12.0)
 
-        # Impute missing lag features for real-time inference
-        # Since we don't have the fully rolled dataset in memory, we approximate lags using persistence (current state)
+        # Impute missing lag features for real-time inference using real historical proportions when available
         pm = reading.pm25
-        latest_row['pm25_lag_1h'] = pm
-        latest_row['pm25_lag_3h'] = pm * 0.95
-        latest_row['pm25_lag_6h'] = pm * 0.90
-        latest_row['pm25_lag_12h'] = pm * 0.85
-        latest_row['pm25_lag_24h'] = pm * 0.80
-        latest_row['pm25_rolling_6h_mean'] = pm * 0.95
-        latest_row['pm25_rolling_24h_mean'] = pm * 0.90
-        latest_row['pm25_rolling_24h_std'] = 5.0
-        latest_row['pm25_delta_6h'] = 2.0
+        hist_pm = latest_row.get('pm25', 0)
+        
+        if hist_pm and float(hist_pm) > 0 and 'pm25_lag_1h' in latest_row:
+            scale = pm / float(hist_pm)
+            latest_row['pm25_lag_1h'] = float(latest_row.get('pm25_lag_1h', pm)) * scale
+            latest_row['pm25_lag_3h'] = float(latest_row.get('pm25_lag_3h', pm)) * scale
+            latest_row['pm25_lag_6h'] = float(latest_row.get('pm25_lag_6h', pm)) * scale
+            latest_row['pm25_lag_12h'] = float(latest_row.get('pm25_lag_12h', pm)) * scale
+            latest_row['pm25_lag_24h'] = float(latest_row.get('pm25_lag_24h', pm)) * scale
+            latest_row['pm25_rolling_6h_mean'] = float(latest_row.get('pm25_rolling_6h_mean', pm)) * scale
+            latest_row['pm25_rolling_24h_mean'] = float(latest_row.get('pm25_rolling_24h_mean', pm)) * scale
+            latest_row['pm25_rolling_24h_std'] = max(1.0, float(latest_row.get('pm25_rolling_24h_std', 5.0)) * scale)
+            latest_row['pm25_delta_6h'] = pm - latest_row['pm25_lag_6h']
+        else:
+            latest_row['pm25_lag_1h'] = pm
+            latest_row['pm25_lag_3h'] = pm
+            latest_row['pm25_lag_6h'] = pm
+            latest_row['pm25_lag_12h'] = pm
+            latest_row['pm25_lag_24h'] = pm
+            latest_row['pm25_rolling_6h_mean'] = pm
+            latest_row['pm25_rolling_24h_mean'] = pm
+            latest_row['pm25_rolling_24h_std'] = max(1.0, pm * 0.1)
+            latest_row['pm25_delta_6h'] = 0.0
         
         # Return as a 1-row DataFrame with the exact feature columns
         df = pd.DataFrame([latest_row])
         return df[FEATURES]
 
     def predict_forecast(self, reading):
+        city = self._resolve_city(reading)
+        
         if not self.forecasters:
             vent_idx = reading.pblh * reading.wind_speed
             return {"horizon_h": 72, "points": [0.0, 0.0, 0.0], "intervals": [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]], "ventilation_index": float(vent_idx)}
@@ -136,15 +191,19 @@ class MLService:
             points = []
             intervals = []
             for label in ['24h', '48h', '72h']:
-                model = self.forecasters.get(label)
+                model_key = f"{city}_{label}"
+                model = self.forecasters.get(model_key)
+                if not model:
+                    model = self.forecasters.get(label)
+                    
                 if model:
                     # Request MAPIE predictions with 90% confidence
                     # In mapie 1.4.1, predict_interval returns (y_pred, y_pis)
                     y_pred, y_pis = model.predict_interval(df)
-                    point = float(y_pred[0])
-                    # y_pis shape is (n_samples, 2, n_alphas). We only have 1 alpha.
-                    lower_bound = float(y_pis[0, 0, 0])
-                    upper_bound = float(y_pis[0, 1, 0])
+                    point = max(0.0, float(y_pred[0]))
+                    # Clamp intervals to at least 0.0 to prevent negative bounds
+                    lower_bound = max(0.0, float(y_pis[0, 0, 0]))
+                    upper_bound = max(0.0, float(y_pis[0, 1, 0]))
                     
                     points.append(point)
                     intervals.append([lower_bound, upper_bound])

@@ -292,8 +292,24 @@ CITY_CENTERS_BACKEND = {
     "Bengaluru": {"lat": 12.97, "lon": 77.59},
 }
 
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+
+CITY_DATA_CACHE = {}        # key: city_name, value: (timestamp, CityDataResponse)
+CITY_HIST_CACHE = {}        # key: cache_key, value: (timestamp, CityHistoricalResponse)
+CACHE_LOCK = threading.Lock()
+CACHE_TTL = 300             # 5 minutes in seconds
+
 @router.get("/city-data", response_model=CityDataResponse)
 def get_city_data(city: str):
+    now = time.time()
+    with CACHE_LOCK:
+        if city in CITY_DATA_CACHE:
+            ts, val = CITY_DATA_CACHE[city]
+            if now - ts < CACHE_TTL:
+                return val
+
     station_list = CITY_STATIONS.get(city, [])
     if not station_list:
         return CityDataResponse(city=city, stations=[], center_aqi=0)
@@ -307,12 +323,18 @@ def get_city_data(city: str):
     try:
         # 1. Bulk Weather (PBLH, Temp, Humidity, Wind, Pressure)
         weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={lats_str}&longitude={lons_str}&current=temperature_2m,relative_humidity_2m,surface_pressure,wind_speed_10m,wind_direction_10m,boundary_layer_height"
-        w_res = requests.get(weather_url, timeout=10).json()
         
         # 2. Bulk Air Quality
         aq_url = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lats_str}&longitude={lons_str}&current=pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone,us_aqi"
-        aq_res = requests.get(aq_url, timeout=10).json()
-        
+
+        # Concurrently fetch Weather and Air Quality APIs
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            future_weather = executor.submit(requests.get, weather_url, timeout=10)
+            future_aq = executor.submit(requests.get, aq_url, timeout=10)
+            
+            w_res = future_weather.result().json()
+            aq_res = future_aq.result().json()
+
         # If the API returns a single object (e.g. only 1 station), wrap it in a list for consistent iteration
         if isinstance(w_res, dict) and "current" in w_res:
             w_res = [w_res]
@@ -336,8 +358,14 @@ def get_city_data(city: str):
             base_co = caq.get("carbon_monoxide", 1.0) / 1000 # convert ug/m3 to mg/m3 for NAQI
             base_o3 = caq.get("ozone", 30.0)
 
-            # Apply Humidity Correction to PM2.5
-            corrected_pm25 = apply_humidity_correction(base_pm25, base_hum)
+            # Determine station source
+            source = "iot" if i % 5 == 0 else "caaqms"
+
+            # Apply Humidity Correction to PM2.5 ONLY if source is "iot"
+            if source == "iot":
+                corrected_pm25 = apply_humidity_correction(base_pm25, base_hum)
+            else:
+                corrected_pm25 = base_pm25
 
             # Calibrate using full 6-pollutant Indian NAQI
             ml_aqi = calculate_full_naqi(corrected_pm25, base_pm10, base_no2, base_so2, base_co, base_o3)
@@ -360,7 +388,7 @@ def get_city_data(city: str):
                 wind_speed=base_wind,
                 pblh=base_pblh,
                 aqi=round(ml_aqi),
-                source="iot" if i % 5 == 0 else "caaqms",
+                source=source,
                 status="alert" if ml_aqi > 200 else "online"
             ))
 
@@ -378,13 +406,22 @@ def get_city_data(city: str):
                 aqi=100.0, source="iot" if i % 5 == 0 else "caaqms", status="online"
             ))
 
-    center_aqi = total_aqi / len(stations) if stations else 0
+    if stations:
+        # Use statistical median for city center AQI to prevent outlier skew from industrial clusters
+        aqi_values = sorted([s.aqi for s in stations])
+        mid = len(aqi_values) // 2
+        center_aqi = float(aqi_values[mid] if len(aqi_values) % 2 != 0 else (aqi_values[mid - 1] + aqi_values[mid]) / 2.0)
+    else:
+        center_aqi = 0.0
 
-    return CityDataResponse(
+    res = CityDataResponse(
         city=city,
         stations=stations,
         center_aqi=center_aqi
     )
+    with CACHE_LOCK:
+        CITY_DATA_CACHE[city] = (time.time(), res)
+    return res
 
 class HourlyAqiPoint(BaseModel):
     time: str
@@ -411,6 +448,14 @@ def get_city_historical(city: str = "Hyderabad", lat: float = None, lon: float =
         lat = coords["lat"]
         lon = coords["lon"]
         
+    cache_key = f"{city}_{lat}_{lon}"
+    now = time.time()
+    with CACHE_LOCK:
+        if cache_key in CITY_HIST_CACHE:
+            ts, val = CITY_HIST_CACHE[cache_key]
+            if now - ts < CACHE_TTL:
+                return val
+
     history = []
     try:
         url = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lon}&hourly=pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone&past_days=1&forecast_days=1"
@@ -450,4 +495,7 @@ def get_city_historical(city: str = "Hyderabad", lat: float = None, lon: float =
     except Exception as e:
         print(f"Failed to fetch historical AQI for {city}: {e}")
         
-    return CityHistoricalResponse(city=city, history=history)
+    res = CityHistoricalResponse(city=city, history=history)
+    with CACHE_LOCK:
+        CITY_HIST_CACHE[cache_key] = (time.time(), res)
+    return res

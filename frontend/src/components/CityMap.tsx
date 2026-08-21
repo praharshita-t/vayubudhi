@@ -3,7 +3,7 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { getAqiCategory } from '@/utils/aqi';
 import { Station } from '@/types';
 import { computeDelhiDistricts, District } from '@/data/delhiDistricts';
-import { computeHyderabadDistricts, computeGuwahatiDistricts } from '@/data/otherDistricts';
+import { computeHyderabadDistricts, computeGuwahatiDistricts, computeBengaluruDistricts } from '@/data/otherDistricts';
 
 export interface HexDataPoint {
   lat: number;
@@ -119,6 +119,7 @@ export default function CityMap({
     if (city === 'Delhi') return computeDelhiDistricts(stations);
     if (city === 'Hyderabad') return computeHyderabadDistricts(stations);
     if (city === 'Guwahati') return computeGuwahatiDistricts(stations);
+    if (city === 'Bengaluru') return computeBengaluruDistricts(stations);
     return [];
   }, [city, stations]);
 
@@ -156,31 +157,13 @@ export default function CityMap({
       return;
     }
 
-    // Phase 1: Zoom out to a bird's-eye view of India
+    // Single-phase direct transition to target city coordinates
     setViewState({
-      longitude: 78.9,
-      latitude: 22.5,
-      zoom: 4.5,
-      pitch: 0,
-      bearing: 0,
-      minZoom: 3,    // temporarily allow zooming out far
-      maxZoom: 15,
+      ...target,
       transitionDuration: 1200,
     });
 
-    // Phase 2: Fly into the new city after zoom-out completes
-    cityTransitionTimer.current = setTimeout(() => {
-      setViewState({
-        ...target,
-        transitionDuration: 1500,
-      });
-    }, 1300);
-
-    return () => {
-      if (cityTransitionTimer.current) {
-        clearTimeout(cityTransitionTimer.current);
-      }
-    };
+    return () => {};
   }, [city, userCoords]);
 
   // Handle fly-to on alert
@@ -546,32 +529,38 @@ export default function CityMap({
         </div>
       </div>
 
-      {/* Color Legend */}
+      {/* CPCB Standard AQI Color Legend */}
       <div style={{
         position: 'absolute', bottom: 12, left: 12, zIndex: 5,
         background: 'var(--bg-surface)', backdropFilter: 'blur(12px)',
         border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)',
-        padding: '10px 14px',
+        padding: '8px 12px', minWidth: 200
       }}>
-        <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>
-          AQI Severity
+        <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
+          CPCB Indian NAQI Standard Scale
         </div>
-        <div style={{ display: 'flex', gap: 0, height: 10, borderRadius: 3, overflow: 'hidden', width: 140 }}>
-          {['#22c55e', '#84cc16', '#eab308', '#f59e0b', '#f97316', '#ef4444', '#dc2626'].map((c, i) => (
-            <div key={i} style={{ flex: 1, background: c }} />
-          ))}
+        <div style={{ display: 'flex', gap: 2, height: 8, borderRadius: 3, overflow: 'hidden' }}>
+          <div style={{ flex: 50, background: '#22c55e' }} title="Good (0-50)" />
+          <div style={{ flex: 50, background: '#84cc16' }} title="Satisfactory (51-100)" />
+          <div style={{ flex: 100, background: '#f59e0b' }} title="Moderate (101-200)" />
+          <div style={{ flex: 100, background: '#f97316' }} title="Poor (201-300)" />
+          <div style={{ flex: 100, background: '#ef4444' }} title="Very Poor (301-400)" />
+          <div style={{ flex: 100, background: '#dc2626' }} title="Severe (401-500+)" />
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 3, fontSize: '0.55rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-          <span>0</span>
-          <span>150</span>
-          <span>300+</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: '0.55rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+          <span>0 (Good)</span>
+          <span>100</span>
+          <span>200</span>
+          <span>300</span>
+          <span>400</span>
+          <span>500+ (Severe)</span>
         </div>
       </div>
 
       {/* Map Legend for Station Dots */}
       <div className="map-legend" style={{ left: 'auto', right: 12, bottom: 12, gap: '12px' }}>
-        <div className="legend-item"><div className="legend-dot" style={{ background: '#ef4444' }} />Traffic (NO2)</div>
-        <div className="legend-item"><div className="legend-dot" style={{ background: '#a855f7' }} />Industry (SO2)</div>
+        <div className="legend-item"><div className="legend-dot" style={{ background: '#ef4444' }} />Traffic (NO₂)</div>
+        <div className="legend-item"><div className="legend-dot" style={{ background: '#a855f7' }} />Industry (SO₂)</div>
         <div className="legend-item"><div className="legend-dot" style={{ background: '#eab308' }} />Dust (PM10)</div>
         <div className="legend-item"><div className="legend-dot" style={{ background: 'var(--accent-cyan)', boxShadow: '0 0 6px var(--accent-cyan)' }} />IoT Sensor</div>
       </div>
@@ -582,7 +571,7 @@ export default function CityMap({
           position: 'absolute', bottom: 80, right: 12,
           background: 'var(--bg-surface)', backdropFilter: 'blur(14px)',
           border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)',
-          padding: '12px 16px', zIndex: 10, minWidth: 220, maxWidth: 280,
+          padding: '12px 16px', zIndex: 10, minWidth: 230, maxWidth: 290,
         }}>
           <div style={{ fontWeight: 700, fontSize: '0.85rem', marginBottom: 2 }}>{tooltipData.name}</div>
           <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{tooltipData.type}</div>
@@ -596,7 +585,7 @@ export default function CityMap({
             <span style={{ fontSize: '1.3rem', fontWeight: 800, fontFamily: 'var(--font-mono)', color: tooltipCat.color }}>{tooltipData.aqi}</span>
             <div>
               <div style={{ fontSize: '0.7rem', fontWeight: 600, color: tooltipCat.color }}>{tooltipCat.label}</div>
-              <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)' }}>Air Quality Index</div>
+              <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)' }}>Air Quality Index (NAQI)</div>
             </div>
           </div>
 
@@ -614,8 +603,12 @@ export default function CityMap({
                 padding: '4px 6px', background: 'var(--bg-elevated)', borderRadius: 4,
                 textAlign: 'center',
               }}>
-                <div style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>{p.value}</div>
-                <div style={{ fontSize: '0.5rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{p.label}</div>
+                <div style={{ fontSize: '0.78rem', fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+                  {typeof p.value === 'number' ? (p.value < 10 ? p.value.toFixed(1) : Math.round(p.value)) : p.value || '--'}
+                </div>
+                <div style={{ fontSize: '0.5rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                  {p.label} <span style={{ fontSize: '0.42rem', opacity: 0.75 }}>({p.unit})</span>
+                </div>
               </div>
             ))}
           </div>

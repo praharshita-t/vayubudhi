@@ -80,31 +80,7 @@ export default function LiveMapPage() {
           >
             <option value="Delhi">Delhi NCR</option>
             <option value="Hyderabad">Hyderabad</option>
-            <option value="Guwahati">Guwahati</option>
-            <option disabled style={{ borderTop: '1px solid #30363d', color: '#484f58' }}>── Tier 1 Cities ──</option>
-            <option value="Mumbai">Mumbai</option>
             <option value="Bengaluru">Bengaluru</option>
-            <option value="Chennai">Chennai</option>
-            <option value="Kolkata">Kolkata</option>
-            <option value="Pune">Pune</option>
-            <option value="Ahmedabad">Ahmedabad</option>
-            <option value="Jaipur">Jaipur</option>
-            <option value="Lucknow">Lucknow</option>
-            <option value="Chandigarh">Chandigarh</option>
-            <option value="Thiruvananthapuram">Thiruvananthapuram</option>
-            <option disabled style={{ color: '#484f58' }}>── Tier 2 Cities ──</option>
-            <option value="Kanpur">Kanpur</option>
-            <option value="Nagpur">Nagpur</option>
-            <option value="Indore">Indore</option>
-            <option value="Bhopal">Bhopal</option>
-            <option value="Patna">Patna</option>
-            <option value="Vadodara">Vadodara</option>
-            <option value="Coimbatore">Coimbatore</option>
-            <option value="Visakhapatnam">Visakhapatnam</option>
-            <option value="Agra">Agra</option>
-            <option value="Varanasi">Varanasi</option>
-            <option disabled style={{ color: '#484f58' }}>───────────</option>
-            <option value="My Location">📍 My Location</option>
           </select>
         </div>
 

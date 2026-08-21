@@ -1,5 +1,6 @@
 import hyderabadGeoData from './hyderabadDistrictsGeo.json';
 import guwahatiGeoData from './guwahatiDistrictsGeo.json';
+import bengaluruGeoData from './bengaluruDistrictsGeo.json';
 
 export interface District {
   id: string;
@@ -87,6 +88,19 @@ export function computeHyderabadDistricts(stations: any[]): District[] {
 
 export function computeGuwahatiDistricts(stations: any[]): District[] {
   return guwahatiGeoData.map((d: any) => {
+    const values = idwForDistrict(d.centroid as [number, number], stations);
+    return {
+      id: d.id,
+      name: d.name,
+      polygon: d.polygon as [number, number][],
+      centroid: d.centroid as [number, number],
+      ...values,
+    };
+  });
+}
+
+export function computeBengaluruDistricts(stations: any[]): District[] {
+  return bengaluruGeoData.map((d: any) => {
     const values = idwForDistrict(d.centroid as [number, number], stations);
     return {
       id: d.id,

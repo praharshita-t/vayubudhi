@@ -49,7 +49,7 @@ export default function App() {
             onPress={() => setActiveTab('enforcement')}
             activeOpacity={0.7}
           >
-            <Text style={styles.tabIcon}>🗺️</Text>
+            <View style={[styles.tabIndicator, activeTab === 'enforcement' && styles.tabIndicatorActive]} />
             <Text style={[styles.tabLabel, activeTab === 'enforcement' && styles.tabLabelActive]}>
               Enforcement Patrol
             </Text>
@@ -60,7 +60,7 @@ export default function App() {
             onPress={() => setActiveTab('telemetry')}
             activeOpacity={0.7}
           >
-            <Text style={styles.tabIcon}>📡</Text>
+            <View style={[styles.tabIndicator, activeTab === 'telemetry' && styles.tabIndicatorActive]} />
             <Text style={[styles.tabLabel, activeTab === 'telemetry' && styles.tabLabelActive]}>
               Sensor Telemetry
             </Text>
@@ -159,24 +159,29 @@ const styles = StyleSheet.create({
   tab: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 12,
+    gap: 4,
   },
   tabActive: {
-    borderTopWidth: 2.5,
-    borderTopColor: '#0284c7',
     backgroundColor: '#f0f9ff',
   },
-  tabIcon: {
-    fontSize: 16,
-    marginBottom: 2,
+  tabIndicator: {
+    width: 20,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: 'transparent',
+  },
+  tabIndicatorActive: {
+    backgroundColor: '#0284c7',
   },
   tabLabel: {
     color: '#64748b',
-    fontSize: 10.5,
+    fontSize: 11,
     fontWeight: '600',
+    letterSpacing: 0.2,
   },
   tabLabelActive: {
     color: '#0284c7',
-    fontWeight: '700',
+    fontWeight: '800',
   },
 });

@@ -87,7 +87,7 @@ export const NextStopCard: React.FC<NextStopCardProps> = ({
           onPress={() => onViewEvidence(stop)}
           activeOpacity={0.8}
         >
-          <Text style={styles.evidenceBtnText}>⚖️ VIEW EVIDENCE</Text>
+          <Text style={styles.evidenceBtnText}>VIEW EVIDENCE</Text>
         </TouchableOpacity>
 
         {isNavigating ? (

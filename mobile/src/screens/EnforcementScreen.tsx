@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  Modal,
 } from 'react-native';
 import { fetchCityData, optimizeEnforcementRoute } from '../services/api';
 import { buildRoadEnforcementPlan } from '../services/routingService';
@@ -18,12 +19,33 @@ import { RecommendationCard } from '../components/RecommendationCard';
 import { EvidenceModal } from '../components/EvidenceModal';
 import { RouteOverviewModal } from '../components/RouteOverviewModal';
 
-const CITIES = ['Delhi', 'Hyderabad', 'Guwahati'];
+const CORE_CITIES = ['Delhi', 'Hyderabad', 'Guwahati'];
+const OTHER_CITIES = [
+  'Mumbai',
+  'Bengaluru',
+  'Chennai',
+  'Kolkata',
+  'Pune',
+  'Ahmedabad',
+  'Jaipur',
+  'Lucknow',
+  'Chandigarh',
+];
+const CITIES = [...CORE_CITIES, ...OTHER_CITIES];
 
 const CITY_DEPOTS: Record<string, { name: string; lat: number; lon: number }> = {
   Delhi: { name: 'Central Enforcement Depot (Delhi Secretariat)', lat: 28.6139, lon: 77.2090 },
   Hyderabad: { name: 'GHMC Central Command Station', lat: 17.3850, lon: 78.4867 },
   Guwahati: { name: 'Assam PCB Regional Depot (Dispur)', lat: 26.1444, lon: 91.7362 },
+  Mumbai: { name: 'BMC Municipal Control Centre (Fort)', lat: 18.9388, lon: 72.8354 },
+  Bengaluru: { name: 'BBMP Central Command Office', lat: 12.9716, lon: 77.5946 },
+  Chennai: { name: 'Greater Chennai Corporation HQ (Ripon Bldg)', lat: 13.0827, lon: 80.2707 },
+  Kolkata: { name: 'KMC Central Headquarters (Esplanade)', lat: 22.5626, lon: 88.3510 },
+  Pune: { name: 'PMC Command Control Center (Shivajinagar)', lat: 18.5204, lon: 73.8567 },
+  Ahmedabad: { name: 'AMC Central Headquarters (Danapith)', lat: 23.0225, lon: 72.5714 },
+  Jaipur: { name: 'Jaipur Municipal Headquarters (Lalkothi)', lat: 26.9124, lon: 75.7873 },
+  Lucknow: { name: 'LMC Central Headquarters (Hazratganj)', lat: 26.8467, lon: 80.9462 },
+  Chandigarh: { name: 'Municipal Corporation HQ (Sector 17)', lat: 30.7333, lon: 76.7794 },
 };
 
 export const EnforcementScreen: React.FC = () => {
@@ -41,6 +63,8 @@ export const EnforcementScreen: React.FC = () => {
   // Modals
   const [evidenceStop, setEvidenceStop] = useState<RouteStop | null>(null);
   const [showOverviewModal, setShowOverviewModal] = useState<boolean>(false);
+  const [showFullMapModal, setShowFullMapModal] = useState<boolean>(false);
+  const [showCityDropdown, setShowCityDropdown] = useState<boolean>(false);
 
   const scrollRef = useRef<ScrollView>(null);
 
@@ -234,15 +258,18 @@ export const EnforcementScreen: React.FC = () => {
     <View style={styles.container}>
       {/* Top Municipal Header Bar */}
       <View style={styles.topHeader}>
-        {/* City Filter Pills */}
-        <View style={styles.citySelector}>
-          {CITIES.map((city) => {
+        {/* City Filter: Core Cities + More Dropdown */}
+        <View style={styles.citySelectorRow}>
+          {CORE_CITIES.map((city) => {
             const isActive = selectedCity === city;
             return (
               <TouchableOpacity
                 key={city}
                 style={[styles.cityPill, isActive && styles.cityPillActive]}
-                onPress={() => setSelectedCity(city)}
+                onPress={() => {
+                  setSelectedCity(city);
+                  setShowCityDropdown(false);
+                }}
                 activeOpacity={0.8}
               >
                 <Text style={[styles.cityPillText, isActive && styles.cityPillTextActive]}>
@@ -251,6 +278,27 @@ export const EnforcementScreen: React.FC = () => {
               </TouchableOpacity>
             );
           })}
+
+          {/* More Cities Dropdown Trigger */}
+          <TouchableOpacity
+            style={[
+              styles.cityPill,
+              styles.dropdownTriggerPill,
+              OTHER_CITIES.includes(selectedCity) && styles.cityPillActive,
+            ]}
+            onPress={() => setShowCityDropdown(true)}
+            activeOpacity={0.8}
+          >
+            <Text
+              style={[
+                styles.cityPillText,
+                OTHER_CITIES.includes(selectedCity) && styles.cityPillTextActive,
+              ]}
+              numberOfLines={1}
+            >
+              {OTHER_CITIES.includes(selectedCity) ? selectedCity : 'More'} ▾
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* Corridor Status Bar */}
@@ -269,7 +317,7 @@ export const EnforcementScreen: React.FC = () => {
             onPress={() => setShowOverviewModal(true)}
             activeOpacity={0.8}
           >
-            <Text style={styles.overviewBtnText}>🧭 ROUTE OVERVIEW</Text>
+            <Text style={styles.overviewBtnText}>ROUTE OVERVIEW</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -292,6 +340,8 @@ export const EnforcementScreen: React.FC = () => {
               districts={districts}
               onSelectStop={handleSelectStop}
               isNavigating={isNavigating}
+              onToggleFullscreen={() => setShowFullMapModal(true)}
+              isFullscreen={false}
             />
           </View>
 
@@ -342,6 +392,93 @@ export const EnforcementScreen: React.FC = () => {
         </View>
       )}
 
+      {/* Fullscreen Whole Map View Modal */}
+      <Modal
+        visible={showFullMapModal}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => setShowFullMapModal(false)}
+      >
+        <View style={styles.fullMapContainer}>
+          {/* Top Header */}
+          <View style={styles.fullMapHeader}>
+            <View style={styles.fullMapHeaderLeft}>
+              <Text style={styles.fullMapHeaderTitle}>{selectedCity.toUpperCase()} • FULL MAP VIEW</Text>
+              <Text style={styles.fullMapHeaderSubtitle}>
+                {routePlan?.stops.length || 0} stops • City AQI {cityAqi} • Dynamic Heatmaps
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.fullMapCloseBtn}
+              onPress={() => setShowFullMapModal(false)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.fullMapCloseBtnText}>✕ Close</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Full Screen Map Body */}
+          <View style={styles.fullMapBody}>
+            <EnforcementMap
+              plan={routePlan}
+              selectedStop={activeFocusStop}
+              allStations={stations}
+              districts={districts}
+              onSelectStop={handleSelectStop}
+              isNavigating={isNavigating}
+              onToggleFullscreen={() => setShowFullMapModal(false)}
+              isFullscreen={true}
+            />
+          </View>
+
+          {/* Bottom Stop Selector Bar */}
+          <View style={styles.fullMapBottomBar}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.fullMapStopsScroll}
+            >
+              {(routePlan?.stops || []).map((stop, idx) => {
+                const isSelected = activeFocusStop?.source_id === stop.source_id;
+                const isP1 = idx === 0;
+                const aqiVal = stop.severity || stop.aqi || 100;
+                const aqiColor = aqiVal > 250 ? '#ef4444' : aqiVal > 150 ? '#f59e0b' : '#10b981';
+                return (
+                  <TouchableOpacity
+                    key={stop.source_id || idx}
+                    style={[
+                      styles.fullMapStopPill,
+                      isSelected && styles.fullMapStopPillSelected,
+                      isP1 && styles.fullMapStopPillP1,
+                    ]}
+                    onPress={() => handleSelectStop(stop)}
+                    activeOpacity={0.8}
+                  >
+                    <View style={[styles.fullMapRankBadge, isP1 && styles.fullMapRankBadgeP1]}>
+                      <Text style={styles.fullMapRankText}>#{idx + 1}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={[
+                          styles.fullMapStopName,
+                          isSelected && styles.fullMapStopNameSelected,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {stop.stationName || `Target #${idx + 1}`}
+                      </Text>
+                      <Text style={styles.fullMapStopMeta}>
+                        AQI <Text style={{ color: aqiColor, fontWeight: '800' }}>{aqiVal}</Text> • {stop.dominantSource || 'Vehicular'}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
       {/* Evidence Dossier Modal */}
       <EvidenceModal
         visible={evidenceStop !== null}
@@ -356,6 +493,70 @@ export const EnforcementScreen: React.FC = () => {
         plan={routePlan}
         onSelectStop={handleSelectStop}
       />
+
+      {/* Additional Cities Dropdown Modal */}
+      <Modal
+        visible={showCityDropdown}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowCityDropdown(false)}
+      >
+        <TouchableOpacity
+          style={styles.dropdownBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowCityDropdown(false)}
+        >
+          <View style={styles.dropdownModal}>
+            <View style={styles.dropdownHeader}>
+              <Text style={styles.dropdownHeaderTitle}>Select City / State</Text>
+              <TouchableOpacity
+                style={styles.dropdownCloseBtn}
+                onPress={() => setShowCityDropdown(false)}
+              >
+                <Text style={styles.dropdownCloseText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.dropdownList} showsVerticalScrollIndicator={false}>
+              <Text style={styles.dropdownCategory}>CORE ENFORCEMENT</Text>
+              {CORE_CITIES.map((city) => (
+                <TouchableOpacity
+                  key={city}
+                  style={[styles.dropdownItem, selectedCity === city && styles.dropdownItemActive]}
+                  onPress={() => {
+                    setSelectedCity(city);
+                    setShowCityDropdown(false);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.dropdownItemText, selectedCity === city && styles.dropdownItemTextActive]}>
+                    {city}
+                  </Text>
+                  {selectedCity === city && <Text style={styles.dropdownCheck}>✓</Text>}
+                </TouchableOpacity>
+              ))}
+
+              <Text style={styles.dropdownCategory}>ADDITIONAL CITIES</Text>
+              {OTHER_CITIES.map((city) => (
+                <TouchableOpacity
+                  key={city}
+                  style={[styles.dropdownItem, selectedCity === city && styles.dropdownItemActive]}
+                  onPress={() => {
+                    setSelectedCity(city);
+                    setShowCityDropdown(false);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.dropdownItemText, selectedCity === city && styles.dropdownItemTextActive]}>
+                    {city}
+                  </Text>
+                  {selectedCity === city && <Text style={styles.dropdownCheck}>✓</Text>}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 };
@@ -378,9 +579,9 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 1,
   },
-  citySelector: {
+  citySelectorRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
     marginBottom: 8,
   },
   cityPill: {
@@ -391,6 +592,12 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     paddingVertical: 7,
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dropdownTriggerPill: {
+    flex: 1.1,
+    backgroundColor: '#f8fafc',
+    borderColor: '#cbd5e1',
   },
   cityPillActive: {
     backgroundColor: '#0284c7',
@@ -398,12 +605,96 @@ const styles = StyleSheet.create({
   },
   cityPillText: {
     color: '#475569',
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '600',
   },
   cityPillTextActive: {
     color: '#ffffff',
     fontWeight: '700',
+  },
+  dropdownBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  dropdownModal: {
+    width: '100%',
+    maxWidth: 340,
+    maxHeight: 460,
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1e293b',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  dropdownHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1e293b',
+    backgroundColor: '#111e38',
+  },
+  dropdownHeaderTitle: {
+    color: '#38bdf8',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  dropdownCloseBtn: {
+    padding: 4,
+  },
+  dropdownCloseText: {
+    color: '#94a3b8',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  dropdownList: {
+    padding: 8,
+  },
+  dropdownCategory: {
+    color: '#64748b',
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    marginTop: 8,
+    marginBottom: 4,
+    paddingHorizontal: 8,
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    marginVertical: 1,
+  },
+  dropdownItemActive: {
+    backgroundColor: '#0369a130',
+  },
+  dropdownItemText: {
+    color: '#e2e8f0',
+    fontSize: 12.5,
+    fontWeight: '500',
+  },
+  dropdownItemTextActive: {
+    color: '#38bdf8',
+    fontWeight: '700',
+  },
+  dropdownCheck: {
+    color: '#38bdf8',
+    fontSize: 13,
+    fontWeight: '800',
   },
   statusBar: {
     flexDirection: 'row',
@@ -510,6 +801,112 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '500',
   },
+  fullMapContainer: {
+    flex: 1,
+    backgroundColor: '#070b13',
+  },
+  fullMapHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 48,
+    paddingBottom: 12,
+    backgroundColor: '#0f172a',
+    borderBottomWidth: 1,
+    borderBottomColor: '#1e293b',
+  },
+  fullMapHeaderLeft: {
+    flex: 1,
+  },
+  fullMapHeaderTitle: {
+    color: '#38bdf8',
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  fullMapHeaderSubtitle: {
+    color: '#94a3b8',
+    fontSize: 10.5,
+    marginTop: 2,
+  },
+  fullMapCloseBtn: {
+    backgroundColor: '#1e293b',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  fullMapCloseBtnText: {
+    color: '#f1f5f9',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  fullMapBody: {
+    flex: 1,
+    backgroundColor: '#070b13',
+  },
+  fullMapBottomBar: {
+    backgroundColor: '#0b1329f2',
+    borderTopWidth: 1,
+    borderTopColor: '#1e293b',
+    paddingVertical: 10,
+  },
+  fullMapStopsScroll: {
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  fullMapStopPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#1e293b',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    width: 220,
+    gap: 8,
+  },
+  fullMapStopPillSelected: {
+    borderColor: '#38bdf8',
+    backgroundColor: '#0c223d',
+  },
+  fullMapStopPillP1: {
+    borderLeftWidth: 3,
+    borderLeftColor: '#ef4444',
+  },
+  fullMapRankBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#1e293b',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullMapRankBadgeP1: {
+    backgroundColor: '#ef4444',
+  },
+  fullMapRankText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  fullMapStopName: {
+    color: '#f8fafc',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  fullMapStopNameSelected: {
+    color: '#38bdf8',
+  },
+  fullMapStopMeta: {
+    color: '#94a3b8',
+    fontSize: 9.5,
+    marginTop: 2,
+  },
 });
 
 export default EnforcementScreen;
+

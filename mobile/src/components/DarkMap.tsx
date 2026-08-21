@@ -220,7 +220,7 @@ export const DarkMap: React.FC<DarkMapProps> = ({
         {/* Central Dispatch Depot */}
         <View style={[styles.depotMarker, { left: depotPos.left, top: depotPos.top }]}>
           <View style={styles.depotBox}>
-            <Text style={styles.depotText}>🏢 DEPOT</Text>
+            <Text style={styles.depotText}>DEPOT</Text>
           </View>
         </View>
 

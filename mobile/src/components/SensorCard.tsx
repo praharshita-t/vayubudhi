@@ -51,7 +51,7 @@ export const SensorCard: React.FC<SensorCardProps> = ({ alert, onAcknowledge }) 
       {/* Alert Trigger Callout */}
       <View style={[styles.triggerBox, isCritical ? styles.triggerCritical : styles.triggerWarn]}>
         <Text style={[styles.triggerText, isCritical ? styles.triggerTextCritical : styles.triggerTextWarn]}>
-          ⚠️ {alert.trigger_reason}
+          {alert.trigger_reason}
         </Text>
       </View>
 

@@ -157,7 +157,7 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
               <Text style={styles.sectionHeading}>4. ENFORCEMENT PROTOCOL</Text>
               <View style={[styles.actionTagBox, isFullInspection ? styles.tagBoxRed : styles.tagBoxBlue]}>
                 <Text style={[styles.actionTagText, isFullInspection ? styles.valRed : styles.valBlue]}>
-                  {isFullInspection ? '🔴 MANDATORY FULL PHYSICAL INSPECTION' : '🔵 VERIFY FIRST (DRONE / SENSOR SWEEP)'}
+                  {isFullInspection ? 'MANDATORY FULL PHYSICAL INSPECTION' : 'VERIFY FIRST (DRONE / SENSOR SWEEP)'}
                 </Text>
               </View>
               <Text style={styles.actionNote}>

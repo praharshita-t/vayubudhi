@@ -89,7 +89,7 @@ export const RecommendationCard: React.FC<RecommendationCardProps> = ({
           }}
           activeOpacity={0.7}
         >
-          <Text style={styles.evidenceButtonText}>⚖️ Evidence</Text>
+          <Text style={styles.evidenceButtonText}>Evidence</Text>
         </TouchableOpacity>
       </View>
     </TouchableOpacity>

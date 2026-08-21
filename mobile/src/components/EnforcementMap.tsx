@@ -12,6 +12,8 @@ interface EnforcementMapProps {
   districts?: District[];
   onSelectStop: (stop: RouteStop) => void;
   isNavigating?: boolean;
+  onToggleFullscreen?: () => void;
+  isFullscreen?: boolean;
 }
 
 export const EnforcementMap: React.FC<EnforcementMapProps> = ({
@@ -21,6 +23,8 @@ export const EnforcementMap: React.FC<EnforcementMapProps> = ({
   districts = [],
   onSelectStop,
   isNavigating = false,
+  onToggleFullscreen,
+  isFullscreen = false,
 }) => {
   const webViewRef = useRef<any>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -235,7 +239,7 @@ export const EnforcementMap: React.FC<EnforcementMapProps> = ({
 
         poly.bindPopup(
           '<div class="popup-box">' +
-            '<div class="popup-title">🏛️ ' + dist.name + '</div>' +
+            '<div class="popup-title">' + dist.name + ' Sector</div>' +
             '<div class="popup-metric">District NAQI: <strong style="color:' + color + ';">' + (dist.aqi || 100) + '</strong></div>' +
             '<div class="popup-metric">PM2.5: <strong>' + (dist.pm25 || 0).toFixed(1) + '</strong> • PM10: <strong>' + (dist.pm10 || 0).toFixed(1) + ' µg/m³</strong></div>' +
             '<div class="popup-metric">NO₂: ' + (dist.no2 || 0).toFixed(0) + ' • SO₂: ' + (dist.so2 || 0).toFixed(0) + ' • CO: ' + (dist.co || 0).toFixed(1) + '</div>' +
@@ -270,7 +274,7 @@ export const EnforcementMap: React.FC<EnforcementMapProps> = ({
           .addTo(map)
           .bindPopup(
             '<div class="popup-box">' +
-              '<div class="popup-title">📡 ' + (st.name || 'Station') + '</div>' +
+              '<div class="popup-title">' + (st.name || 'Station Node') + '</div>' +
               '<div class="popup-metric">AQI: <strong>' + (st.aqi || 100) + '</strong> (' + (st.status || 'online') + ')</div>' +
               '<div class="popup-metric">PM2.5: <strong>' + (st.pm25 || 0).toFixed(1) + '</strong> • PM10: <strong>' + (st.pm10 || 0).toFixed(1) + ' µg/m³</strong></div>' +
               '<div class="popup-physics">PBLH: ' + pblhVal + 'm • Wind: ' + windVal + 'm/s • VI: ' + viVal + '</div>' +
@@ -388,7 +392,22 @@ export const EnforcementMap: React.FC<EnforcementMapProps> = ({
       try {
         const data = JSON.parse(event.data);
         if (data.type === 'FIT_ALL') {
-          if (polyline) map.fitBounds(polyline.getBounds(), { padding: [40, 40] });
+          if (polyline && fullGeo.length > 1) {
+            map.fitBounds(polyline.getBounds(), { padding: [40, 40] });
+          } else if (stopsData.length > 0) {
+            map.fitBounds(L.latLngBounds([[depotData.lat, depotData.lon], ...stopsData.map(s => [s.lat, s.lon])]), { padding: [40, 40] });
+          }
+        } else if (data.type === 'FIT_CITY') {
+          const allCoords = [];
+          districtsData.forEach(d => {
+            if (d.polygon) d.polygon.forEach(pt => allCoords.push([pt[1], pt[0]]));
+          });
+          stationsData.forEach(s => allCoords.push([s.lat, s.lon]));
+          if (allCoords.length > 0) {
+            map.fitBounds(L.latLngBounds(allCoords), { padding: [30, 30] });
+          } else if (polyline) {
+            map.fitBounds(polyline.getBounds(), { padding: [30, 30] });
+          }
         } else if (data.type === 'FOCUS_STOP') {
           map.flyTo([data.lat, data.lon], 14, { animate: true, duration: 1.2 });
           const target = stopMarkers.find(sm => sm.stop.source_id === data.stopId || (Math.abs(sm.stop.lat - data.lat) < 0.001 && Math.abs(sm.stop.lon - data.lon) < 0.001));
@@ -454,6 +473,15 @@ export const EnforcementMap: React.FC<EnforcementMapProps> = ({
     }
   };
 
+  const fitWholeCity = () => {
+    const msg = JSON.stringify({ type: 'FIT_CITY' });
+    if (Platform.OS === 'web' && iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage(msg, '*');
+    } else if (webViewRef.current) {
+      webViewRef.current.postMessage(msg);
+    }
+  };
+
   return (
     <View style={styles.container}>
       {Platform.OS === 'web' ? (
@@ -480,13 +508,29 @@ export const EnforcementMap: React.FC<EnforcementMapProps> = ({
 
       {/* Map Overlay Controls */}
       <View style={styles.mapControls}>
+        {onToggleFullscreen && (
+          <TouchableOpacity
+            style={[styles.controlBtn, isFullscreen && styles.controlBtnActive]}
+            onPress={onToggleFullscreen}
+            activeOpacity={0.8}
+          >
+            <Text style={[styles.controlBtnText, isFullscreen && styles.controlBtnTextActive]}>
+              {isFullscreen ? 'Minimize' : 'Fullscreen'}
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        <TouchableOpacity style={styles.controlBtn} onPress={fitWholeCity} activeOpacity={0.8}>
+          <Text style={styles.controlBtnText}>Whole View</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity style={styles.controlBtn} onPress={fitFullRoute} activeOpacity={0.8}>
-          <Text style={styles.controlBtnText}>🧭 Fit Route</Text>
+          <Text style={styles.controlBtnText}>Fit Corridor</Text>
         </TouchableOpacity>
 
         {!isRoadFollowing && (
           <View style={styles.fallbackNotice}>
-            <Text style={styles.fallbackNoticeText}>⚠️ Direct Geometry Fallback</Text>
+            <Text style={styles.fallbackNoticeText}>Direct Geometry Fallback</Text>
           </View>
         )}
       </View>
@@ -544,10 +588,18 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.5,
     shadowRadius: 4,
   },
+  controlBtnActive: {
+    backgroundColor: '#38bdf825',
+    borderColor: '#38bdf8',
+  },
   controlBtnText: {
     color: '#38bdf8',
     fontSize: 11,
     fontWeight: '700',
+  },
+  controlBtnTextActive: {
+    color: '#7dd3fc',
+    fontWeight: '800',
   },
   fallbackNotice: {
     backgroundColor: '#78350fdf',

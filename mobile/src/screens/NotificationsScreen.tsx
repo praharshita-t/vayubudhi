@@ -74,13 +74,13 @@ export const NotificationsScreen: React.FC = () => {
           onPress={handleTriggerSpike}
           activeOpacity={0.8}
         >
-          <Text style={styles.spikeBtnText}>🔥 SIMULATE PM2.5 SPIKE TEST (&gt;60 µg/m³)</Text>
+          <Text style={styles.spikeBtnText}>SIMULATE PM2.5 SPIKE TEST (&gt;60 µg/m³)</Text>
         </TouchableOpacity>
       </View>
 
       {/* Sensor Operational Rule */}
       <View style={styles.thresholdNote}>
-        <Text style={styles.thresholdTitle}>⚡ Hardware Incident Rule:</Text>
+        <Text style={styles.thresholdTitle}>Hardware Incident Rule:</Text>
         <Text style={styles.thresholdBody}>
           PM2.5 &gt; 60 µg/m³ threshold triggers edge buzzer alarm, LED indicator, and alerts enforcement units for investigation.
         </Text>
@@ -89,7 +89,6 @@ export const NotificationsScreen: React.FC = () => {
       {/* Alerts Feed */}
       {alerts.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyIcon}>🛡️</Text>
           <Text style={styles.emptyTitle}>All Nodes Reporting Normal</Text>
           <Text style={styles.emptySub}>Connected edge nodes are operating below threshold limits.</Text>
         </View>

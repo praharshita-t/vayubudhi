@@ -12,13 +12,21 @@ export default function ForecastPage() {
 
   return (
     <div className="page-wrapper">
-      <div className="page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', alignItems: 'center' }}>
-          <h1 className="page-title">{activeCity} Forecast</h1>
+      <div className="page-header">
+        <div className="page-header-left">
+          <div className="header-brand">
+            <img src="/logo-emblem.png" alt="VayuBudhi" className="header-logo-emblem" />
+            <div className="header-brand-title-wrap">
+              <h1>VayuBudhi</h1>
+              <span className="header-since-badge">SINCE 2026</span>
+            </div>
+          </div>
+          <div className="page-header-divider" />
+          <h2 className="page-title">{activeCity} Forecast</h2>
           <select
             value={activeCity}
             onChange={(e) => setActiveCity(e.target.value as CityId)}
-            style={{ marginLeft: '20px', padding: '5px', borderRadius: '5px', background: '#1c2128', color: 'white', border: '1px solid #30363d', fontSize: '0.85rem' }}
+            style={{ marginLeft: '16px', padding: '5px 10px', borderRadius: '6px', background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border-primary)', fontSize: '0.85rem' }}
           >
             <option value="Delhi">Delhi NCR</option>
             <option value="Hyderabad">Hyderabad</option>

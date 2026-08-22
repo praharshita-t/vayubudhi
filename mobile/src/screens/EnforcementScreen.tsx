@@ -19,10 +19,10 @@ import { RecommendationCard } from '../components/RecommendationCard';
 import { EvidenceModal } from '../components/EvidenceModal';
 import { RouteOverviewModal } from '../components/RouteOverviewModal';
 
-const CORE_CITIES = ['Delhi', 'Hyderabad', 'Guwahati'];
+const CORE_CITIES = ['Delhi', 'Hyderabad', 'Bengaluru'];
 const OTHER_CITIES = [
+  'Guwahati',
   'Mumbai',
-  'Bengaluru',
   'Chennai',
   'Kolkata',
   'Pune',
@@ -36,9 +36,9 @@ const CITIES = [...CORE_CITIES, ...OTHER_CITIES];
 const CITY_DEPOTS: Record<string, { name: string; lat: number; lon: number }> = {
   Delhi: { name: 'Central Enforcement Depot (Delhi Secretariat)', lat: 28.6139, lon: 77.2090 },
   Hyderabad: { name: 'GHMC Central Command Station', lat: 17.3850, lon: 78.4867 },
+  Bengaluru: { name: 'BBMP Central Command (Hudson Circle)', lat: 12.9716, lon: 77.5946 },
   Guwahati: { name: 'Assam PCB Regional Depot (Dispur)', lat: 26.1444, lon: 91.7362 },
   Mumbai: { name: 'BMC Municipal Control Centre (Fort)', lat: 18.9388, lon: 72.8354 },
-  Bengaluru: { name: 'BBMP Central Command Office', lat: 12.9716, lon: 77.5946 },
   Chennai: { name: 'Greater Chennai Corporation HQ (Ripon Bldg)', lat: 13.0827, lon: 80.2707 },
   Kolkata: { name: 'KMC Central Headquarters (Esplanade)', lat: 22.5626, lon: 88.3510 },
   Pune: { name: 'PMC Command Control Center (Shivajinagar)', lat: 18.5204, lon: 73.8567 },
@@ -88,7 +88,7 @@ export const EnforcementScreen: React.FC = () => {
 
       const computedCenterAqi = stationList.length > 0
         ? Math.round(stationList.reduce((acc, curr) => acc + (curr.aqi || 0), 0) / stationList.length)
-        : (city === 'Delhi' ? 205 : city === 'Hyderabad' ? 172 : 155);
+        : (city === 'Delhi' ? 205 : city === 'Hyderabad' ? 172 : city === 'Bengaluru' ? 165 : 155);
       setCityAqi(computedCenterAqi);
 
       // 3. Query OR-Tools optimization backend
@@ -138,7 +138,7 @@ export const EnforcementScreen: React.FC = () => {
         stop.severity ??
         stop.aqi ??
         matchedStation?.aqi ??
-        (city === 'Delhi' ? 240 + (idx * 20) % 80 : city === 'Hyderabad' ? 180 + (idx * 15) % 60 : 150 + (idx * 10) % 40);
+        (city === 'Delhi' ? 240 + (idx * 20) % 80 : city === 'Hyderabad' ? 180 + (idx * 15) % 60 : city === 'Bengaluru' ? 170 + (idx * 15) % 55 : 150 + (idx * 10) % 40);
 
       const fallbackPm25 = matchedStation?.pm25 ?? parseFloat((fallbackAQI * 0.42).toFixed(1));
       const fallbackPm10 = matchedStation?.pm10 ?? parseFloat((fallbackAQI * 0.58).toFixed(1));
@@ -189,6 +189,8 @@ export const EnforcementScreen: React.FC = () => {
           ? 180000 + (idx * 35000) % 95000
           : city === 'Hyderabad'
           ? 120000 + (idx * 28000) % 75000
+          : city === 'Bengaluru'
+          ? 140000 + (idx * 30000) % 80000
           : 65000 + (idx * 15000) % 40000;
       const isP1 = idx === 0;
 
@@ -196,6 +198,11 @@ export const EnforcementScreen: React.FC = () => {
         stop.stationName ||
         matchedStation?.name ||
         (spatialData?.districtName ? `${spatialData.districtName} Sector` : `Corridor Zone #${idx + 1}`);
+
+      const legalBasis =
+        displayAQI >= 300
+          ? (city === 'Delhi' ? 'GRAP Stage III §4.2' : 'Air Act 1981 §31A / Emergency Order')
+          : (city === 'Bengaluru' ? 'KSPCB Action Plan §5.1' : city === 'Delhi' ? 'GRAP Stage II §3.1' : 'State PCB Action Plan §4.1');
 
       return {
         ...stop,
@@ -221,7 +228,7 @@ export const EnforcementScreen: React.FC = () => {
         dominantSource,
         sourceConfidence,
         populationExposed,
-        legalBasis: displayAQI >= 300 ? 'GRAP Stage III §4.2' : 'GRAP Stage II §3.1',
+        legalBasis,
         evidenceRationale: `High severity (AQI ${displayAQI}) coupled with ${populationExposed.toLocaleString()} exposed population.`,
         isCompleted: false,
       };

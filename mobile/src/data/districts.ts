@@ -2,6 +2,7 @@ import type { District, Station } from '../types/index';
 
 const delhiGeoDataRaw = require('./delhiDistrictsGeo.json');
 const hyderabadGeoDataRaw = require('./hyderabadDistrictsGeo.json');
+const bengaluruGeoDataRaw = require('./bengaluruDistrictsGeo.json');
 const guwahatiGeoDataRaw = require('./guwahatiDistrictsGeo.json');
 const hyderabadDistrictsRawData = require('./hyderabad_districts.json');
 
@@ -77,6 +78,7 @@ export function computeDistricts(city: string, stations: Station[]): District[] 
   let raw: any = null;
   if (city === 'Delhi') raw = delhiGeoDataRaw;
   else if (city === 'Hyderabad') raw = hyderabadGeoDataRaw;
+  else if (city === 'Bengaluru') raw = bengaluruGeoDataRaw;
   else if (city === 'Guwahati') raw = guwahatiGeoDataRaw;
   else return [];
 

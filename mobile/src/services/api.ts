@@ -149,6 +149,10 @@ function getFallbackCityData(city: string): CityDataResponse {
       {"name": "Peenya Industrial Area", "lat": 13.0285, "lon": 77.5195, "aqi": 245, "pm25": 106.0, "pm10": 148.0},
       {"name": "Jayanagar 4th Block", "lat": 12.9299, "lon": 77.5824, "aqi": 118, "pm25": 46.0, "pm10": 68.0},
       {"name": "Electronic City Phase 1", "lat": 12.8452, "lon": 77.6602, "aqi": 132, "pm25": 54.0, "pm10": 78.0},
+      {"name": "Dasarahalli Metro Hub", "lat": 13.0450, "lon": 77.5120, "aqi": 220, "pm25": 94.0, "pm10": 135.0},
+      {"name": "Yelahanka New Town", "lat": 13.1000, "lon": 77.5950, "aqi": 150, "pm25": 60.0, "pm10": 88.0},
+      {"name": "Rajarajeshwari Nagar", "lat": 12.8850, "lon": 77.4700, "aqi": 162, "pm25": 66.0, "pm10": 92.0},
+      {"name": "Mahadevapura Outer Ring", "lat": 12.9900, "lon": 77.6950, "aqi": 185, "pm25": 76.0, "pm10": 110.0},
     ],
     Chennai: [
       {"name": "Manali Industrial Belt", "lat": 13.1667, "lon": 80.2667, "aqi": 235, "pm25": 98.0, "pm10": 138.0},

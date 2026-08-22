@@ -17,6 +17,7 @@ interface DarkMapProps {
 const CITY_COORDS: Record<string, [number, number]> = {
   Delhi: [77.2090, 28.6139],
   Hyderabad: [78.4867, 17.3850],
+  Bengaluru: [77.5946, 12.9716],
   Guwahati: [91.7362, 26.1444],
 };
 

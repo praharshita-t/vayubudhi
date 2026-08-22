@@ -14,7 +14,7 @@ const navItems = [
   { id: 'simulate', label: 'Simulate', href: '/simulate', icon: FlaskConical },
   { id: 'forecast', label: 'Forecast', href: '/forecast', icon: TrendingUp },
   { id: 'enforce', label: 'Enforce', href: '/enforce', icon: Shield },
-  { id: 'advisory', label: 'Advisory', href: '/advisory', icon: FileText },
+
   { id: 'compare', label: 'Compare Cities', href: '/compare', icon: Building2 },
 ];
 

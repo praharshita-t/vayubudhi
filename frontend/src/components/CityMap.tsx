@@ -26,6 +26,17 @@ const CITY_CENTERS: Record<string, {longitude: number, latitude: number, zoom: n
   'Guwahati': { longitude: 91.73, latitude: 26.16, zoom: 11.5 },
 };
 
+// Bounding boxes for satellite NO₂ overlay: [west, south, east, north]
+const CITY_SATELLITE_BOUNDS: Record<string, [number, number, number, number]> = {
+  'Delhi':     [76.84, 28.40, 77.35, 28.88],
+  'Hyderabad': [78.20, 17.20, 78.65, 17.60],
+  'Bengaluru': [77.40, 12.80, 77.80, 13.15],
+};
+
+// Cache-busting: refresh satellite image every hour
+const getSatelliteHourKey = () => Math.floor(Date.now() / 3600000);
+
+
 const getInitialViewState = (city: string, userCoords?: { lat: number, lon: number } | null) => {
   if (city === 'My Location' && userCoords) {
     return {
@@ -200,13 +211,16 @@ export default function CityMap({
 
   // Build deck.gl layers
   const layers = useMemo(() => {
-    // Layer 0: Sentinel-5P NO2 GeoTIFF
+    // Layer 0: Live NO₂ satellite overlay (from Open-Meteo CAMS via backend)
+    const satelliteBounds = CITY_SATELLITE_BOUNDS[city];
     const satelliteLayer = new BitmapLayer({
       id: 'sentinel-no2-layer',
-      bounds: [76.84, 28.40, 77.35, 28.88], // Delhi bounding box
-      image: '/sentinel_no2.png',
+      bounds: satelliteBounds || [76.84, 28.40, 77.35, 28.88],
+      image: satelliteBounds
+        ? `http://127.0.0.1:8000/api/satellite/no2?city=${city}&t=${getSatelliteHourKey()}`
+        : '/sentinel_no2.png',
       transparentColor: [0, 0, 0, 0],
-      opacity: showSatellite && city === 'Delhi' ? 0.7 : 0,
+      opacity: showSatellite && satelliteBounds ? 0.7 : 0,
       transitions: { opacity: 500 }
     });
 
@@ -542,7 +556,7 @@ export default function CityMap({
 
       {/* Overlay Stats & Satellite Toggle */}
       <div className="map-overlay-stats">
-        {city === 'Delhi' && (
+        {CITY_SATELLITE_BOUNDS[city] && (
           <button 
             className={`map-stat-chip ${showSatellite ? 'active' : ''}`}
             onClick={() => setShowSatellite(!showSatellite)}
@@ -552,7 +566,7 @@ export default function CityMap({
               background: showSatellite ? 'rgba(57,210,192,0.1)' : 'var(--bg-secondary)'
             }}
           >
-            Sentinel-5P NO₂: <span className="chip-value" style={{ color: showSatellite ? 'var(--accent-cyan)' : 'inherit' }}>{showSatellite ? 'ON' : 'OFF'}</span>
+            CAMS NO₂ Overlay: <span className="chip-value" style={{ color: showSatellite ? 'var(--accent-cyan)' : 'inherit' }}>{showSatellite ? 'ON' : 'OFF'}</span>
           </button>
         )}
         <div className="map-stat-chip">
@@ -575,26 +589,27 @@ export default function CityMap({
         position: 'absolute', bottom: 12, left: 12, zIndex: 5,
         background: 'var(--bg-surface)', backdropFilter: 'blur(12px)',
         border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)',
-        padding: '8px 12px', minWidth: 200
+        padding: '9px 14px', minWidth: 260
       }}>
         <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
           CPCB Indian NAQI Standard Scale
         </div>
-        <div style={{ display: 'flex', gap: 2, height: 8, borderRadius: 3, overflow: 'hidden' }}>
-          <div style={{ flex: 50, background: '#22c55e' }} title="Good (0-50)" />
-          <div style={{ flex: 50, background: '#84cc16' }} title="Satisfactory (51-100)" />
-          <div style={{ flex: 100, background: '#f59e0b' }} title="Moderate (101-200)" />
-          <div style={{ flex: 100, background: '#f97316' }} title="Poor (201-300)" />
-          <div style={{ flex: 100, background: '#ef4444' }} title="Very Poor (301-400)" />
-          <div style={{ flex: 100, background: '#dc2626' }} title="Severe (401-500+)" />
+        <div style={{ display: 'flex', height: 8, borderRadius: 3, overflow: 'hidden', position: 'relative' }}>
+          <div style={{ width: '10%', background: '#22c55e', borderRight: '1px solid rgba(0,0,0,0.3)' }} title="Good (0-50)" />
+          <div style={{ width: '10%', background: '#84cc16', borderRight: '1px solid rgba(0,0,0,0.3)' }} title="Satisfactory (51-100)" />
+          <div style={{ width: '20%', background: '#f59e0b', borderRight: '1px solid rgba(0,0,0,0.3)' }} title="Moderate (101-200)" />
+          <div style={{ width: '20%', background: '#f97316', borderRight: '1px solid rgba(0,0,0,0.3)' }} title="Poor (201-300)" />
+          <div style={{ width: '20%', background: '#ef4444', borderRight: '1px solid rgba(0,0,0,0.3)' }} title="Very Poor (301-400)" />
+          <div style={{ width: '20%', background: '#dc2626' }} title="Severe (401-500+)" />
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: '0.55rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-          <span>0 (Good)</span>
-          <span>100</span>
-          <span>200</span>
-          <span>300</span>
-          <span>400</span>
-          <span>500+ (Severe)</span>
+        <div style={{ position: 'relative', height: 16, marginTop: 4, fontSize: '0.55rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+          <span style={{ position: 'absolute', left: '0%' }}>0</span>
+          <span style={{ position: 'absolute', left: '10%', transform: 'translateX(-50%)' }}>50</span>
+          <span style={{ position: 'absolute', left: '20%', transform: 'translateX(-50%)' }}>100</span>
+          <span style={{ position: 'absolute', left: '40%', transform: 'translateX(-50%)' }}>200</span>
+          <span style={{ position: 'absolute', left: '60%', transform: 'translateX(-50%)' }}>300</span>
+          <span style={{ position: 'absolute', left: '80%', transform: 'translateX(-50%)' }}>400</span>
+          <span style={{ position: 'absolute', right: '0%', textAlign: 'right' }}>500+</span>
         </div>
       </div>
 

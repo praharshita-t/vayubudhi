@@ -7,6 +7,7 @@ import { Station, CityId } from '@/types';
 
 const CityMap = dynamic(() => import('@/components/CityMap'), { ssr: false });
 const DeepDivePanel = dynamic(() => import('@/components/DeepDivePanel'), { ssr: false });
+const AdvisoryPanel = dynamic(() => import('@/components/AdvisoryPanel'), { ssr: false });
 
 function LiveClock() {
   const [time, setTime] = useState('--:--:--');
@@ -34,6 +35,7 @@ export default function LiveMapPage() {
   const [hoveredLocation, setHoveredLocation] = useState<any>(null);
   const [selectedDistrict, setSelectedDistrict] = useState<any>(null);
   const [monitoringLocation, setMonitoringLocation] = useState<{ lat: number; lon: number; name?: string } | null>(null);
+  const [advisoryOpen, setAdvisoryOpen] = useState(false);
 
   // Compute commander header metrics
   let avgAqi = 0;
@@ -136,6 +138,45 @@ export default function LiveMapPage() {
           </aside>
         )}
       </div>
+
+      {/* ── Floating Advisory FAB + Popup ── */}
+      <button
+        className={`advisory-fab${advisoryOpen ? ' active' : ''}`}
+        onClick={() => setAdvisoryOpen(!advisoryOpen)}
+        aria-label="Toggle Advisory"
+        title="Citizen Advisory"
+      >
+        {advisoryOpen ? (
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        ) : (
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z" />
+            <path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
+          </svg>
+        )}
+        {!advisoryOpen && <span className="advisory-fab-badge">AI</span>}
+      </button>
+
+      {advisoryOpen && (
+        <div className="advisory-popup">
+          <div className="advisory-popup-header">
+            <span>Citizen Advisory</span>
+            <button
+              className="advisory-popup-close"
+              onClick={() => setAdvisoryOpen(false)}
+              aria-label="Close Advisory"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="advisory-popup-body">
+            <AdvisoryPanel city={activeCity} userCoords={userCoords} liveData={liveData} cityData={cityData} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

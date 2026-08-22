@@ -26,6 +26,17 @@ const CITY_CENTERS: Record<string, {longitude: number, latitude: number, zoom: n
   'Guwahati': { longitude: 91.73, latitude: 26.16, zoom: 11.5 },
 };
 
+// Bounding boxes for satellite NO₂ overlay: [west, south, east, north]
+const CITY_SATELLITE_BOUNDS: Record<string, [number, number, number, number]> = {
+  'Delhi':     [76.84, 28.40, 77.35, 28.88],
+  'Hyderabad': [78.20, 17.20, 78.65, 17.60],
+  'Bengaluru': [77.40, 12.80, 77.80, 13.15],
+};
+
+// Cache-busting: refresh satellite image every hour
+const getSatelliteHourKey = () => Math.floor(Date.now() / 3600000);
+
+
 const getInitialViewState = (city: string, userCoords?: { lat: number, lon: number } | null) => {
   if (city === 'My Location' && userCoords) {
     return {
@@ -200,13 +211,16 @@ export default function CityMap({
 
   // Build deck.gl layers
   const layers = useMemo(() => {
-    // Layer 0: Sentinel-5P NO2 GeoTIFF
+    // Layer 0: Live NO₂ satellite overlay (from Open-Meteo CAMS via backend)
+    const satelliteBounds = CITY_SATELLITE_BOUNDS[city];
     const satelliteLayer = new BitmapLayer({
       id: 'sentinel-no2-layer',
-      bounds: [76.84, 28.40, 77.35, 28.88], // Delhi bounding box
-      image: '/sentinel_no2.png',
+      bounds: satelliteBounds || [76.84, 28.40, 77.35, 28.88],
+      image: satelliteBounds
+        ? `http://127.0.0.1:8000/api/satellite/no2?city=${city}&t=${getSatelliteHourKey()}`
+        : '/sentinel_no2.png',
       transparentColor: [0, 0, 0, 0],
-      opacity: showSatellite && city === 'Delhi' ? 0.7 : 0,
+      opacity: showSatellite && satelliteBounds ? 0.7 : 0,
       transitions: { opacity: 500 }
     });
 
@@ -542,7 +556,7 @@ export default function CityMap({
 
       {/* Overlay Stats & Satellite Toggle */}
       <div className="map-overlay-stats">
-        {city === 'Delhi' && (
+        {CITY_SATELLITE_BOUNDS[city] && (
           <button 
             className={`map-stat-chip ${showSatellite ? 'active' : ''}`}
             onClick={() => setShowSatellite(!showSatellite)}
@@ -552,7 +566,7 @@ export default function CityMap({
               background: showSatellite ? 'rgba(57,210,192,0.1)' : 'var(--bg-secondary)'
             }}
           >
-            Sentinel-5P NO₂: <span className="chip-value" style={{ color: showSatellite ? 'var(--accent-cyan)' : 'inherit' }}>{showSatellite ? 'ON' : 'OFF'}</span>
+            CAMS NO₂ Overlay: <span className="chip-value" style={{ color: showSatellite ? 'var(--accent-cyan)' : 'inherit' }}>{showSatellite ? 'ON' : 'OFF'}</span>
           </button>
         )}
         <div className="map-stat-chip">

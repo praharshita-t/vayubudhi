@@ -19,7 +19,7 @@ from typing import Optional
 
 import numpy as np
 import requests
-from PIL import Image
+from PIL import Image, ImageFilter, ImageChops
 from fastapi import APIRouter, Query, Response
 from fastapi.responses import Response as FastAPIResponse
 
@@ -38,7 +38,7 @@ CITY_BOUNDS: dict[str, list[float]] = {
 GRID_SIZE = 12
 
 # Output image resolution (upscaled from GRID_SIZE × GRID_SIZE)
-IMG_SIZE = 256
+IMG_SIZE = 512
 
 # Cache duration in seconds (1 hour)
 CACHE_TTL = 3600
@@ -51,38 +51,107 @@ CACHE_DIR.mkdir(exist_ok=True)
 OPEN_METEO_AQ_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 
 
-def _no2_to_rgba(no2_value: float) -> tuple[int, int, int, int]:
-    """Map an NO₂ concentration (µg/m³) to an RGBA color.
+_edge_mask = None
 
-    Uses a contrasting neon colormap (Deep Purple -> Magenta -> Neon Pink -> White)
-    so that it doesn't blend in with the standard green/yellow/red AQI scale on the map.
-    """
-    if no2_value is None or no2_value <= 1:
-        return (0, 0, 0, 0)
+def get_edge_mask(size: int) -> Image.Image:
+    """Generate a smooth elliptical falloff mask that guarantees zero opacity at the edges."""
+    global _edge_mask
+    if _edge_mask is None or _edge_mask.size != (size, size):
+        y, x = np.ogrid[:size, :size]
+        center = (size - 1) / 2.0
+        
+        # Normalized distance from center (0.0 at center, 1.0 at outer edge)
+        nx = (x - center) / center
+        ny = (y - center) / center
+        dist = np.sqrt(nx**2 + ny**2)
+        
+        # Smooth cosine falloff starting from 30% radius out to 88% radius
+        fade_start = 0.30
+        fade_end = 0.88
+        
+        t = np.clip((dist - fade_start) / (fade_end - fade_start), 0.0, 1.0)
+        # Cosine smooth curve (1.0 at center -> 0.0 at edge)
+        alpha = 0.5 * (1.0 + np.cos(np.pi * t))
+        alpha[dist >= fade_end] = 0.0
+        
+        _edge_mask = Image.fromarray((alpha * 255).astype(np.uint8), "L")
+    return _edge_mask
 
-    # Normalize to 0-1 range (capped at 50 µg/m³ to make colors pop at typical concentrations)
-    t = min(max(no2_value / 50.0, 0.0), 1.0)
 
-    # Non-linear alpha to smoothly fade out lower values, preventing a hard rectangular block
-    alpha = int((t ** 1.2) * 230)
-    
-    # Ensure a very slight minimum base alpha for visible areas
-    alpha = max(alpha, 15) if no2_value > 1 else 0
+def _grid_to_png(grid: np.ndarray) -> bytes:
+    """Convert a GRID_SIZE × GRID_SIZE NO₂ grid into a realistic, organic satellite heatmap PNG."""
 
-    if t < 0.33:
-        # Deep Purple to Magenta
-        s = t / 0.33
-        r, g, b = int(75 + s * 180), 0, int(130 + s * 125)
-    elif t < 0.66:
-        # Magenta to Neon Pink
-        s = (t - 0.33) / 0.33
-        r, g, b = 255, int(s * 105), int(255 - s * 75)
+    # CAMS cells are ~10–40 km, so Hyderabad/Bengaluru often have a tiny range
+    # (a few µg/m³). Stretch that local contrast so the cloud is visible, while
+    # still using absolute concentration for overall opacity (Delhi stays denser).
+    valid_vals = grid[np.isfinite(grid) & (grid > 0)]
+    if len(valid_vals) == 0:
+        min_val, max_val, mean_val = 5.0, 50.0, 5.0
     else:
-        # Neon Pink to White
-        s = (t - 0.66) / 0.34
-        r, g, b = 255, int(105 + s * 150), int(180 + s * 75)
+        min_val = float(np.min(valid_vals))
+        max_val = float(np.max(valid_vals))
+        mean_val = float(np.mean(valid_vals))
+        if max_val - min_val < 2.0:
+            max_val = min_val + 2.0
 
-    return (min(r, 255), min(g, 255), min(b, 255), min(alpha, 255))
+    span = max_val - min_val + 1e-5
+    abs_scale = float(np.clip(mean_val / 20.0, 0.85, 1.0))
+
+    # 2. Build RGBA array from grid
+    grid_h, grid_w = grid.shape
+    rgba_grid = np.zeros((grid_h, grid_w, 4), dtype=np.uint8)
+
+    for y in range(grid_h):
+        for x in range(grid_w):
+            val = float(grid[y, x])
+            if val <= 0:
+                continue
+
+            rel = min(max((val - min_val) / span, 0.0), 1.0)
+            # Faint city-wide haze + brighter local maxima (no fully-clear core)
+            lifted = 0.28 + 0.72 * rel
+            alpha = int((lifted ** 1.2) * 230 * abs_scale)
+            alpha = max(alpha, 40)
+
+            # Atmospheric Colormap: Deep Indigo -> Electric Violet -> Hot Magenta -> Bright Sun/White
+            if rel < 0.35:
+                s = rel / 0.35
+                r = int(55 + s * 125)
+                g = int(12 + s * 25)
+                b = int(130 + s * 65)
+            elif rel < 0.75:
+                s = (rel - 0.35) / 0.40
+                r = int(180 + s * 75)
+                g = int(37 + s * 55)
+                b = int(195 - s * 65)
+            else:
+                s = (rel - 0.75) / 0.25
+                r = 255
+                g = int(92 + s * 155)
+                b = int(130 + s * 110)
+
+            rgba_grid[y, x] = (min(r, 255), min(g, 255), min(b, 255), min(alpha, 255))
+
+    small_img = Image.fromarray(rgba_grid, "RGBA")
+
+    # 3. High-resolution bicubic upscaling (512x512)
+    large_img = small_img.resize((IMG_SIZE, IMG_SIZE), Image.BICUBIC)
+
+    # 4. Multi-stage Gaussian plume diffusion for realistic gas dispersion
+    diffuse = large_img.filter(ImageFilter.GaussianBlur(radius=20))
+    core = large_img.filter(ImageFilter.GaussianBlur(radius=7))
+    blended = Image.blend(diffuse, core, alpha=0.5)
+
+    # 5. Elliptical feathering mask to remove all rectangular borders
+    mask = get_edge_mask(IMG_SIZE)
+    r, g, b, a = blended.split()
+    feathered_a = ImageChops.multiply(a, mask)
+    final_img = Image.merge("RGBA", (r, g, b, feathered_a))
+
+    # Save optimized PNG to bytes
+    buf = io.BytesIO()
+    final_img.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
 
 
 def _fetch_no2_grid(city: str) -> Optional[np.ndarray]:
@@ -144,33 +213,17 @@ def _fetch_no2_grid(city: str) -> Optional[np.ndarray]:
     return grid
 
 
-def _grid_to_png(grid: np.ndarray) -> bytes:
-    """Convert a GRID_SIZE × GRID_SIZE NO₂ grid into a 256×256 RGBA PNG."""
-
-    # Create small RGBA image from the grid
-    small_img = Image.new("RGBA", (GRID_SIZE, GRID_SIZE), (0, 0, 0, 0))
-    pixels = small_img.load()
-    for y in range(GRID_SIZE):
-        for x in range(GRID_SIZE):
-            pixels[x, y] = _no2_to_rgba(grid[y, x])
-
-    # Upscale with bicubic interpolation for smoother hotspots
-    large_img = small_img.resize((IMG_SIZE, IMG_SIZE), Image.BICUBIC)
-
-    # Save to bytes
-    buf = io.BytesIO()
-    large_img.save(buf, format="PNG", optimize=True)
-    return buf.getvalue()
+CACHE_VERSION = "v2"
 
 
 def _get_cache_path(city: str) -> Path:
     """Return the filesystem path for a cached satellite image."""
-    return CACHE_DIR / f"no2_{city.lower()}.png"
+    return CACHE_DIR / f"no2_{city.lower()}_{CACHE_VERSION}.png"
 
 
 def _get_cache_meta_path(city: str) -> Path:
     """Return the filesystem path for cache metadata."""
-    return CACHE_DIR / f"no2_{city.lower()}.json"
+    return CACHE_DIR / f"no2_{city.lower()}_{CACHE_VERSION}.json"
 
 
 def _is_cache_valid(city: str) -> bool:

@@ -16,6 +16,7 @@ export interface Station {
   humidity?: number;
   pressure?: number;
   wind_speed?: number;
+  wind_dir?: number;
   pblh?: number;
 }
 

@@ -4,6 +4,7 @@ import { getAqiCategory } from '@/utils/aqi';
 import { Station } from '@/types';
 import { computeDelhiDistricts, District } from '@/data/delhiDistricts';
 import { computeHyderabadDistricts, computeGuwahatiDistricts, computeBengaluruDistricts } from '@/data/otherDistricts';
+import { createWindArrowLayers, useWindParticles, computeWindSummary } from './WindLayer';
 
 export interface HexDataPoint {
   lat: number;
@@ -107,6 +108,7 @@ export default function CityMap({
   const [hoveredStation, setHoveredStation] = useState<Station | null>(null);
   const [viewState, setViewState] = useState<any>(getInitialViewState(city, userCoords));
   const [showSatellite, setShowSatellite] = useState(false);
+  const [showWind, setShowWind] = useState(false);
 
   const stations = useMemo(() => {
     if (city === 'My Location' && liveData) {
@@ -125,6 +127,11 @@ export default function CityMap({
     }
     return cityData ? cityData.stations : [];
   }, [city, liveData, cityData, userCoords]);
+
+  // Wind animation layers (must be after stations is defined)
+  const windArrowLayers = useMemo(() => createWindArrowLayers(stations, showWind), [stations, showWind]);
+  const windParticleLayer = useWindParticles(stations, showWind, city);
+  const windSummary = useMemo(() => computeWindSummary(stations), [stations]);
 
   const dynamicDistricts = useMemo(() => {
     if (city === 'Delhi') return computeDelhiDistricts(stations);
@@ -483,12 +490,19 @@ export default function CityMap({
       );
     }
 
-    if (dynamicDistricts.length > 0) {
-      return [satelliteLayer, districtLayer, stationGlowLayer, stationDotLayer, labelLayer, ...alertLayers, ...monitoringLayers];
-    } else {
-      return [satelliteLayer, columnLayer, stationGlowLayer, stationDotLayer, labelLayer, ...alertLayers, ...monitoringLayers];
+    // Wind animation layers
+    const windLayers: any[] = [];
+    if (showWind) {
+      windLayers.push(...windArrowLayers);
+      if (windParticleLayer) windLayers.push(windParticleLayer);
     }
-  }, [alertStation, stations, hexGrid, city, hoveredDistrict, dynamicDistricts, showSatellite, monitoringLocation, selectedDistrictId]);
+
+    if (dynamicDistricts.length > 0) {
+      return [satelliteLayer, districtLayer, stationGlowLayer, stationDotLayer, labelLayer, ...alertLayers, ...monitoringLayers, ...windLayers];
+    } else {
+      return [satelliteLayer, columnLayer, stationGlowLayer, stationDotLayer, labelLayer, ...alertLayers, ...monitoringLayers, ...windLayers];
+    }
+  }, [alertStation, stations, hexGrid, city, hoveredDistrict, dynamicDistricts, showSatellite, monitoringLocation, selectedDistrictId, showWind, windArrowLayers, windParticleLayer]);
 
   const onViewStateChange = useCallback(({ viewState: vs }: any) => {
     setViewState(vs);
@@ -569,6 +583,17 @@ export default function CityMap({
             CAMS NO₂ Overlay: <span className="chip-value" style={{ color: showSatellite ? 'var(--accent-cyan)' : 'inherit' }}>{showSatellite ? 'ON' : 'OFF'}</span>
           </button>
         )}
+        <button 
+          className={`map-stat-chip ${showWind ? 'active' : ''}`}
+          onClick={() => setShowWind(!showWind)}
+          style={{ 
+            cursor: 'pointer', 
+            border: showWind ? '1px solid rgba(200,220,255,0.6)' : '1px solid var(--border-primary)',
+            background: showWind ? 'rgba(200,220,255,0.1)' : 'var(--bg-secondary)'
+          }}
+        >
+          🌬️ Wind Flow: <span className="chip-value" style={{ color: showWind ? 'rgba(200,220,255,0.95)' : 'inherit' }}>{showWind ? 'ON' : 'OFF'}</span>
+        </button>
         <div className="map-stat-chip">
           Stations Online: <span className="chip-value">{stations.filter((s: Station) => s.status !== 'offline').length}</span>
         </div>
@@ -612,6 +637,49 @@ export default function CityMap({
           <span style={{ position: 'absolute', right: '0%', textAlign: 'right' }}>500+</span>
         </div>
       </div>
+
+      {/* Wind Compass Legend — shown when wind layer is active */}
+      {showWind && windSummary.speed > 0 && (
+        <div style={{
+          position: 'absolute', bottom: 80, left: 12, zIndex: 5,
+          background: 'var(--bg-surface)', backdropFilter: 'blur(12px)',
+          border: '1px solid rgba(200,220,255,0.2)', borderRadius: 'var(--radius-md)',
+          padding: '10px 14px', minWidth: 100,
+        }}>
+          <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
+            Wind Direction
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {/* Compass circle with rotated arrow */}
+            <div style={{
+              width: 40, height: 40, borderRadius: '50%',
+              border: '1px solid rgba(200,220,255,0.25)',
+              background: 'rgba(200,220,255,0.05)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              position: 'relative',
+            }}>
+              {/* N marker */}
+              <span style={{ position: 'absolute', top: 1, fontSize: '0.45rem', color: 'rgba(200,220,255,0.5)', fontWeight: 700 }}>N</span>
+              {/* Arrow — points in direction wind is going TO (windDir + 180) */}
+              <div style={{
+                transform: `rotate(${(windSummary.direction + 180) % 360}deg)`,
+                transition: 'transform 1s ease',
+                fontSize: '1.1rem',
+                lineHeight: 1,
+                color: 'rgba(200,220,255,0.9)',
+              }}>↑</div>
+            </div>
+            <div>
+              <div style={{ fontSize: '0.85rem', fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'rgba(200,220,255,0.9)' }}>
+                {windSummary.speed} m/s
+              </div>
+              <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>
+                From {windSummary.label}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Map Legend for Station Dots */}
       <div className="map-legend" style={{ left: 'auto', right: 12, bottom: 12, gap: '12px' }}>

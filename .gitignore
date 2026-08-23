@@ -16,6 +16,7 @@ out/
 build/
 .npm
 *.log
+*.tsbuildinfo
 
 # Database
 *.db

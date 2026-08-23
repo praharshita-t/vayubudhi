@@ -207,6 +207,7 @@ class StationData(BaseModel):
     humidity: float = 50.0
     pressure: float = 1010.0
     wind_speed: float = 2.0
+    wind_dir: float = 0.0
     pblh: float = 800.0
     aqi: float
     source: str
@@ -349,6 +350,7 @@ def get_city_data(city: str):
             base_hum = cw.get("relative_humidity_2m", 60.0)
             base_press = cw.get("surface_pressure", 1008.0)
             base_wind = cw.get("wind_speed_10m", 2.0)
+            base_wind_dir = cw.get("wind_direction_10m", 0.0)
             base_pblh = cw.get("boundary_layer_height", 800.0)
 
             base_pm25 = caq.get("pm2_5", 35.0)
@@ -386,6 +388,7 @@ def get_city_data(city: str):
                 humidity=base_hum,
                 pressure=base_press,
                 wind_speed=base_wind,
+                wind_dir=base_wind_dir,
                 pblh=base_pblh,
                 aqi=round(ml_aqi),
                 source=source,
@@ -402,7 +405,7 @@ def get_city_data(city: str):
             stations.append(StationData(
                 id=f"ST_{i}", name=st["name"], lat=st["lat"], lon=st["lon"],
                 pm25=35.0, pm10=45.0, no2=20.0, so2=10.0, co=1.0, o3=30.0,
-                temp=28.0, humidity=60.0, pressure=1008.0, wind_speed=2.0, pblh=800.0,
+                temp=28.0, humidity=60.0, pressure=1008.0, wind_speed=2.0, wind_dir=0.0, pblh=800.0,
                 aqi=100.0, source="iot" if i % 5 == 0 else "caaqms", status="online"
             ))
 

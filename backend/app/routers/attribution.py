@@ -1,5 +1,6 @@
 import sys
 import os
+from typing import Optional, Dict, List, Any
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -9,7 +10,7 @@ from app.ml_service import ml_service
 import requests
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 # Add project root to sys.path to allow import of ml_model
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
@@ -203,3 +204,76 @@ def get_pollution_fingerprint(reading: schemas.SensorReading):
     ]
     
     return profiles
+
+def generate_gemini_evidence_summary(data: schemas.EvidenceSummaryRequest) -> Optional[str]:
+    """
+    Summarizes already-calculated evidence using Google Gemini in 2-3 concise, factual sentences.
+    Guardrails: Strictly factual summary of provided numbers; does not calculate AQI, invent facts, or alter recommendations.
+    """
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    if not gemini_key or gemini_key == "your_gemini_api_key_here":
+        return None
+    
+    prompt = f"""
+You are an environmental compliance intelligence analyst reviewing an air quality municipal enforcement dossier.
+Summarize the following PRE-CALCULATED facts into exactly 2 to 3 concise, clear, and factual sentences explaining "Why this specific location is prioritized for field enforcement".
+
+PRE-CALCULATED FACTS (DO NOT ALTER):
+- Location Name: {data.station_name}
+- Corridor Priority Rank: #{data.priority_rank} (MCDA Priority Score: {data.priority_score}/100)
+- Local Air Quality Severity: NAQI {data.aqi} (PM2.5: {data.pm25:.1f} µg/m³, PM10: {data.pm10:.1f} µg/m³)
+- Boundary Layer & Ventilation: PBLH {data.pblh:.0f}m, Wind {data.wind_speed:.1f} m/s, Ventilation Index {data.ventilation_index:,} m²/s ({data.dispersion_regime})
+- Multi-Source Attribution: Dominant source is {data.dominant_source} ({data.confidence}% conformal confidence). Breakdown: Vehicular {data.traffic_pct}%, Industrial {data.industry_pct}%, Dust {data.dust_pct}%.
+- Nearby Geospatial Evidence: {data.geospatial_summary if data.geospatial_summary else "Corridor congestion and urban commercial footprint verified."}
+- Population in Exposure Radius: {data.exposed_pop:,} residents
+- Recommended Squad Action: {data.action}
+
+STRICT GUARDRAILS:
+1. Do NOT calculate or change any AQI, pollutant, or meteorological values.
+2. Do NOT invent new facts, pollution sources, or external entities.
+3. Do NOT change the recommended squad action.
+4. Output ONLY the 2-3 sentence paragraph. No bullet points, no asterisks formatting, no preamble.
+"""
+
+    models_to_try = ['gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-flash-latest']
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.2,
+            "maxOutputTokens": 4000,
+        }
+    }
+
+    for model in models_to_try:
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={gemini_key}"
+            res = requests.post(url, json=payload, timeout=7)
+            if res.status_code == 200:
+                res_data = res.json()
+                candidates = res_data.get("candidates", [])
+                if candidates and len(candidates) > 0:
+                    text_parts = candidates[0].get("content", {}).get("parts", [])
+                    if text_parts and len(text_parts) > 0:
+                        text = text_parts[0].get("text", "").strip().replace('\n', ' ')
+                        if text:
+                            return text
+        except Exception as e:
+            continue
+
+    return None
+
+@router.post("/attribution/summary", response_model=schemas.EvidenceSummaryResponse)
+def post_evidence_summary(payload: schemas.EvidenceSummaryRequest):
+    """
+    Generates a 2-3 sentence Gemini AI executive explanation from already-calculated evidence metrics.
+    Gracefully falls back to null if Gemini is unconfigured or unavailable.
+    """
+    summary = generate_gemini_evidence_summary(payload)
+    return schemas.EvidenceSummaryResponse(summary=summary)
+

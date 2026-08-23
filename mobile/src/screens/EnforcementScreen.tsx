@@ -345,6 +345,7 @@ export const EnforcementScreen: React.FC = () => {
               selectedStop={activeFocusStop}
               allStations={stations}
               districts={districts}
+              city={selectedCity}
               onSelectStop={handleSelectStop}
               isNavigating={isNavigating}
               onToggleFullscreen={() => setShowFullMapModal(true)}
@@ -431,6 +432,7 @@ export const EnforcementScreen: React.FC = () => {
               selectedStop={activeFocusStop}
               allStations={stations}
               districts={districts}
+              city={selectedCity}
               onSelectStop={handleSelectStop}
               isNavigating={isNavigating}
               onToggleFullscreen={() => setShowFullMapModal(false)}
@@ -490,6 +492,7 @@ export const EnforcementScreen: React.FC = () => {
       <EvidenceModal
         visible={evidenceStop !== null}
         stop={evidenceStop}
+        city={selectedCity}
         onClose={() => setEvidenceStop(null)}
       />
 

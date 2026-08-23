@@ -142,3 +142,41 @@ export interface SensorAlert {
   is_acknowledged: boolean;
   severity: 'WARNING' | 'CRITICAL';
 }
+
+export interface AttributionEvidence {
+  dominantSource: string;
+  confidence: number;
+  mcdaScores: {
+    trafficScore: number;
+    industryScore: number;
+    dustScore: number;
+    trafficPct: number;
+    industryPct: number;
+    dustPct: number;
+  };
+  geospatialVerification: {
+    trafficDensity: string;
+    satelliteThermalAOD: string;
+    landUseFootprint: string;
+    dustSignature: string;
+  };
+  dispersionIndex: {
+    ventilationIndex: number;
+    regime: string;
+    pblhCeiling: number;
+    windSpeed: number;
+    windDirection: string;
+  };
+  explainableRationale: string[];
+  statutoryBasis: {
+    code: string;
+    act: string;
+    mandate: string;
+  };
+  recommendedAction: {
+    type: string;
+    operationalProtocol: string;
+    equipmentChecklist: string[];
+  };
+  geminiSummary?: string | null;
+}

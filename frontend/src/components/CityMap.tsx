@@ -3,7 +3,7 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { getAqiCategory } from '@/utils/aqi';
 import { Station } from '@/types';
 import { computeDelhiDistricts, District } from '@/data/delhiDistricts';
-import { computeHyderabadDistricts, computeGuwahatiDistricts } from '@/data/otherDistricts';
+import { computeHyderabadDistricts, computeGuwahatiDistricts, computeBengaluruDistricts } from '@/data/otherDistricts';
 
 export interface HexDataPoint {
   lat: number;
@@ -118,6 +118,7 @@ export default function CityMap({
   const dynamicDistricts = useMemo(() => {
     if (city === 'Delhi') return computeDelhiDistricts(stations);
     if (city === 'Hyderabad') return computeHyderabadDistricts(stations);
+    if (city === 'Bengaluru') return computeBengaluruDistricts(stations);
     if (city === 'Guwahati') return computeGuwahatiDistricts(stations);
     return [];
   }, [city, stations]);

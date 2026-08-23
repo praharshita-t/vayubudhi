@@ -21,6 +21,8 @@ class SensorReading(Base):
     temp = Column(Float, nullable=False)
     humidity = Column(Float, nullable=False)
     pressure = Column(Float, nullable=False)
+    voc_index = Column(Float, nullable=True, default=100.0)
+    nox_index = Column(Float, nullable=True, default=1.0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 class Forecast(Base):

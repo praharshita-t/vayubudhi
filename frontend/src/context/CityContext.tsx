@@ -2,7 +2,7 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { Station, CityId } from '@/types';
 import { computeDelhiDistricts } from '@/data/delhiDistricts';
-import { computeHyderabadDistricts, computeGuwahatiDistricts } from '@/data/otherDistricts';
+import { computeHyderabadDistricts, computeGuwahatiDistricts, computeBengaluruDistricts } from '@/data/otherDistricts';
 
 interface CityContextType {
   activeCity: CityId;
@@ -101,6 +101,7 @@ export function CityProvider({ children }: { children: React.ReactNode }) {
   const districts = useMemo(() => {
     if (activeCity === 'Delhi') return computeDelhiDistricts(stations);
     if (activeCity === 'Hyderabad') return computeHyderabadDistricts(stations);
+    if (activeCity === 'Bengaluru') return computeBengaluruDistricts(stations);
     if (activeCity === 'Guwahati') return computeGuwahatiDistricts(stations);
     return [];
   }, [activeCity, stations]);

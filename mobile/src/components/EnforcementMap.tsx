@@ -5,11 +5,27 @@ import type { District, RoadRoutePlan, RouteStop, Station } from '../types/index
 
 const SafeWebView = WebView as any;
 
+const CITY_CENTERS_MAP: Record<string, { name: string; lat: number; lon: number }> = {
+  Delhi: { name: 'Central Enforcement Depot (Delhi Secretariat)', lat: 28.6139, lon: 77.2090 },
+  Hyderabad: { name: 'GHMC Central Command Station', lat: 17.3850, lon: 78.4867 },
+  Bengaluru: { name: 'BBMP Central Command (Hudson Circle)', lat: 12.9716, lon: 77.5946 },
+  Guwahati: { name: 'Assam PCB Regional Depot (Dispur)', lat: 26.1444, lon: 91.7362 },
+  Mumbai: { name: 'BMC Municipal Control Centre (Fort)', lat: 18.9388, lon: 72.8354 },
+  Chennai: { name: 'Greater Chennai Corporation HQ (Ripon Bldg)', lat: 13.0827, lon: 80.2707 },
+  Kolkata: { name: 'KMC Central Headquarters (Esplanade)', lat: 22.5626, lon: 88.3510 },
+  Pune: { name: 'PMC Command Control Center (Shivajinagar)', lat: 18.5204, lon: 73.8567 },
+  Ahmedabad: { name: 'AMC Central Headquarters (Danapith)', lat: 23.0225, lon: 72.5714 },
+  Jaipur: { name: 'Jaipur Municipal Headquarters (Lalkothi)', lat: 26.9124, lon: 75.7873 },
+  Lucknow: { name: 'LMC Central Headquarters (Hazratganj)', lat: 26.8467, lon: 80.9462 },
+  Chandigarh: { name: 'Municipal Corporation HQ (Sector 17)', lat: 30.7333, lon: 76.7794 },
+};
+
 interface EnforcementMapProps {
   plan: RoadRoutePlan | null;
   selectedStop: RouteStop | null;
   allStations?: Station[];
   districts?: District[];
+  city?: string;
   onSelectStop: (stop: RouteStop) => void;
   isNavigating?: boolean;
   onToggleFullscreen?: () => void;
@@ -21,6 +37,7 @@ export const EnforcementMap: React.FC<EnforcementMapProps> = ({
   selectedStop,
   allStations = [],
   districts = [],
+  city = 'Delhi',
   onSelectStop,
   isNavigating = false,
   onToggleFullscreen,
@@ -29,7 +46,8 @@ export const EnforcementMap: React.FC<EnforcementMapProps> = ({
   const webViewRef = useRef<any>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  const depot = plan?.depot || { name: 'Command Depot', lat: 28.6139, lon: 77.2090 };
+  const defaultDepot = CITY_CENTERS_MAP[city] || CITY_CENTERS_MAP.Delhi;
+  const depot = plan?.depot || defaultDepot;
   const stops = plan?.stops || [];
   const fullGeometry = plan?.fullGeometry || [];
   const isRoadFollowing = plan?.isRoadFollowing ?? true;
@@ -385,6 +403,18 @@ export const EnforcementMap: React.FC<EnforcementMapProps> = ({
     } else if (stopsData.length > 0) {
       const bounds = L.latLngBounds([[depotData.lat, depotData.lon], ...stopsData.map(s => [s.lat, s.lon])]);
       map.fitBounds(bounds, { padding: [40, 40] });
+    } else if (districtsData.length > 0) {
+      const allCoords = [];
+      districtsData.forEach(d => {
+        if (d.polygon) d.polygon.forEach(pt => allCoords.push([pt[1], pt[0]]));
+      });
+      if (allCoords.length > 0) {
+        map.fitBounds(L.latLngBounds(allCoords), { padding: [30, 30] });
+      } else {
+        map.setView([initialLat, initialLon], 12);
+      }
+    } else {
+      map.setView([initialLat, initialLon], 12);
     }
 
     // Bridge for postMessages from React Native
@@ -482,10 +512,13 @@ export const EnforcementMap: React.FC<EnforcementMapProps> = ({
     }
   };
 
+  const mapKey = `enforcement_map_${city}_${depot.lat.toFixed(4)}_${depot.lon.toFixed(4)}_${stops.length}_${districts.length}`;
+
   return (
     <View style={styles.container}>
       {Platform.OS === 'web' ? (
         <iframe
+          key={mapKey}
           ref={iframeRef}
           srcDoc={mapHtml}
           style={{ width: '100%', height: '100%', border: 'none' }}
@@ -493,6 +526,7 @@ export const EnforcementMap: React.FC<EnforcementMapProps> = ({
         />
       ) : (
         <SafeWebView
+          key={mapKey}
           ref={webViewRef}
           originWhitelist={['*']}
           source={{ html: mapHtml }}

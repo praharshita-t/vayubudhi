@@ -214,10 +214,10 @@ export default function CityMap({
     // Layer 0: Live NO₂ satellite overlay (from Open-Meteo CAMS via backend)
     const satelliteBounds = CITY_SATELLITE_BOUNDS[city];
     const satelliteLayer = new BitmapLayer({
-      id: 'sentinel-no2-layer',
+      id: `sentinel-no2-layer-${city}`,
       bounds: satelliteBounds || [76.84, 28.40, 77.35, 28.88],
       image: satelliteBounds
-        ? `http://127.0.0.1:8000/api/satellite/no2?city=${city}&t=${getSatelliteHourKey()}`
+        ? `http://127.0.0.1:8000/api/satellite/no2?city=${encodeURIComponent(city)}&t=${getSatelliteHourKey()}`
         : '/sentinel_no2.png',
       transparentColor: [0, 0, 0, 0],
       opacity: showSatellite && satelliteBounds ? 0.7 : 0,

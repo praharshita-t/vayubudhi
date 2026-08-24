@@ -224,3 +224,10 @@ def simulate_intervention(baseline: schemas.SensorReading, simulated: schemas.Se
         simulated_forecast=sim_pred["points"],
         delta=delta
     )
+
+@router.get("/forecast/verification")
+def get_forecast_verification():
+    """
+    Returns real-time closed-loop online learning verification, MAE by horizon, and active bias corrections.
+    """
+    return ml_service.get_verification_metrics()

@@ -97,11 +97,32 @@ export default function LiveMapPage() {
           <select
             value={activeCity}
             onChange={(e) => setActiveCity(e.target.value as CityId)}
-            style={{ marginLeft: '20px', padding: '5px', borderRadius: '5px', background: '#1c2128', color: 'white', border: '1px solid #30363d' }}
+            style={{ marginLeft: '20px', padding: '5px 10px', borderRadius: '6px', background: '#1c2128', color: 'white', border: '1px solid #30363d', cursor: 'pointer', fontSize: '0.8rem' }}
           >
-            <option value="Delhi">Delhi NCR</option>
-            <option value="Hyderabad">Hyderabad</option>
-            <option value="Bengaluru">Bengaluru</option>
+            <optgroup label="Core Monitored Cities">
+              <option value="Delhi">Delhi NCR</option>
+              <option value="Hyderabad">Hyderabad</option>
+              <option value="Bengaluru">Bengaluru</option>
+            </optgroup>
+            <optgroup label="Tier 1 Cities">
+              <option value="Mumbai">Mumbai</option>
+              <option value="Chennai">Chennai</option>
+              <option value="Kolkata">Kolkata</option>
+              <option value="Pune">Pune</option>
+              <option value="Ahmedabad">Ahmedabad</option>
+              <option value="Jaipur">Jaipur</option>
+              <option value="Lucknow">Lucknow</option>
+              <option value="Chandigarh">Chandigarh</option>
+              <option value="Thiruvananthapuram">Thiruvananthapuram</option>
+            </optgroup>
+            <optgroup label="Tier 2 Cities">
+              <option value="Guwahati">Guwahati</option>
+              <option value="Kanpur">Kanpur</option>
+              <option value="Nagpur">Nagpur</option>
+              <option value="Indore">Indore</option>
+              <option value="Bhopal">Bhopal</option>
+              <option value="Patna">Patna</option>
+            </optgroup>
           </select>
         </div>
 
@@ -194,7 +215,15 @@ export default function LiveMapPage() {
             </button>
           </div>
           <div className="advisory-popup-body">
-            <AdvisoryPanel city={activeCity} userCoords={userCoords} liveData={liveData} cityData={cityData} />
+            <AdvisoryPanel
+              city={activeCity}
+              userCoords={userCoords}
+              liveData={liveData}
+              cityData={cityData}
+              selectedDistrict={selectedDistrict}
+              hoveredLocation={hoveredLocation}
+              districts={districts}
+            />
           </div>
         </div>
       )}

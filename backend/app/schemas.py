@@ -1,24 +1,24 @@
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 # Contract 1: Sensor -> Backend
 class SensorReading(BaseModel):
-    station_id: str = Field(..., examples=["esp32_01"])
-    timestamp: str = Field(..., examples=["2026-07-07T10:15:00Z"])
-    pm25: float = Field(..., examples=[142.3])
-    pm10: float = Field(..., examples=[168.9])
-    temp: float = Field(..., examples=[31.2])
-    humidity: float = Field(..., examples=[58.4])
-    pressure: float = Field(..., examples=[1008.1])
-    wind_speed: float = Field(default=3.0, examples=[2.5])
-    wind_dir: float = Field(default=0.0, examples=[180.0])
-    pblh: float = Field(default=1000.0, examples=[800.0])
-    lat: float = Field(default=28.6139, examples=[28.6139])
-    lon: float = Field(default=77.2090, examples=[77.2090])
-    no2: float = Field(default=25.0, examples=[25.0])
-    so2: float = Field(default=10.0, examples=[10.0])
-    co: float = Field(default=1.0, examples=[1.0])
-    o3: float = Field(default=35.0, examples=[35.0])
+    station_id: Optional[str] = Field(default="sensor_01", examples=["esp32_01"])
+    timestamp: Optional[str] = Field(default="now", examples=["2026-07-07T10:15:00Z"])
+    pm25: Optional[float] = Field(default=35.0, examples=[142.3])
+    pm10: Optional[float] = Field(default=50.0, examples=[168.9])
+    temp: Optional[float] = Field(default=28.0, examples=[31.2])
+    humidity: Optional[float] = Field(default=55.0, examples=[58.4])
+    pressure: Optional[float] = Field(default=1008.0, examples=[1008.1])
+    wind_speed: Optional[float] = Field(default=3.0, examples=[2.5])
+    wind_dir: Optional[float] = Field(default=0.0, examples=[180.0])
+    pblh: Optional[float] = Field(default=1000.0, examples=[800.0])
+    lat: Optional[float] = Field(default=28.6139, examples=[28.6139])
+    lon: Optional[float] = Field(default=77.2090, examples=[77.2090])
+    no2: Optional[float] = Field(default=25.0, examples=[25.0])
+    so2: Optional[float] = Field(default=10.0, examples=[10.0])
+    co: Optional[float] = Field(default=1.0, examples=[1.0])
+    o3: Optional[float] = Field(default=35.0, examples=[35.0])
 
 # Contract 2: ML -> Backend (Attribution)
 class AttributionOutput(BaseModel):

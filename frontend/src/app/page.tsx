@@ -213,7 +213,14 @@ export default function HomePage() {
 
   const aqiCat = getAqiCategory(avgAqi);
   const healthInfo = getHealthInfo(avgAqi);
-  const scalePosition = Math.min(100, Math.max(0, (avgAqi / 500) * 100));
+  const scalePosition = useMemo(() => {
+    if (avgAqi <= 50) return (avgAqi / 50) * 16.66;
+    if (avgAqi <= 100) return 16.66 + ((avgAqi - 50) / 50) * 16.66;
+    if (avgAqi <= 150) return 33.33 + ((avgAqi - 100) / 50) * 16.66;
+    if (avgAqi <= 200) return 50.0 + ((avgAqi - 150) / 50) * 16.66;
+    if (avgAqi <= 300) return 66.66 + ((avgAqi - 200) / 100) * 16.66;
+    return Math.min(100, 83.33 + ((avgAqi - 300) / 200) * 16.66);
+  }, [avgAqi]);
 
   // Sort districts for leaderboard
   const sortedDistricts = useMemo(() => {
@@ -257,11 +264,10 @@ export default function HomePage() {
                 <optgroup label="Core Monitored Cities">
                   <option value="Delhi">Delhi NCR</option>
                   <option value="Hyderabad">Hyderabad</option>
-                  <option value="Guwahati">Guwahati</option>
+                  <option value="Bengaluru">Bengaluru</option>
                 </optgroup>
                 <optgroup label="Tier 1 Cities">
                   <option value="Mumbai">Mumbai</option>
-                  <option value="Bengaluru">Bengaluru</option>
                   <option value="Chennai">Chennai</option>
                   <option value="Kolkata">Kolkata</option>
                   <option value="Pune">Pune</option>
@@ -272,6 +278,7 @@ export default function HomePage() {
                   <option value="Thiruvananthapuram">Thiruvananthapuram</option>
                 </optgroup>
                 <optgroup label="Tier 2 Cities">
+                  <option value="Guwahati">Guwahati</option>
                   <option value="Kanpur">Kanpur</option>
                   <option value="Nagpur">Nagpur</option>
                   <option value="Indore">Indore</option>
@@ -300,7 +307,7 @@ export default function HomePage() {
               <div className="dot" style={{ background: aqiCat.color }} /> Live AQI
             </div>
             <div className="home-aqi-value" style={{ color: aqiCat.color }}>{avgAqi}</div>
-            <div className="home-aqi-unit">AQI (India)</div>
+            <div className="home-aqi-unit">AQI (US)</div>
           </div>
 
           <div className="home-hero-right">
@@ -337,10 +344,10 @@ export default function HomePage() {
               <div className="home-scale-marker" style={{ left: `${scalePosition}%` }} />
             </div>
             <div className="home-scale-labels">
-              <span>Good</span><span>Satisfactory</span><span>Moderate</span><span>Poor</span><span>Very Poor</span><span>Severe</span>
+              <span>Good</span><span>Moderate</span><span>Poor</span><span>Unhealthy</span><span>Severe</span><span>Hazardous</span>
             </div>
             <div className="home-scale-numbers">
-              <span>0</span><span>50</span><span>100</span><span>200</span><span>300</span><span>400</span><span>500+</span>
+              <span>0</span><span>50</span><span>100</span><span>150</span><span>200</span><span>300</span><span>500+</span>
             </div>
           </div>
         </div>

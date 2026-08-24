@@ -36,69 +36,79 @@ try:
 except ImportError:
     coordinator = None
 
+from typing import Optional, List, Dict, Any
+
+class AdvisoryActionGuide(BaseModel):
+    workout: str
+    ventilation: str
+    mask: str
+    vulnerable: str
+
 class AdvisoryRequest(BaseModel):
     city: str
-    language: str
-    reading: schemas.SensorReading
+    language: str = "English"
+    mode: Optional[str] = "district_live" # "district_live" | "city_forecast"
+    district_name: Optional[str] = None
+    district_aqi: Optional[float] = None
+    best_districts: Optional[List[str]] = None
+    worst_districts: Optional[List[str]] = None
+    reading: Optional[schemas.SensorReading] = None
 
 class AdvisoryResponse(BaseModel):
     advisory: str
     language: str
     city: str
+    mode: str
+    target_name: str
+    aqi_level: int
+    aqi_category: str
+    primary_source: Optional[str] = None
+    source_attribution: Optional[Dict[str, Any]] = None
+    actions: AdvisoryActionGuide
 
 @router.post("/advisory", response_model=AdvisoryResponse)
 def get_health_advisory(req: AdvisoryRequest):
     """
-    Generates a localized, multilingual health advisory using LLMs.
+    Generates a localized, multilingual dual-mode health advisory using LLMs/NLG engine.
     """
     from app.ml_service import ml_service
     
+    reading_dict = req.reading.dict() if req.reading else {
+        "station_id": req.district_name or f"{req.city}_AGGREGATE",
+        "timestamp": "now",
+        "pm25": 25.0,
+        "pm10": 37.5,
+        "temp": 30.0,
+        "humidity": 55.0,
+        "pressure": 1008.0,
+        "wind_speed": 2.5,
+        "pblh": 850.0,
+        "no2": 25.0,
+        "so2": 10.0,
+        "co": 1.0,
+        "o3": 30.0
+    }
+    
     # Get ML predictions
-    forecast = ml_service.predict_forecast(req.reading)
-    attribution = ml_service.predict_attribution(req.reading)
-    
-    # -------------------------------------------------------------------
-    # VULNERABILITY MAPPING ENGINE
-    # Map forecast AQI against local vulnerable population centers
-    # -------------------------------------------------------------------
-    vulnerable_centers = [
-        {"type": "Hospital", "name": "City General", "distance_km": 1.2, "patients_at_risk": 450},
-        {"type": "School", "name": "Primary Academy", "distance_km": 0.8, "students_at_risk": 1200}
-    ]
-    
-    if forecast.get("points") and len(forecast["points"]) > 0:
-        if forecast["points"][0] > 200:
-            vuln_context = f"High alert for {vulnerable_centers[0]['name']} and {vulnerable_centers[1]['name']}."
-        else:
-            vuln_context = "Vulnerable populations are not at critical risk currently."
+    if req.reading:
+        forecast = ml_service.predict_forecast(req.reading)
+        attribution = ml_service.predict_attribution(req.reading)
     else:
-        vuln_context = "Vulnerable populations are not at critical risk currently."
+        dummy_reading = schemas.SensorReading(**reading_dict)
+        forecast = ml_service.predict_forecast(dummy_reading)
+        attribution = ml_service.predict_attribution(dummy_reading)
     
-    if coordinator:
-        result = coordinator.execute({
-            "forecast": forecast,
-            "attribution": attribution,
-            "language": req.language,
-            "city": req.city,
-            "vulnerability": vuln_context,
-            "reading": req.reading.dict()
-        })
-        return result
-    else:
-        # Generate multi-channel mock response simulating Gemini output
-        base_msg = f"Due to high {attribution.get('prediction_set', ['pollution'])[0]} in {req.city}, the AQI will be {forecast.get('points', [0])[0]:.0f}. {vuln_context}"
-        
-        if req.language.lower() == "kannada":
-            base_msg = f"[Kannada translation pending Gemini integration] {base_msg}"
-        elif req.language.lower() == "tamil":
-            base_msg = f"[Tamil translation pending Gemini integration] {base_msg}"
-        elif req.language.lower() == "hindi":
-            base_msg = f"[Hindi translation pending Gemini integration] {base_msg}"
-            
-        push_payload = f"*** SMS/IVR Gateway Payload ***\nTarget Demo: Elderly & Students\nChannel: SMS & WhatsApp\nMessage: {base_msg}"
-            
-        return {
-            "advisory": push_payload,
-            "language": req.language,
-            "city": req.city
-        }
+    from gemini_client import GeminiAdvisorClient
+    client = GeminiAdvisorClient()
+    return client.generate_advisory(
+        forecast=forecast,
+        attribution=attribution,
+        language=req.language,
+        city=req.city,
+        reading=reading_dict,
+        mode=req.mode or "district_live",
+        district_name=req.district_name,
+        district_aqi=req.district_aqi,
+        best_districts=req.best_districts,
+        worst_districts=req.worst_districts
+    )

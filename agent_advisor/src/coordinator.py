@@ -29,16 +29,17 @@ class AgentCoordinator:
         city = state.get("city", "Delhi")
         reading = state.get("reading", {})
         
-        advisory_text = self.gemini_client.generate_advisory(
+        advisory_result = self.gemini_client.generate_advisory(
             forecast=forecast, 
             attribution=attribution, 
             language=language,
             city=city,
-            reading=reading
+            reading=reading,
+            mode=state.get("mode", "district_live"),
+            district_name=state.get("district_name"),
+            district_aqi=state.get("district_aqi"),
+            best_districts=state.get("best_districts"),
+            worst_districts=state.get("worst_districts")
         )
         
-        return {
-            "advisory": advisory_text,
-            "language": language,
-            "city": city
-        }
+        return advisory_result

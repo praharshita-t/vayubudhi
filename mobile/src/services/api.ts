@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import type { CityDataResponse, RoutePlan, RouteStop, Station, AttributionEvidence } from '../types/index';
 import { hyderabadDistrictsRaw } from '../data/districts';
 
@@ -10,17 +11,43 @@ export function getApiBaseUrl(): string {
     }
     return `http://${host}:8000/api`;
   }
-  return 'http://192.168.0.109:8000/api';
+
+  // Dynamically extract the computer's current IP from Expo Go connection
+  try {
+    const hostUri = Constants.expoConfig?.hostUri || (Constants as any).manifest2?.extra?.expoClient?.hostUri || (Constants as any).manifest?.debuggerHost;
+    if (hostUri && typeof hostUri === 'string') {
+      const ip = hostUri.split(':')[0];
+      if (ip && ip !== 'localhost' && ip !== '127.0.0.1') {
+        return `http://${ip}:8000/api`;
+      }
+    }
+  } catch (e) {}
+
+  // Active current LAN IP fallback
+  return 'http://172.16.18.5:8000/api';
 }
 
 export const API_BASE_URL = getApiBaseUrl();
 
+async function fetchWithTimeout(url: string, options: any = {}, timeoutMs = 15000): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timeoutId);
+    return res;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw error;
+  }
+}
+
 export async function fetchCityData(city: string): Promise<CityDataResponse> {
   const baseUrl = getApiBaseUrl();
   try {
-    const res = await fetch(`${baseUrl}/city-data?city=${encodeURIComponent(city)}`, {
+    const res = await fetchWithTimeout(`${baseUrl}/city-data?city=${encodeURIComponent(city)}`, {
       headers: { 'Accept': 'application/json' },
-    });
+    }, 15000);
     if (!res.ok) {
       throw new Error(`Failed to fetch city data: ${res.status}`);
     }
@@ -55,11 +82,11 @@ export async function optimizeEnforcementRoute(
   };
 
   try {
-    const res = await fetch(`${baseUrl}/optimize`, {
+    const res = await fetchWithTimeout(`${baseUrl}/optimize`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    });
+    }, 15000);
 
     if (!res.ok) {
       throw new Error(`Optimizer returned status ${res.status}`);
@@ -240,46 +267,6 @@ export async function fetchAttributionEvidence(
       : ['Drone Optical Payload Unit', 'Handheld Optical Particle Sensor', 'GPS Log & Photographic Documentation Toolkit'],
   };
 
-  // 7. Query Gemini Explanation Layer (Backend API only, with safe fallback)
-  let geminiSummary: string | null = null;
-  try {
-    const summaryPayload = {
-      station_name: stop.stationName || `Target Sector #${stop.priorityRank || 1}`,
-      priority_rank: stop.priorityRank || 1,
-      priority_score: Math.min(99, Math.round(aqi * 0.38 + ((stop.populationExposed || 120000) / 15000))),
-      aqi,
-      pm25,
-      pm10,
-      pblh,
-      wind_speed,
-      ventilation_index: ventilationIndex,
-      dispersion_regime: regime,
-      dominant_source: dominantSource,
-      confidence,
-      traffic_pct: trafficPct,
-      industry_pct: industryPct,
-      dust_pct: dustPct,
-      geospatial_summary: geoEvidence.trafficDensity + ' ' + geoEvidence.landUseFootprint,
-      exposed_pop: stop.populationExposed || 120000,
-      action: recommendedAction.type,
-    };
-
-    const summaryRes = await fetch(`${baseUrl}/attribution/summary`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(summaryPayload),
-    });
-
-    if (summaryRes.ok) {
-      const summaryData = await summaryRes.json();
-      if (summaryData && typeof summaryData.summary === 'string' && summaryData.summary.trim().length > 0) {
-        geminiSummary = summaryData.summary.trim();
-      }
-    }
-  } catch (err) {
-    // Graceful fallback to null if Gemini is unconfigured or offline
-  }
-
   return {
     dominantSource,
     confidence,
@@ -306,7 +293,7 @@ export async function fetchAttributionEvidence(
       mandate: statMandate,
     },
     recommendedAction,
-    geminiSummary,
+    geminiSummary: null,
   };
 }
 

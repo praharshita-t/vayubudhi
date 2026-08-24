@@ -141,9 +141,25 @@ export const EnforcementMap: React.FC<EnforcementMapProps> = ({
       border: 2px solid #93c5fd;
     }
 
-    .pin-inner.selected {
+    @keyframes hyperPulse {
+      0% {
+        box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.8), 0 0 16px rgba(250, 204, 21, 1);
+        transform: scale(1);
+      }
+      50% {
+        box-shadow: 0 0 0 18px rgba(56, 189, 248, 0), 0 0 26px rgba(250, 204, 21, 1);
+        transform: scale(1.28);
+      }
+      100% {
+        box-shadow: 0 0 0 0 rgba(56, 189, 248, 0), 0 0 16px rgba(250, 204, 21, 1);
+        transform: scale(1);
+      }
+    }
+
+    .pin-inner.selected, .pin-inner.hyper-focus {
       border: 2.5px solid #facc15 !important;
-      box-shadow: 0 0 20px rgba(250, 204, 21, 1), 0 0 0 3px rgba(250, 204, 21, 0.5) !important;
+      animation: hyperPulse 1.6s infinite ease-in-out !important;
+      z-index: 9999 !important;
     }
 
     .pin-inner.inspected {
@@ -418,9 +434,12 @@ export const EnforcementMap: React.FC<EnforcementMapProps> = ({
     }
 
     // Bridge for postMessages from React Native
-    window.addEventListener('message', function(event) {
+    function handleInboundMessage(event) {
       try {
-        const data = JSON.parse(event.data);
+        const raw = event.data;
+        const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (!data) return;
+
         if (data.type === 'FIT_ALL') {
           if (polyline && fullGeo.length > 1) {
             map.fitBounds(polyline.getBounds(), { padding: [40, 40] });
@@ -439,14 +458,36 @@ export const EnforcementMap: React.FC<EnforcementMapProps> = ({
             map.fitBounds(polyline.getBounds(), { padding: [30, 30] });
           }
         } else if (data.type === 'FOCUS_STOP') {
-          map.flyTo([data.lat, data.lon], 14, { animate: true, duration: 1.2 });
-          const target = stopMarkers.find(sm => sm.stop.source_id === data.stopId || (Math.abs(sm.stop.lat - data.lat) < 0.001 && Math.abs(sm.stop.lon - data.lon) < 0.001));
-          if (target) {
-            target.marker.openPopup();
-          }
+          // Hyper Zoom to stop coordinates (Street Level Zoom: 16.5)
+          map.flyTo([data.lat, data.lon], 16.5, { animate: true, duration: 1.0 });
+
+          stopMarkers.forEach(sm => {
+            const isMatched = sm.stop.source_id === data.stopId || (Math.abs(sm.stop.lat - data.lat) < 0.001 && Math.abs(sm.stop.lon - data.lon) < 0.001);
+            const el = sm.marker.getElement();
+            if (el) {
+              const inner = el.querySelector('.pin-inner');
+              if (inner) {
+                if (isMatched) {
+                  inner.classList.add('selected');
+                  inner.classList.add('hyper-focus');
+                } else {
+                  inner.classList.remove('selected');
+                  inner.classList.remove('hyper-focus');
+                }
+              }
+            }
+            if (isMatched) {
+              setTimeout(function() {
+                sm.marker.openPopup();
+              }, 400);
+            }
+          });
         }
       } catch (e) {}
-    });
+    }
+
+    window.addEventListener('message', handleInboundMessage);
+    document.addEventListener('message', handleInboundMessage);
   </script>
 </body>
 </html>

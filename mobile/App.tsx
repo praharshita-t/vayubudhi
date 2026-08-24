@@ -6,67 +6,104 @@ import { NotificationsScreen } from './src/screens/NotificationsScreen';
 
 type Tab = 'enforcement' | 'telemetry';
 
+interface ErrorBoundaryState {
+  hasError: boolean;
+  errorText: string;
+}
+
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { hasError: false, errorText: '' };
+
+  static getDerivedStateFromError(error: any): ErrorBoundaryState {
+    return { hasError: true, errorText: String(error?.message || error) };
+  }
+
+  componentDidCatch(error: any, info: any) {
+    console.error('[VayuBudhi App Crash]:', error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={{ flex: 1, backgroundColor: '#ffffff', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+          <Text style={{ fontSize: 16, fontWeight: '800', color: '#0f172a', marginBottom: 8 }}>VAYUBUDHI COMMAND</Text>
+          <Text style={{ fontSize: 13, color: '#dc2626', textAlign: 'center', marginBottom: 16 }}>{this.state.errorText}</Text>
+          <TouchableOpacity
+            style={{ backgroundColor: '#0284c7', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 6 }}
+            onPress={() => this.setState({ hasError: false, errorText: '' })}
+          >
+            <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 12 }}>RELOAD INTERFACE</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('enforcement');
 
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-        <StatusBar barStyle="light-content" backgroundColor="#070b13" />
+      <ErrorBoundary>
+        <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+          <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
 
-        {/* Operational Header Bar */}
-        <View style={styles.header}>
-          <View style={styles.brandRow}>
-            {/* VayuBudhi Wind/Flow Brand Icon */}
-            <View style={styles.brandIconBox}>
-              <Text style={styles.brandIconSymbol}>༄</Text>
+          {/* Operational Header Bar */}
+          <View style={styles.header}>
+            <View style={styles.brandRow}>
+              {/* VayuBudhi Wind/Flow Brand Icon */}
+              <View style={styles.brandIconBox}>
+                <Text style={styles.brandIconSymbol}>༄</Text>
+              </View>
+              <View>
+                <Text style={styles.headerTitle}>VAYUBUDHI</Text>
+                <Text style={styles.headerSub}>MUNICIPAL ENFORCEMENT COMMAND</Text>
+              </View>
             </View>
-            <View>
-              <Text style={styles.headerTitle}>VAYUBUDHI</Text>
-              <Text style={styles.headerSub}>MUNICIPAL ENFORCEMENT COMMAND</Text>
+
+            <View style={styles.liveIndicator}>
+              <View style={styles.liveDot} />
+              <Text style={styles.liveText}>SYSTEM LIVE</Text>
             </View>
           </View>
 
-          <View style={styles.liveIndicator}>
-            <View style={styles.liveDot} />
-            <Text style={styles.liveText}>SYSTEM LIVE</Text>
+          {/* Main Content Area */}
+          <View style={styles.content}>
+            {activeTab === 'enforcement' ? (
+              <EnforcementScreen />
+            ) : (
+              <NotificationsScreen />
+            )}
           </View>
-        </View>
 
-        {/* Main Content Area */}
-        <View style={styles.content}>
-          {activeTab === 'enforcement' ? (
-            <EnforcementScreen />
-          ) : (
-            <NotificationsScreen />
-          )}
-        </View>
+          {/* Bottom Tab Bar */}
+          <View style={styles.tabBar}>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'enforcement' && styles.tabActive]}
+              onPress={() => setActiveTab('enforcement')}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.tabIndicator, activeTab === 'enforcement' && styles.tabIndicatorActive]} />
+              <Text style={[styles.tabLabel, activeTab === 'enforcement' && styles.tabLabelActive]}>
+                Enforcement Patrol
+              </Text>
+            </TouchableOpacity>
 
-        {/* Bottom Tab Bar */}
-        <View style={styles.tabBar}>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'enforcement' && styles.tabActive]}
-            onPress={() => setActiveTab('enforcement')}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.tabIndicator, activeTab === 'enforcement' && styles.tabIndicatorActive]} />
-            <Text style={[styles.tabLabel, activeTab === 'enforcement' && styles.tabLabelActive]}>
-              Enforcement Patrol
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'telemetry' && styles.tabActive]}
-            onPress={() => setActiveTab('telemetry')}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.tabIndicator, activeTab === 'telemetry' && styles.tabIndicatorActive]} />
-            <Text style={[styles.tabLabel, activeTab === 'telemetry' && styles.tabLabelActive]}>
-              Sensor Telemetry
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'telemetry' && styles.tabActive]}
+              onPress={() => setActiveTab('telemetry')}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.tabIndicator, activeTab === 'telemetry' && styles.tabIndicatorActive]} />
+              <Text style={[styles.tabLabel, activeTab === 'telemetry' && styles.tabLabelActive]}>
+                Sensor Telemetry
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </ErrorBoundary>
     </SafeAreaProvider>
   );
 }

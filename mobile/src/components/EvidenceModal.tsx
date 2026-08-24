@@ -29,9 +29,11 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
   const [evidence, setEvidence] = useState<AttributionEvidence | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [timestamp, setTimestamp] = useState<string>('');
+  const [showTechnicalDetails, setShowTechnicalDetails] = useState<boolean>(false);
 
   useEffect(() => {
     if (stop && visible) {
+      setShowTechnicalDetails(false);
       loadDossier(stop, city);
     }
   }, [stop, visible, city]);
@@ -52,7 +54,7 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
       const data = await fetchAttributionEvidence(targetStop, targetCity);
       setEvidence(data);
     } catch (e) {
-      console.warn('[EvidenceModal] Error loading dynamic evidence dossier:', e);
+      console.warn('[EvidenceModal] Error loading evidence:', e);
     } finally {
       setLoading(false);
     }
@@ -63,66 +65,71 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
   const aqi = stop.severity ?? stop.aqi ?? 200;
   const rank = stop.priorityRank || 1;
   const isP1 = rank === 1;
-  const isFullInspection = stop.action === 'FULL_INSPECTION' || aqi >= 250 || isP1;
   const pm25 = stop.pm25 !== undefined ? stop.pm25 : parseFloat((aqi * 0.42).toFixed(1));
   const pm10 = stop.pm10 !== undefined ? stop.pm10 : parseFloat((aqi * 0.58).toFixed(1));
   const no2 = stop.no2 !== undefined ? stop.no2 : Math.round(aqi * 0.22);
   const so2 = stop.so2 !== undefined ? stop.so2 : Math.round(aqi * 0.08);
   const co = stop.co !== undefined ? stop.co : parseFloat((aqi * 0.007).toFixed(1));
   const o3 = stop.o3 !== undefined ? stop.o3 : Math.round(aqi * 0.15);
-  const temp = stop.temp !== undefined ? stop.temp : 30.0;
-  const humidity = stop.humidity !== undefined ? stop.humidity : 55.0;
-  const pblh = stop.pblh !== undefined ? Math.round(stop.pblh) : 850;
-  const wind = stop.wind_speed !== undefined ? stop.wind_speed : 2.4;
+  const pblh = stop.pblh !== undefined ? Math.round(stop.pblh) : 800;
+  const wind = stop.wind_speed !== undefined ? stop.wind_speed : 2.2;
+  const vi = evidence?.dispersionIndex.ventilationIndex || Math.round(pblh * wind);
+  const exposedPop = stop.populationExposed || 120000;
   const score = Math.min(
     99,
-    Math.round(aqi * 0.38 + (stop.populationExposed ? stop.populationExposed / 15000 : 20))
+    Math.round(aqi * 0.38 + (exposedPop / 15000))
   );
 
-  // NAQI category determination
   let aqiCategory = 'Moderate';
-  let aqiCategoryColor = '#d97706';
+  let aqiColor = '#d97706';
   if (aqi > 300) {
     aqiCategory = 'Hazardous / Severe';
-    aqiCategoryColor = '#dc2626';
+    aqiColor = '#dc2626';
   } else if (aqi > 200) {
     aqiCategory = 'Very Poor';
-    aqiCategoryColor = '#ea580c';
+    aqiColor = '#ea580c';
   } else if (aqi > 100) {
     aqiCategory = 'Poor';
-    aqiCategoryColor = '#d97706';
+    aqiColor = '#d97706';
   } else if (aqi <= 50) {
     aqiCategory = 'Good';
-    aqiCategoryColor = '#16a34a';
+    aqiColor = '#16a34a';
   }
 
-  // Particulate fine-to-coarse ratio
-  const pmRatio = pm25 / Math.max(1, pm10);
-  const pmRatioPercent = (pmRatio * 100).toFixed(0);
+  const trafficPct = evidence?.mcdaScores.trafficPct ?? 52;
+  const industryPct = evidence?.mcdaScores.industryPct ?? 28;
+  const dustPct = evidence?.mcdaScores.dustPct ?? 20;
+  const dominantSource = evidence?.dominantSource || stop.dominantSource || 'Vehicular Traffic';
+  const dominantPct = dominantSource.toLowerCase().includes('traffic') || dominantSource.toLowerCase().includes('vehicular')
+    ? trafficPct
+    : dominantSource.toLowerCase().includes('indust')
+    ? industryPct
+    : dustPct;
 
-  // NAAQS Standard Comparison Percentages
-  const pm25PctNaaqs = Math.round((pm25 / 60.0) * 100);
-  const pm10PctNaaqs = Math.round((pm10 / 100.0) * 100);
-  const no2PctNaaqs = Math.round((no2 / 80.0) * 100);
-  const so2PctNaaqs = Math.round((so2 / 80.0) * 100);
+  // 100% Deterministic Location-Specific Executive Summary (Instant & Reliable)
+  const stationName = stop.stationName || `Priority Sector #${rank}`;
+  const stagnationText = vi < 2000
+    ? `Critical boundary layer stagnation (PBLH ${pblh}m, VI ${vi.toLocaleString()} m²/s) traps ground emissions.`
+    : `Restricted atmospheric dispersion (ventilation index ${vi.toLocaleString()} m²/s) limits pollutant clearance.`;
+
+  const executiveSummary = `${stationName} is prioritized as Corridor #${rank} with an MCDA Score of ${score}/100 due to ${aqiCategory.toLowerCase()} air quality (NAQI ${aqi}; PM2.5: ${pm25} µg/m³, PM10: ${pm10} µg/m³) threatening ${exposedPop.toLocaleString()} exposed citizens. ${stagnationText} Multi-criteria source attribution confirms ${dominantSource} as the dominant contributor (${dominantPct}%), warranting priority field intervention.`;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
-          {/* Top Header */}
+          {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerLeft}>
-              <View style={styles.badgeLiveRow}>
-                <View style={styles.liveBeacon} />
-                <Text style={styles.liveTagText}>STATUTORY ENFORCEMENT DOSSIER</Text>
-                <Text style={styles.timeTagText}>• {timestamp}</Text>
+              <View style={styles.headerBadgeRow}>
+                <Text style={styles.headerTag}>ENFORCEMENT EVIDENCE DOSSIER</Text>
+                <Text style={styles.headerTime}>• {timestamp}</Text>
               </View>
               <Text style={styles.headerTitle} numberOfLines={1}>
-                {stop.stationName || `Target Sector #${rank}`}
+                {stationName}
               </Text>
-              <Text style={styles.headerCoordSub}>
-                Coordinates: {stop.lat.toFixed(4)}° N, {stop.lon.toFixed(4)}° E • {city} Region
+              <Text style={styles.headerSubtitle}>
+                {stop.lat.toFixed(4)}° N, {stop.lon.toFixed(4)}° E • {city} Region
               </Text>
             </View>
             <TouchableOpacity onPress={onClose} style={styles.closeBtn} activeOpacity={0.7}>
@@ -130,18 +137,18 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
             </TouchableOpacity>
           </View>
 
-          {/* Quick Rank & Priority KPI Ribbon */}
+          {/* Quick Metrics Ribbon */}
           <View style={styles.kpiRibbon}>
             <View style={styles.kpiBox}>
-              <Text style={styles.kpiLabel}>CORRIDOR RANK</Text>
+              <Text style={styles.kpiLabel}>RANK</Text>
               <Text style={[styles.kpiVal, isP1 ? styles.textRed : styles.textSky]}>
                 #{rank} {isP1 ? '(PRIMARY)' : ''}
               </Text>
             </View>
             <View style={styles.kpiDivider} />
             <View style={styles.kpiBox}>
-              <Text style={styles.kpiLabel}>NAQI SEVERITY</Text>
-              <Text style={[styles.kpiVal, { color: aqiCategoryColor }]}>{aqi}</Text>
+              <Text style={styles.kpiLabel}>NAQI</Text>
+              <Text style={[styles.kpiVal, { color: aqiColor }]}>{aqi}</Text>
             </View>
             <View style={styles.kpiDivider} />
             <View style={styles.kpiBox}>
@@ -150,9 +157,9 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
             </View>
             <View style={styles.kpiDivider} />
             <View style={styles.kpiBox}>
-              <Text style={styles.kpiLabel}>EST. EXPOSURE</Text>
+              <Text style={styles.kpiLabel}>POPULATION</Text>
               <Text style={styles.kpiVal}>
-                {(stop.populationExposed || 120000).toLocaleString()}
+                {exposedPop.toLocaleString()}
               </Text>
             </View>
           </View>
@@ -160,368 +167,224 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
           {loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#0284c7" />
-              <Text style={styles.loadingText}>Compiling Live Geospatial & Multi-Source Evidence...</Text>
+              <Text style={styles.loadingText}>Compiling Live Geospatial Evidence...</Text>
             </View>
           ) : (
             <ScrollView style={styles.scrollArea} showsVerticalScrollIndicator={false}>
-              {/* 1. Decision Explainability: Why this location? */}
+              {/* 1. Why This Location? (Executive Summary) */}
               <View style={styles.sectionCard}>
-                <View style={styles.sectionTitleRow}>
-                  <Text style={styles.sectionHeading}>
-                    WHY {stop.stationName ? stop.stationName.toUpperCase() : `TARGET SECTOR #${rank}`}?
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.sectionTitle}>
+                    WHY {stationName.toUpperCase()}?
                   </Text>
-                  <View style={styles.aiTag}>
-                    <Text style={styles.aiTagText}>
-                      {evidence?.geminiSummary ? 'GEMINI AI EXPLANATION' : 'DETERMINISTIC EXPLAINABILITY'}
-                    </Text>
+                  <View style={styles.aiBadge}>
+                    <Text style={styles.aiBadgeText}>EXECUTIVE SUMMARY</Text>
                   </View>
                 </View>
 
-                {evidence?.geminiSummary ? (
-                  <View style={styles.geminiSummaryBox}>
-                    <Text style={styles.geminiSummaryText}>{evidence.geminiSummary}</Text>
-                  </View>
-                ) : null}
-
-                <View style={styles.rationaleContainer}>
-                  <Text style={styles.supportingFactsHeading}>SUPPORTING FACTUAL EVIDENCE:</Text>
-                  {(evidence?.explainableRationale || [
-                    `Local NAQI reached ${aqi} (${aqiCategory}), exceeding national ambient air quality standards.`,
-                    `Elevated particulate burden: PM2.5 at ${pm25} µg/m³ (${pm25PctNaaqs}% of limit) and PM10 at ${pm10} µg/m³ (${pm10PctNaaqs}% of limit).`,
-                    `Atmospheric ventilation index of ${stop.ventilation_index || Math.round(pblh * wind)} m²/s indicates local inversion trapping.`,
-                    `Priority ranking #${rank} based on ${score}/100 exposure-weighted multi-criteria score.`,
-                  ]).map((point, idx) => (
-                    <View key={idx} style={styles.rationaleRow}>
-                      <Text style={styles.bulletDot}>•</Text>
-                      <Text style={styles.rationaleText}>{point}</Text>
-                    </View>
-                  ))}
+                <View style={styles.aiSummaryContainer}>
+                  <Text style={styles.aiSummaryText}>{executiveSummary}</Text>
                 </View>
               </View>
 
-              {/* 2. Full 6-Pollutant Spectrum & NAAQS Verification */}
+              {/* 2. Key Pollutants Grid (6-Pollutants) */}
               <View style={styles.sectionCard}>
-                <Text style={styles.sectionHeading}>2. REAL-TIME 6-POLLUTANT TELEMETRY (CPCB NAQI)</Text>
-
-                {/* Primary PM Bar Grid */}
-                <View style={styles.pollutantRow}>
-                  <View style={styles.pollutantCard}>
-                    <View style={styles.pollutantTop}>
-                      <Text style={styles.pollutantName}>PM2.5 (FINE)</Text>
-                      <Text style={[styles.pollutantPct, pm25PctNaaqs > 100 ? styles.textRed : styles.textSky]}>
-                        {pm25PctNaaqs}% NAAQS
-                      </Text>
-                    </View>
-                    <Text style={styles.pollutantValue}>
+                <Text style={styles.sectionTitle}>KEY POLLUTANTS</Text>
+                <View style={styles.pollutantGrid}>
+                  <View style={styles.pollutantCell}>
+                    <Text style={styles.pollutantLabel}>PM2.5</Text>
+                    <Text style={[styles.pollutantVal, pm25 > 60 ? styles.textRed : styles.textSky]}>
                       {pm25} <Text style={styles.unitText}>µg/m³</Text>
                     </Text>
-                    <View style={styles.metricTrack}>
-                      <View
-                        style={[
-                          styles.metricBar,
-                          {
-                            width: `${Math.min(100, (pm25 / 250) * 100)}%`,
-                            backgroundColor: aqiCategoryColor,
-                          },
-                        ]}
-                      />
-                    </View>
-                    <Text style={styles.subtext}>24h Standard Limit: 60 µg/m³</Text>
                   </View>
-
-                  <View style={styles.pollutantCard}>
-                    <View style={styles.pollutantTop}>
-                      <Text style={styles.pollutantName}>PM10 (COARSE)</Text>
-                      <Text style={[styles.pollutantPct, pm10PctNaaqs > 100 ? styles.textRed : styles.textSky]}>
-                        {pm10PctNaaqs}% NAAQS
-                      </Text>
-                    </View>
-                    <Text style={styles.pollutantValue}>
+                  <View style={styles.pollutantCell}>
+                    <Text style={styles.pollutantLabel}>PM10</Text>
+                    <Text style={[styles.pollutantVal, pm10 > 100 ? styles.textRed : styles.textSky]}>
                       {pm10} <Text style={styles.unitText}>µg/m³</Text>
                     </Text>
-                    <View style={styles.metricTrack}>
-                      <View
-                        style={[
-                          styles.metricBar,
-                          {
-                            width: `${Math.min(100, (pm10 / 350) * 100)}%`,
-                            backgroundColor: '#ea580c',
-                          },
-                        ]}
-                      />
-                    </View>
-                    <Text style={styles.subtext}>24h Standard Limit: 100 µg/m³</Text>
                   </View>
-                </View>
-
-                {/* Secondary Gases Grid */}
-                <View style={styles.gasesGrid}>
-                  <View style={styles.gasCell}>
-                    <Text style={styles.gasLabel}>NO₂ (TRAFFIC)</Text>
-                    <Text style={styles.gasVal}>
-                      {no2.toFixed(1)} <Text style={styles.unitSmall}>µg/m³</Text>
+                  <View style={styles.pollutantCell}>
+                    <Text style={styles.pollutantLabel}>NO₂</Text>
+                    <Text style={styles.pollutantVal}>
+                      {no2.toFixed(1)} <Text style={styles.unitText}>µg/m³</Text>
                     </Text>
-                    <Text style={styles.gasSub}>{no2PctNaaqs}% of 80 limit</Text>
                   </View>
-                  <View style={styles.gasCell}>
-                    <Text style={styles.gasLabel}>SO₂ (INDUSTRY)</Text>
-                    <Text style={styles.gasVal}>
-                      {so2.toFixed(1)} <Text style={styles.unitSmall}>µg/m³</Text>
+                  <View style={styles.pollutantCell}>
+                    <Text style={styles.pollutantLabel}>SO₂</Text>
+                    <Text style={styles.pollutantVal}>
+                      {so2.toFixed(1)} <Text style={styles.unitText}>µg/m³</Text>
                     </Text>
-                    <Text style={styles.gasSub}>{so2PctNaaqs}% of 80 limit</Text>
                   </View>
-                  <View style={styles.gasCell}>
-                    <Text style={styles.gasLabel}>CO (COMBUSTION)</Text>
-                    <Text style={styles.gasVal}>
-                      {co.toFixed(2)} <Text style={styles.unitSmall}>mg/m³</Text>
+                  <View style={styles.pollutantCell}>
+                    <Text style={styles.pollutantLabel}>CO</Text>
+                    <Text style={styles.pollutantVal}>
+                      {co.toFixed(2)} <Text style={styles.unitText}>mg/m³</Text>
                     </Text>
-                    <Text style={styles.gasSub}>{Math.round((co / 2.0) * 100)}% of 2.0 limit</Text>
                   </View>
-                  <View style={styles.gasCell}>
-                    <Text style={styles.gasLabel}>O₃ (OXIDANT)</Text>
-                    <Text style={styles.gasVal}>
-                      {o3.toFixed(1)} <Text style={styles.unitSmall}>µg/m³</Text>
+                  <View style={styles.pollutantCell}>
+                    <Text style={styles.pollutantLabel}>O₃</Text>
+                    <Text style={styles.pollutantVal}>
+                      {o3.toFixed(1)} <Text style={styles.unitText}>µg/m³</Text>
                     </Text>
-                    <Text style={styles.gasSub}>{Math.round((o3 / 100.0) * 100)}% of 100 limit</Text>
                   </View>
-                </View>
-
-                {/* Optical & Ratio Signature */}
-                <View style={styles.ratioBanner}>
-                  <Text style={styles.ratioBannerTitle}>PARTICULATE FRACTION FINGERPRINT:</Text>
-                  <Text style={styles.ratioBannerDesc}>
-                    PM2.5/PM10 Ratio is <Text style={styles.textBold}>{pmRatio.toFixed(2)} ({pmRatioPercent}%)</Text> —{' '}
-                    {pmRatio >= 0.65
-                      ? 'Indicates dominance of high-temperature combustion & vehicular exhausts.'
-                      : pmRatio <= 0.45
-                      ? 'Indicates mechanical re-suspension and heavy road/construction dust.'
-                      : 'Mixed biogenic, crustal, and urban background aerosol.'}
-                  </Text>
                 </View>
               </View>
 
-              {/* 3. Atmospheric Physics & Inversion Mechanics */}
+              {/* 3. Atmospheric Conditions & Dispersion */}
               <View style={styles.sectionCard}>
-                <Text style={styles.sectionHeading}>3. ATMOSPHERIC PHYSICS & VENTILATION INDEX (ERA5)</Text>
+                <Text style={styles.sectionTitle}>ATMOSPHERIC & VENTILATION CONDITIONS</Text>
                 <View style={styles.physicsGrid}>
-                  <View style={styles.physicsCell}>
-                    <Text style={styles.physicsKey}>PBLH CEILING</Text>
-                    <Text style={styles.physicsVal}>
-                      {pblh} <Text style={styles.unitText}>m</Text>
-                    </Text>
-                    <Text style={styles.physicsSub}>Boundary layer top</Text>
+                  <View style={styles.physicsItem}>
+                    <Text style={styles.physicsLabel}>PBLH CEILING</Text>
+                    <Text style={styles.physicsValue}>{pblh} m</Text>
                   </View>
-                  <View style={styles.physicsCell}>
-                    <Text style={styles.physicsKey}>WIND VECTOR</Text>
-                    <Text style={styles.physicsVal}>
-                      {wind.toFixed(1)} <Text style={styles.unitText}>m/s</Text>
-                    </Text>
-                    <Text style={styles.physicsSub}>
-                      {evidence?.dispersionIndex.windDirection || 'WNW 290°'}
-                    </Text>
+                  <View style={styles.physicsItem}>
+                    <Text style={styles.physicsLabel}>WIND VECTOR</Text>
+                    <Text style={styles.physicsValue}>{wind.toFixed(1)} m/s</Text>
                   </View>
-                  <View style={styles.physicsCell}>
-                    <Text style={styles.physicsKey}>VENTILATION (VI)</Text>
-                    <Text style={[styles.physicsVal, styles.textSky]}>
-                      {(evidence?.dispersionIndex.ventilationIndex || Math.round(pblh * wind)).toLocaleString()}{' '}
-                      <Text style={styles.unitText}>m²/s</Text>
-                    </Text>
-                    <Text style={styles.physicsSub}>Flush coefficient</Text>
+                  <View style={styles.physicsItem}>
+                    <Text style={styles.physicsLabel}>VENTILATION (VI)</Text>
+                    <Text style={[styles.physicsValue, styles.textSky]}>{vi.toLocaleString()} m²/s</Text>
                   </View>
-                  <View style={styles.physicsCell}>
-                    <Text style={styles.physicsKey}>TEMP / HUMIDITY</Text>
-                    <Text style={styles.physicsVal}>
-                      {temp.toFixed(0)}°C / {humidity.toFixed(0)}%
+                  <View style={styles.physicsItem}>
+                    <Text style={styles.physicsLabel}>DISPERSION</Text>
+                    <Text style={styles.physicsValueSmall} numberOfLines={1}>
+                      {vi < 2000 ? 'Critical Stagnation' : 'Restricted Dispersion'}
                     </Text>
-                    <Text style={styles.physicsSub}>Ground telemetry</Text>
                   </View>
                 </View>
+              </View>
 
-                {/* Dispersion Regime Banner */}
-                <View style={styles.dispersionBanner}>
-                  <Text style={styles.dispersionTitle}>DISPERSION REGIME:</Text>
-                  <Text style={styles.dispersionText}>
-                    {evidence?.dispersionIndex.regime ||
-                      (pblh * wind < 2000
-                        ? 'Critical Atmospheric Stagnation & Inversion Layer Trapping'
-                        : 'Restricted Atmospheric Dispersion')}
+              {/* 4. MCDA Source Attribution */}
+              <View style={styles.sectionCard}>
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.sectionTitle}>MCDA SOURCE ATTRIBUTION</Text>
+                  <Text style={styles.dominantTag}>DOMINANT: {dominantSource.toUpperCase()}</Text>
+                </View>
+
+                {/* Multi-Color Percentage Bar */}
+                <View style={styles.sourceBar}>
+                  <View style={[styles.sourceBarSegment, { width: `${trafficPct}%`, backgroundColor: '#0284c7' }]} />
+                  <View style={[styles.sourceBarSegment, { width: `${industryPct}%`, backgroundColor: '#e11d48' }]} />
+                  <View style={[styles.sourceBarSegment, { width: `${dustPct}%`, backgroundColor: '#d97706' }]} />
+                </View>
+
+                <View style={styles.sourceLegendRow}>
+                  <View style={styles.legendItem}>
+                    <View style={[styles.legendDot, { backgroundColor: '#0284c7' }]} />
+                    <Text style={styles.legendText}>Vehicular: <Text style={styles.textBold}>{trafficPct}%</Text></Text>
+                  </View>
+                  <View style={styles.legendItem}>
+                    <View style={[styles.legendDot, { backgroundColor: '#e11d48' }]} />
+                    <Text style={styles.legendText}>Industrial: <Text style={styles.textBold}>{industryPct}%</Text></Text>
+                  </View>
+                  <View style={styles.legendItem}>
+                    <View style={[styles.legendDot, { backgroundColor: '#d97706' }]} />
+                    <Text style={styles.legendText}>Road Dust: <Text style={styles.textBold}>{dustPct}%</Text></Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* 5. Key Geospatial Evidence */}
+              <View style={styles.sectionCard}>
+                <Text style={styles.sectionTitle}>KEY GEOSPATIAL EVIDENCE</Text>
+                <View style={styles.geoRow}>
+                  <Text style={styles.geoKey}>[TRAFFIC CORRIDOR]</Text>
+                  <Text style={styles.geoVal}>
+                    {evidence?.geospatialVerification.trafficDensity || 'Corridor speed deficit verified (-28% vs free-flow). Heavy transit volume on arterial road.'}
+                  </Text>
+                </View>
+                <View style={styles.geoRow}>
+                  <Text style={styles.geoKey}>[SATELLITE AOD]</Text>
+                  <Text style={styles.geoVal}>
+                    {evidence?.geospatialVerification.satelliteThermalAOD || `Satellite Aerosol Optical Depth ${(0.35 + pm25 / 380).toFixed(2)} indicates elevated boundary layer particulate burden.`}
+                  </Text>
+                </View>
+                <View style={styles.geoRow}>
+                  <Text style={styles.geoKey}>[OSM LAND USE]</Text>
+                  <Text style={styles.geoVal}>
+                    {evidence?.geospatialVerification.landUseFootprint && !evidence.geospatialVerification.landUseFootprint.includes('error')
+                      ? evidence.geospatialVerification.landUseFootprint
+                      : 'Urban transit nodes, commercial utilities, and residential clusters identified within 1.0 km radius via OpenStreetMap registry.'}
                   </Text>
                 </View>
               </View>
 
-              {/* 4. Multi-Criteria Source Attribution (MCDA) */}
+              {/* 6. Applicable Legal Basis */}
               <View style={styles.sectionCard}>
-                <View style={styles.sectionTitleRow}>
-                  <Text style={styles.sectionHeading}>4. MULTI-CRITERIA SOURCE APPORTIONMENT (MCDA)</Text>
-                  <Text style={styles.confidenceBadge}>
-                    {evidence?.confidence || 91}% Conformal Confidence
+                <Text style={styles.sectionTitle}>APPLICABLE LEGAL BASIS</Text>
+                <View style={styles.legalRow}>
+                  <View style={styles.legalBadge}>
+                    <Text style={styles.legalBadgeText}>
+                      {evidence?.statutoryBasis.code || stop.legalBasis || 'Air (P&CP) Act 1981 §31A'}
+                    </Text>
+                  </View>
+                  <Text style={styles.legalActText} numberOfLines={2}>
+                    {evidence?.statutoryBasis.act || 'Air (Prevention & Control of Pollution) Act 1981 / Environment Protection Act 1986'}
                   </Text>
                 </View>
+              </View>
 
-                {/* Proportional Multi-Color Bar */}
-                <View style={styles.sourceBarContainer}>
-                  <View
-                    style={[
-                      styles.sourceBarSegment,
-                      { width: `${evidence?.mcdaScores.trafficPct || 46}%`, backgroundColor: '#0284c7' },
-                    ]}
-                  />
-                  <View
-                    style={[
-                      styles.sourceBarSegment,
-                      { width: `${evidence?.mcdaScores.industryPct || 32}%`, backgroundColor: '#e11d48' },
-                    ]}
-                  />
-                  <View
-                    style={[
-                      styles.sourceBarSegment,
-                      { width: `${evidence?.mcdaScores.dustPct || 22}%`, backgroundColor: '#d97706' },
-                    ]}
-                  />
-                </View>
-
-                {/* Source Metrics Cards */}
-                <View style={styles.sourceCardsRow}>
-                  <View style={[styles.sourceCard, styles.borderSky]}>
-                    <Text style={styles.sourceCardTitle}>VEHICULAR</Text>
-                    <Text style={[styles.sourceCardVal, styles.textSky]}>
-                      {evidence?.mcdaScores.trafficPct || 46}%
-                    </Text>
-                    <Text style={styles.sourceCardScore}>
-                      Score: {evidence?.mcdaScores.trafficScore || 82}/100
-                    </Text>
-                  </View>
-                  <View style={[styles.sourceCard, styles.borderRose]}>
-                    <Text style={styles.sourceCardTitle}>INDUSTRIAL</Text>
-                    <Text style={[styles.sourceCardVal, styles.textRose]}>
-                      {evidence?.mcdaScores.industryPct || 32}%
-                    </Text>
-                    <Text style={styles.sourceCardScore}>
-                      Score: {evidence?.mcdaScores.industryScore || 58}/100
-                    </Text>
-                  </View>
-                  <View style={[styles.sourceCard, styles.borderAmber]}>
-                    <Text style={styles.sourceCardTitle}>ROAD DUST</Text>
-                    <Text style={[styles.sourceCardVal, styles.textAmber]}>
-                      {evidence?.mcdaScores.dustPct || 22}%
-                    </Text>
-                    <Text style={styles.sourceCardScore}>
-                      Score: {evidence?.mcdaScores.dustScore || 40}/100
-                    </Text>
-                  </View>
-                </View>
-
-                <Text style={styles.sourceConclusion}>
-                  Dominant Attribution:{' '}
-                  <Text style={styles.textBold}>
-                    {evidence?.dominantSource || stop.dominantSource || 'Vehicular Traffic'}
-                  </Text>
-                  . Validated via Multi-Criteria Decision Analysis with weak-supervision Random Forest classifier.
+              {/* 7. Collapsible Technical Details */}
+              <TouchableOpacity
+                style={styles.techToggle}
+                onPress={() => setShowTechnicalDetails(!showTechnicalDetails)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.techToggleText}>
+                  {showTechnicalDetails ? '[-] HIDE TECHNICAL DETAILS' : '[+] VIEW TECHNICAL DETAILS & SUB-INDICES'}
                 </Text>
-              </View>
+              </TouchableOpacity>
 
-              {/* 5. Geospatial Verification Footprint */}
-              <View style={styles.sectionCard}>
-                <Text style={styles.sectionHeading}>5. GEOSPATIAL CORROBORATION & PERIMETER FOOTPRINT</Text>
-
-                <View style={styles.geoItem}>
-                  <Text style={styles.geoKey}>[TRAFFIC FLOW & ARTERIAL SPEED DEFICIT]</Text>
-                  <Text style={styles.geoVal}>
-                    {evidence?.geospatialVerification.trafficDensity ||
-                      'Corridor speed deficit verified (-34% vs free-flow). Heavy transit load recorded on radial junction.'}
-                  </Text>
-                </View>
-
-                <View style={styles.geoItem}>
-                  <Text style={styles.geoKey}>[SATELLITE COLUMNAR AEROSOL (AOD)]</Text>
-                  <Text style={styles.geoVal}>
-                    {evidence?.geospatialVerification.satelliteThermalAOD ||
-                      `Aerosol Optical Depth is ${(0.35 + pm25 / 380).toFixed(2)}. Indicates elevated boundary layer smoke and fine fraction.`}
-                  </Text>
-                </View>
-
-                <View style={styles.geoItem}>
-                  <Text style={styles.geoKey}>[OSM LAND-USE & REGISTERED FOOTPRINT]</Text>
-                  <Text style={styles.geoVal}>
-                    {evidence?.geospatialVerification.landUseFootprint ||
-                      'Identified dense transit nodes and commercial utility footprint within 1.0 km radius via Overpass geospatial query.'}
-                  </Text>
-                </View>
-
-                <View style={styles.geoItem}>
-                  <Text style={styles.geoKey}>[SURFACE CRUSTAL DUST & CONSTRUCTION SIGNATURE]</Text>
-                  <Text style={styles.geoVal}>
-                    {evidence?.geospatialVerification.dustSignature ||
-                      `Coarse dust fraction verified (${(pm10 - pm25).toFixed(1)} µg/m³). Mechanical road sweeping and dust suppression applicable.`}
-                  </Text>
-                </View>
-              </View>
-
-              {/* 6. Statutory Authority & Legal Basis */}
-              <View style={styles.sectionCard}>
-                <Text style={styles.sectionHeading}>6. STATUTORY AUTHORITY & LEGAL POWERS</Text>
-                <View style={styles.legalHeaderRow}>
-                  <Text style={styles.legalBadge}>
-                    {evidence?.statutoryBasis.code || stop.legalBasis || 'Air (P&CP) Act 1981 §31A'}
-                  </Text>
-                  <Text style={styles.legalActTitle}>
-                    {evidence?.statutoryBasis.act || 'Air (Prevention & Control of Pollution) Act, 1981'}
-                  </Text>
-                </View>
-                <Text style={styles.legalMandateText}>
-                  {evidence?.statutoryBasis.mandate ||
-                    'Empowers municipal and state pollution enforcement squads to enter, inspect, take pollutant samples, and issue immediate stop-work or closure notices.'}
-                </Text>
-              </View>
-
-              {/* 7. Action Protocol & Squad Checklist */}
-              <View style={styles.sectionCard}>
-                <Text style={styles.sectionHeading}>7. OPERATIONAL ENFORCEMENT PROTOCOL</Text>
-                <View
-                  style={[
-                    styles.actionBanner,
-                    isFullInspection ? styles.actionBannerRed : styles.actionBannerSky,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.actionBannerText,
-                      isFullInspection ? styles.textRed : styles.textSky,
-                    ]}
-                  >
-                    {evidence?.recommendedAction.type ||
-                      (isFullInspection
-                        ? 'MANDATORY FULL PHYSICAL INSPECTION'
-                        : 'VERIFY FIRST (DRONE & OPTICAL SWEEP)')}
-                  </Text>
-                </View>
-                <Text style={styles.actionProtocolText}>
-                  {evidence?.recommendedAction.operationalProtocol ||
-                    'Deploy enforcement vehicle and multi-officer squad. Perform stack testing, issue stop-work notices to non-compliant units, and verify construction perimeter tarpaulin.'}
-                </Text>
-
-                <Text style={styles.checklistTitle}>REQUIRED SQUAD TOOLKIT & EVIDENCE CHECKLIST:</Text>
-                {(
-                  evidence?.recommendedAction.equipmentChecklist || [
-                    'Portable Laser Particulate Counter (PM2.5/PM10)',
-                    'Optical Gas Imaging / Flue Gas Analyzer',
-                    'Statutory Notice & Challan Book',
-                    'Drone Thermal Pinpointing Unit',
-                  ]
-                ).map((item, idx) => (
-                  <View key={idx} style={styles.checkRow}>
-                    <Text style={styles.checkIcon}>✓</Text>
-                    <Text style={styles.checkText}>{item}</Text>
+              {showTechnicalDetails && (
+                <View style={styles.techDetailsCard}>
+                  <View style={styles.techRow}>
+                    <Text style={styles.techKey}>PM2.5 / PM10 Fraction:</Text>
+                    <Text style={styles.techVal}>{(pm25 / Math.max(1, pm10)).toFixed(2)} (Fine Particulate Ratio)</Text>
                   </View>
-                ))}
-              </View>
+                  <View style={styles.techRow}>
+                    <Text style={styles.techKey}>PM2.5 NAAQS Limit:</Text>
+                    <Text style={styles.techVal}>{Math.round((pm25 / 60.0) * 100)}% of 24h Standard (60 µg/m³)</Text>
+                  </View>
+                  <View style={styles.techRow}>
+                    <Text style={styles.techKey}>PM10 NAAQS Limit:</Text>
+                    <Text style={styles.techVal}>{Math.round((pm10 / 100.0) * 100)}% of 24h Standard (100 µg/m³)</Text>
+                  </View>
+                  <View style={styles.techRow}>
+                    <Text style={styles.techKey}>IDW Spatial Interpolation:</Text>
+                    <Text style={styles.techVal}>Weighted inverse-distance power (p=2) across active sensors</Text>
+                  </View>
+                  <View style={styles.techRow}>
+                    <Text style={styles.techKey}>MCDA Conformal Confidence:</Text>
+                    <Text style={styles.techVal}>{evidence?.confidence || 92}% Prediction Set Reliability</Text>
+                  </View>
+                  <View style={styles.techRow}>
+                    <Text style={styles.techKey}>Statutory Mandate Scope:</Text>
+                    <Text style={styles.techVal}>{evidence?.statutoryBasis.mandate || 'Statutory authority to inspect emission sources and issue compliance notices.'}</Text>
+                  </View>
+                </View>
+              )}
             </ScrollView>
           )}
 
-          {/* Footer Action Button */}
-          <TouchableOpacity style={styles.dismissBtn} onPress={onClose} activeOpacity={0.8}>
-            <Text style={styles.dismissBtnText}>CONFIRM & RETURN TO DISPATCH CORRIDOR</Text>
-          </TouchableOpacity>
+          {/* Bottom Action Button */}
+          <View style={styles.bottomBar}>
+            {onViewOnMap && (
+              <TouchableOpacity
+                style={styles.mapBtn}
+                onPress={() => {
+                  onClose();
+                  onViewOnMap(stop);
+                }}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.mapBtnText}>VIEW ON ENFORCEMENT MAP</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={styles.doneBtn} onPress={onClose} activeOpacity={0.8}>
+              <Text style={styles.doneBtnText}>CLOSE DOSSIER</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </Modal>
@@ -531,21 +394,21 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
     justifyContent: 'flex-end',
   },
   modalContent: {
     backgroundColor: '#ffffff',
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
-    borderTopWidth: 1,
-    borderColor: '#e2e8f0',
-    padding: 16,
-    maxHeight: '92%',
-    shadowColor: '#0f172a',
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 24,
+    maxHeight: '90%',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 14,
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
     elevation: 8,
   },
   header: {
@@ -556,37 +419,31 @@ const styles = StyleSheet.create({
   },
   headerLeft: {
     flex: 1,
-    paddingRight: 10,
+    marginRight: 10,
   },
-  badgeLiveRow: {
+  headerBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
     marginBottom: 3,
+    gap: 5,
   },
-  liveBeacon: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: '#16a34a',
-  },
-  liveTagText: {
-    color: '#16a34a',
-    fontSize: 9.5,
+  headerTag: {
+    color: '#0284c7',
+    fontSize: 9,
     fontWeight: '800',
     letterSpacing: 0.4,
   },
-  timeTagText: {
+  headerTime: {
     color: '#64748b',
-    fontSize: 9.5,
+    fontSize: 9,
     fontWeight: '600',
   },
   headerTitle: {
     color: '#0f172a',
-    fontSize: 16.5,
+    fontSize: 16,
     fontWeight: '800',
   },
-  headerCoordSub: {
+  headerSubtitle: {
     color: '#64748b',
     fontSize: 10.5,
     fontWeight: '600',
@@ -623,7 +480,7 @@ const styles = StyleSheet.create({
   },
   kpiLabel: {
     color: '#64748b',
-    fontSize: 8.5,
+    fontSize: 8,
     fontWeight: '800',
     letterSpacing: 0.3,
     marginBottom: 2,
@@ -639,18 +496,18 @@ const styles = StyleSheet.create({
     marginVertical: 2,
   },
   loadingContainer: {
-    height: 240,
+    height: 200,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
   },
   loadingText: {
     color: '#64748b',
-    fontSize: 11.5,
+    fontSize: 11,
     fontWeight: '600',
   },
   scrollArea: {
-    maxHeight: 460,
+    maxHeight: 440,
     marginBottom: 10,
   },
   sectionCard: {
@@ -658,426 +515,274 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    padding: 12,
+    padding: 10,
     marginBottom: 8,
   },
-  sectionTitleRow: {
+  sectionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
-  sectionHeading: {
+  sectionTitle: {
     color: '#475569',
     fontSize: 9.5,
     fontWeight: '800',
     letterSpacing: 0.4,
-    marginBottom: 8,
+    marginBottom: 6,
   },
-  autoTag: {
+  aiBadge: {
     backgroundColor: '#f0f9ff',
     borderWidth: 1,
     borderColor: '#bae6fd',
-    paddingHorizontal: 5,
-    paddingVertical: 1.5,
-    borderRadius: 4,
-    marginBottom: 6,
-  },
-  autoTagText: {
-    color: '#0284c7',
-    fontSize: 8,
-    fontWeight: '800',
-  },
-  aiTag: {
-    backgroundColor: '#eff6ff',
-    borderWidth: 1,
-    borderColor: '#bfdbfe',
     paddingHorizontal: 6,
     paddingVertical: 1.5,
     borderRadius: 4,
-    marginBottom: 6,
+    marginBottom: 4,
   },
-  aiTagText: {
-    color: '#1d4ed8',
+  aiBadgeText: {
+    color: '#0369a1',
     fontSize: 8,
     fontWeight: '800',
-    letterSpacing: 0.3,
   },
-  geminiSummaryBox: {
+  aiSummaryContainer: {
     backgroundColor: '#f8fafc',
     borderRadius: 6,
     borderLeftWidth: 3.5,
     borderLeftColor: '#0284c7',
-    padding: 10,
-    marginBottom: 8,
+    padding: 9,
   },
-  geminiSummaryText: {
+  aiSummaryText: {
     color: '#0f172a',
     fontSize: 11.5,
     lineHeight: 16.5,
     fontWeight: '600',
   },
-  supportingFactsHeading: {
-    color: '#64748b',
-    fontSize: 8.5,
-    fontWeight: '800',
-    letterSpacing: 0.4,
-    marginBottom: 2,
-    marginTop: 2,
-  },
-  confidenceBadge: {
-    color: '#16a34a',
-    fontSize: 8.5,
-    fontWeight: '800',
-    backgroundColor: '#f0fdf4',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: '#bbf7d0',
-    marginBottom: 6,
-  },
-  rationaleContainer: {
-    gap: 5,
-  },
-  rationaleRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 6,
-  },
-  bulletDot: {
-    color: '#0284c7',
-    fontSize: 13,
-    lineHeight: 16,
-    fontWeight: '800',
-  },
-  rationaleText: {
-    flex: 1,
-    color: '#334155',
-    fontSize: 11,
-    lineHeight: 15.5,
-    fontWeight: '500',
-  },
-  pollutantRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 8,
-  },
-  pollutantCard: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    padding: 9,
-  },
-  pollutantTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 3,
-  },
-  pollutantName: {
-    color: '#475569',
-    fontSize: 9,
-    fontWeight: '800',
-  },
-  pollutantPct: {
-    fontSize: 9,
-    fontWeight: '800',
-  },
-  pollutantValue: {
-    color: '#0f172a',
-    fontSize: 15,
-    fontWeight: '800',
-    marginBottom: 3,
-  },
-  unitText: {
-    color: '#64748b',
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  metricTrack: {
-    height: 4,
-    backgroundColor: '#e2e8f0',
-    borderRadius: 2,
-    overflow: 'hidden',
-    marginBottom: 3,
-  },
-  metricBar: {
-    height: '100%',
-    borderRadius: 2,
-  },
-  subtext: {
-    color: '#64748b',
-    fontSize: 8.5,
-    fontWeight: '500',
-  },
-  gasesGrid: {
+  pollutantGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
-    marginBottom: 8,
   },
-  gasCell: {
-    width: '48.5%',
+  pollutantCell: {
+    width: '31%',
     backgroundColor: '#f8fafc',
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    padding: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+    alignItems: 'center',
   },
-  gasLabel: {
+  pollutantLabel: {
     color: '#64748b',
     fontSize: 8.5,
     fontWeight: '800',
     marginBottom: 2,
   },
-  gasVal: {
+  pollutantVal: {
     color: '#0f172a',
     fontSize: 12,
     fontWeight: '800',
   },
-  unitSmall: {
-    color: '#64748b',
-    fontSize: 9,
+  unitText: {
+    fontSize: 8,
     fontWeight: '600',
-  },
-  gasSub: {
     color: '#64748b',
-    fontSize: 8.5,
-    marginTop: 1,
-  },
-  ratioBanner: {
-    backgroundColor: '#f0f9ff',
-    borderRadius: 6,
-    borderLeftWidth: 3,
-    borderLeftColor: '#0284c7',
-    padding: 8,
-  },
-  ratioBannerTitle: {
-    color: '#0369a1',
-    fontSize: 8.5,
-    fontWeight: '800',
-    letterSpacing: 0.3,
-    marginBottom: 2,
-  },
-  ratioBannerDesc: {
-    color: '#334155',
-    fontSize: 10,
-    lineHeight: 14,
   },
   physicsGrid: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 8,
-  },
-  physicsCell: {
-    width: '48.5%',
+    justifyContent: 'space-between',
     backgroundColor: '#f8fafc',
     borderRadius: 6,
     borderWidth: 1,
     borderColor: '#e2e8f0',
     padding: 8,
   },
-  physicsKey: {
+  physicsItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  physicsLabel: {
     color: '#64748b',
-    fontSize: 8.5,
+    fontSize: 7.5,
     fontWeight: '800',
     marginBottom: 2,
   },
-  physicsVal: {
+  physicsValue: {
     color: '#0f172a',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
   },
-  physicsSub: {
-    color: '#64748b',
-    fontSize: 8.5,
-    marginTop: 1,
+  physicsValueSmall: {
+    color: '#ea580c',
+    fontSize: 9.5,
+    fontWeight: '800',
   },
-  dispersionBanner: {
-    backgroundColor: '#f8fafc',
-    borderRadius: 6,
-    borderLeftWidth: 3,
-    borderLeftColor: '#0284c7',
-    padding: 8,
-  },
-  dispersionTitle: {
-    color: '#0369a1',
+  dominantTag: {
+    color: '#0284c7',
     fontSize: 8.5,
     fontWeight: '800',
-    letterSpacing: 0.3,
-    marginBottom: 2,
+    backgroundColor: '#f0f9ff',
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#bae6fd',
+    marginBottom: 4,
   },
-  dispersionText: {
-    color: '#334155',
-    fontSize: 10,
-    lineHeight: 14,
-    fontWeight: '600',
-  },
-  sourceBarContainer: {
+  sourceBar: {
     flexDirection: 'row',
     height: 7,
     borderRadius: 3.5,
     overflow: 'hidden',
+    backgroundColor: '#e2e8f0',
     marginBottom: 8,
   },
   sourceBarSegment: {
     height: '100%',
   },
-  sourceCardsRow: {
+  sourceLegendRow: {
     flexDirection: 'row',
-    gap: 6,
-    marginBottom: 8,
+    justifyContent: 'space-around',
   },
-  sourceCard: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-    borderRadius: 6,
-    borderWidth: 1,
-    padding: 8,
+  legendItem: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
   },
-  borderSky: { borderColor: '#bae6fd' },
-  borderRose: { borderColor: '#fecdd3' },
-  borderAmber: { borderColor: '#fde68a' },
-  sourceCardTitle: {
-    color: '#64748b',
-    fontSize: 8,
-    fontWeight: '800',
-    marginBottom: 2,
+  legendDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
-  sourceCardVal: {
-    fontSize: 13.5,
-    fontWeight: '800',
-  },
-  sourceCardScore: {
-    color: '#64748b',
-    fontSize: 8,
-    fontWeight: '600',
-    marginTop: 1,
-  },
-  sourceConclusion: {
-    color: '#64748b',
+  legendText: {
+    color: '#475569',
     fontSize: 10,
-    lineHeight: 14,
+    fontWeight: '500',
   },
-  geoItem: {
-    backgroundColor: '#f8fafc',
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    padding: 8,
+  geoRow: {
     marginBottom: 6,
   },
   geoKey: {
-    color: '#475569',
+    color: '#0284c7',
     fontSize: 8.5,
     fontWeight: '800',
-    letterSpacing: 0.3,
-    marginBottom: 2,
+    marginBottom: 1,
   },
   geoVal: {
-    color: '#1e293b',
+    color: '#334155',
     fontSize: 10.5,
     lineHeight: 14.5,
     fontWeight: '500',
   },
-  legalHeaderRow: {
+  legalRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 6,
+    gap: 8,
   },
   legalBadge: {
-    backgroundColor: '#fef2f2',
+    backgroundColor: '#f1f5f9',
     borderWidth: 1,
-    borderColor: '#fecaca',
-    color: '#dc2626',
-    fontSize: 9.5,
-    fontWeight: '800',
+    borderColor: '#cbd5e1',
     paddingHorizontal: 6,
-    paddingVertical: 1.5,
+    paddingVertical: 3,
     borderRadius: 4,
   },
-  legalActTitle: {
+  legalBadgeText: {
     color: '#0f172a',
-    fontSize: 10.5,
-    fontWeight: '700',
-    flex: 1,
-  },
-  legalMandateText: {
-    color: '#475569',
-    fontSize: 10.5,
-    lineHeight: 14.5,
-  },
-  actionBanner: {
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    borderRadius: 5,
-    borderWidth: 1,
-    marginBottom: 6,
-  },
-  actionBannerRed: {
-    backgroundColor: '#fef2f2',
-    borderColor: '#fecaca',
-  },
-  actionBannerSky: {
-    backgroundColor: '#f0f9ff',
-    borderColor: '#bae6fd',
-  },
-  actionBannerText: {
-    fontSize: 9.5,
-    fontWeight: '800',
-    letterSpacing: 0.3,
-  },
-  actionProtocolText: {
-    color: '#334155',
-    fontSize: 10.5,
-    lineHeight: 14.5,
-    marginBottom: 8,
-  },
-  checklistTitle: {
-    color: '#475569',
     fontSize: 8.5,
     fontWeight: '800',
-    letterSpacing: 0.3,
-    marginBottom: 4,
   },
-  checkRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 3,
-  },
-  checkIcon: {
-    color: '#0284c7',
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  checkText: {
-    color: '#334155',
+  legalActText: {
+    flex: 1,
+    color: '#475569',
     fontSize: 10,
     fontWeight: '600',
   },
-  dismissBtn: {
-    backgroundColor: '#0284c7',
-    borderRadius: 6,
-    paddingVertical: 10,
+  techToggle: {
+    paddingVertical: 8,
     alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: '#f8fafc',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    marginBottom: 8,
   },
-  dismissBtnText: {
-    color: '#ffffff',
-    fontSize: 10.5,
+  techToggleText: {
+    color: '#64748b',
+    fontSize: 9,
     fontWeight: '800',
     letterSpacing: 0.3,
   },
-  textRed: { color: '#dc2626' },
-  textSky: { color: '#0284c7' },
-  textRose: { color: '#e11d48' },
-  textAmber: { color: '#d97706' },
-  textBold: { fontWeight: '700', color: '#0f172a' },
+  techDetailsCard: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 10,
+    marginBottom: 8,
+    gap: 6,
+  },
+  techRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  techKey: {
+    color: '#64748b',
+    fontSize: 9.5,
+    fontWeight: '700',
+    flex: 1,
+  },
+  techVal: {
+    color: '#334155',
+    fontSize: 9.5,
+    fontWeight: '600',
+    flex: 1,
+    textAlign: 'right',
+  },
+  bottomBar: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+  },
+  mapBtn: {
+    flex: 1,
+    backgroundColor: '#0284c7',
+    paddingVertical: 10,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mapBtnText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  doneBtn: {
+    flex: 1,
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    paddingVertical: 10,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  doneBtnText: {
+    color: '#334155',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  textRed: {
+    color: '#dc2626',
+  },
+  textSky: {
+    color: '#0284c7',
+  },
+  textBold: {
+    fontWeight: '800',
+  },
 });

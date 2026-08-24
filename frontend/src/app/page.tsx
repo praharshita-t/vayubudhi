@@ -181,9 +181,20 @@ export default function HomePage() {
 
   // Prefer real live hourly API telemetry over model extrapolation
   const rawHistoricalData = useMemo(() => {
-    if (realHistory.length > 0) return realHistory;
+    if (realHistory.length > 0) {
+      const copy = [...realHistory];
+      if (copy.length > 0 && avgAqi > 0) {
+        copy[copy.length - 1] = {
+          ...copy[copy.length - 1],
+          aqi: avgAqi,
+          pm25: avgPm25 > 0 ? avgPm25 : copy[copy.length - 1].pm25,
+          pm10: avgPm10 > 0 ? avgPm10 : copy[copy.length - 1].pm10
+        };
+      }
+      return copy;
+    }
     return generateHistoricalData(avgAqi, 24);
-  }, [realHistory, avgAqi]);
+  }, [realHistory, avgAqi, avgPm25, avgPm10]);
 
   const historicalData = useMemo(() => {
     const count = timeRange === '6h' ? 7 : timeRange === '12h' ? 13 : 25;

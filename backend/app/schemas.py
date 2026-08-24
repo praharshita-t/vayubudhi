@@ -84,3 +84,27 @@ class IngestResponse(BaseModel):
 class HealthStatus(BaseModel):
     status: str = Field(..., examples=["healthy"])
     database: str = Field(..., examples=["connected"])
+
+# Contract 6: Mobile dispatch alert
+class DispatchAlertRequest(BaseModel):
+    station_id: str = Field(..., examples=["ST_0"])
+    station_name: str = Field(..., examples=["Anand Vihar"])
+    lat: float = Field(..., examples=[28.6468])
+    lon: float = Field(..., examples=[77.316])
+    city: Optional[str] = Field(default="Delhi", examples=["Delhi"])
+    aqi: Optional[float] = Field(default=None, examples=[259])
+    pm25: Optional[float] = Field(default=None, examples=[57.5])
+    stage: Optional[str] = Field(default="dispatched", examples=["dispatched"])
+    attribution_set: Optional[List[str]] = Field(default=None, examples=[["vehicular", "biomass_burning"]])
+    confidence: Optional[float] = Field(default=None, examples=[0.92])
+    message: Optional[str] = Field(
+        default=None,
+        examples=["AQI spike detected — enforcement dispatched to Anand Vihar"],
+    )
+
+class DispatchAlertResponse(BaseModel):
+    status: str = Field(..., examples=["sent"])
+    notification_id: Optional[str] = Field(default=None, examples=["notif_20260824_001"])
+    channel: Optional[str] = Field(default=None, examples=["webhook"])
+    delivered_at: Optional[str] = Field(default=None, examples=["2026-08-24T18:30:00Z"])
+    error: Optional[str] = Field(default=None)

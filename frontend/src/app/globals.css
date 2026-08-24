@@ -842,6 +842,36 @@ body.dark {
   margin-top: 2px;
 }
 
+.pipeline-log-panel {
+  padding: 10px;
+}
+
+.pipeline-log {
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  line-height: 1.55;
+}
+
+.pipeline-log-empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.pipeline-log-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.pipeline-log-ts {
+  opacity: 0.75;
+}
+
 /* ── Validation Metrics ── */
 .metrics-grid {
   display: grid;

@@ -17,7 +17,7 @@ export default function SimulatorPanel({ onAlert, city, cityData, liveData }: Si
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const stations = cityData ? cityData.stations : [];
-  const iotSensor = stations.find((s: any) => s.source === 'iot') || stations[0];
+  const iotSensor = stations.find((s: any) => s.source === 'deployed' || s.source === 'iot') || stations[0];
 
   const startSimulation = () => {
     if (!iotSensor) return;

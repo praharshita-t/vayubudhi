@@ -376,14 +376,10 @@ def get_city_data(city: str):
             base_co = caq.get("carbon_monoxide", 1.0) / 1000 # convert ug/m3 to mg/m3 for NAQI
             base_o3 = caq.get("ozone", 30.0)
 
-            # Determine station source
-            source = "iot" if i % 5 == 0 else "caaqms"
-
-            # Apply Humidity Correction to PM2.5 ONLY if source is "iot"
-            if source == "iot":
-                corrected_pm25 = apply_humidity_correction(base_pm25, base_hum)
-            else:
-                corrected_pm25 = base_pm25
+            # Official CPCB/SPCB sites — portable deployed sensors are rendered
+            # on the map from district centroids, not from this station list.
+            source = "caaqms"
+            corrected_pm25 = base_pm25
 
             # Calibrate using full 6-pollutant Indian NAQI
             ml_aqi = calculate_full_naqi(corrected_pm25, base_pm10, base_no2, base_so2, base_co, base_o3)
@@ -422,7 +418,7 @@ def get_city_data(city: str):
                 id=f"ST_{i}", name=st["name"], lat=st["lat"], lon=st["lon"],
                 pm25=35.0, pm10=45.0, no2=20.0, so2=10.0, co=1.0, o3=30.0,
                 temp=28.0, humidity=60.0, pressure=1008.0, wind_speed=2.0, wind_dir=0.0, pblh=800.0,
-                aqi=100.0, source="iot" if i % 5 == 0 else "caaqms", status="online"
+                aqi=100.0, source="caaqms", status="online"
             ))
 
     if stations:

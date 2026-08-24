@@ -18,6 +18,7 @@ export interface Station {
   wind_speed?: number;
   wind_dir?: number;
   pblh?: number;
+  districtName?: string;
 }
 
 export type CityId = 'Delhi' | 'Hyderabad' | 'Guwahati' | 'My Location' | string;

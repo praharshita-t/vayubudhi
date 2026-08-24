@@ -1,5 +1,6 @@
 'use client';
 import React, { useState } from 'react';
+import { rankDistrictsMCDA, MCDADistrictRecommendation } from '@/utils/mcda';
 
 export interface EnforcementRoute {
   route_id: string;
@@ -7,14 +8,6 @@ export interface EnforcementRoute {
   vehicle_label: string;
   total_time_min: number;
   stops: any[];
-}
-
-interface MCDADistrictRecommendation {
-  district: any;
-  priorityScore: number;
-  dominantSource: 'Traffic' | 'Industrial' | 'Dust';
-  reason: string;
-  benefit: string;
 }
 
 interface OptimizerPanelProps {
@@ -51,71 +44,7 @@ export default function OptimizerPanel({ city = 'Delhi', cityData, liveData, dis
       return;
     }
 
-    // Rank districts using Multi-Criteria Decision Analysis (MCDA)
-    const scoredDistricts = districts.map((dist: any) => {
-      const pm25 = dist.pm25 || 0;
-      const pm10 = dist.pm10 || 0;
-      const aqi = dist.aqi || 0;
-      const no2 = dist.no2 || 0;
-      const so2 = dist.so2 || 0;
-      const co = dist.co || 0;
-      const windSpeed = dist.wind_speed || 2.0;
-      const humidity = dist.humidity || 50.0;
-      const pblh = dist.pblh || 800.0;
-
-      // 1. Severity sub-score
-      const pollutantSeverity = Math.min(100, (aqi / 300.0) * 100.0);
-
-      // 2. Pollution Source sub-scores
-      const trafficScore = Math.min(100, (no2 / 80.0) * 50.0 + (co / 2.0) * 50.0);
-      const industryScore = Math.min(100, (so2 / 40.0) * 50.0 + (pm25 / 60.0) * 50.0);
-      const dustScore = Math.min(100, (pm10 / 100.0) * 100.0);
-
-      const maxSourceScore = Math.max(trafficScore, industryScore, dustScore);
-      let dominantSource: 'Traffic' | 'Industrial' | 'Dust' = 'Dust';
-      if (maxSourceScore === trafficScore) {
-        dominantSource = 'Traffic';
-      } else if (maxSourceScore === industryScore) {
-        dominantSource = 'Industrial';
-      }
-
-      // 3. Stagnation / Micro-climate dispersion sub-score
-      const stagnationScore = 0.40 * Math.max(0, 100.0 - windSpeed * 10.0) +
-                              0.30 * humidity +
-                              0.30 * Math.max(0, 100.0 - (pblh / 1000.0) * 100.0);
-
-      // 4. Combined MCDA priority score
-      const priorityScore = roundScore(
-        0.40 * pollutantSeverity +
-        0.35 * maxSourceScore +
-        0.25 * stagnationScore
-      );
-
-      // Generate context-aware MCDA reason and benefit
-      let reason = '';
-      let benefit = '';
-      if (dominantSource === 'Traffic') {
-        reason = `High vehicular emissions load (NO₂: ${no2.toFixed(0)} µg/m³, CO: ${co.toFixed(1)} mg/m³) combined with atmospheric stagnation (wind speed < ${windSpeed.toFixed(1)} km/h) in ${dist.name}.`;
-        benefit = `Enables targeted mobile anti-smog gun triggers and real-time transit congestion alerts.`;
-      } else if (dominantSource === 'Industrial') {
-        reason = `Elevated chemical indicators (SO₂: ${so2.toFixed(0)} µg/m³, PM2.5: ${pm25.toFixed(0)} µg/m³) and low mixing layer (PBLH: ${pblh.toFixed(0)}m) indicating localized stack accumulation in ${dist.name}.`;
-        benefit = `Provides high-precision monitoring validation for industrial zone compliance sweeps.`;
-      } else {
-        reason = `Heavy coarse particulate concentration (PM10: ${pm10.toFixed(0)} µg/m³, AQI: ${aqi}) coupled with dry/windy stagnation in ${dist.name}.`;
-        benefit = `Supports immediate mechanical sweepers and construction water spraying dispatches.`;
-      }
-
-      return {
-        district: dist,
-        priorityScore,
-        dominantSource,
-        reason,
-        benefit
-      };
-    });
-
-    // Sort by MCDA priority score descending
-    scoredDistricts.sort((a, b) => b.priorityScore - a.priorityScore);
+    const scoredDistricts = rankDistrictsMCDA(districts);
     const topScored = scoredDistricts[0];
 
     setMcdaRecommendation(topScored);
@@ -429,10 +358,6 @@ export default function OptimizerPanel({ city = 'Delhi', cityData, liveData, dis
       ))}
     </div>
   );
-}
-
-function roundScore(val: number): number {
-  return Math.min(99.9, Math.max(10.0, Math.round(val * 10) / 10));
 }
 
 function RouteCard({ route, expanded, onToggle }: {

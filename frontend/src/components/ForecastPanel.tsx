@@ -84,7 +84,7 @@ export default function ForecastPanel({ city = 'Hyderabad', userCoords, liveData
     let targetSensor = hoveredLocation;
     
     if (!targetSensor || targetSensor.pm25 === undefined) {
-      targetSensor = stations.find((s: any) => s.source === 'iot') || stations[0];
+      targetSensor = stations.find((s: any) => s.source === 'deployed' || s.source === 'iot') || stations[0];
     }
     
     if (!targetSensor) return;

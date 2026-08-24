@@ -1,9 +1,10 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useCityContext } from '@/context/CityContext';
 import { getAqiCategory } from '@/utils/aqi';
-import { Station, CityId } from '@/types';
+import { recommendDeployments } from '@/utils/mcda';
+import { Station, CityId, RecommendedDeployment } from '@/types';
 
 const CityMap = dynamic(() => import('@/components/CityMap'), { ssr: false });
 const DeepDivePanel = dynamic(() => import('@/components/DeepDivePanel'), { ssr: false });
@@ -36,6 +37,24 @@ export default function LiveMapPage() {
   const [selectedDistrict, setSelectedDistrict] = useState<any>(null);
   const [monitoringLocation, setMonitoringLocation] = useState<{ lat: number; lon: number; name?: string } | null>(null);
   const [advisoryOpen, setAdvisoryOpen] = useState(false);
+
+  React.useEffect(() => {
+    setSelectedDistrict(null);
+  }, [activeCity]);
+
+  const recommendedDeployments: RecommendedDeployment[] = useMemo(() => {
+    if (!selectedDistrict || districts.length === 0) return [];
+    return recommendDeployments(districts, selectedDistrict.id, 5).map((rec) => ({
+      districtId: rec.district.id,
+      name: rec.district.name,
+      priorityScore: rec.priorityScore,
+      dominantSource: rec.dominantSource,
+      reason: rec.reason,
+      benefit: rec.benefit,
+      rank: rec.rank,
+      aqi: rec.district.aqi,
+    }));
+  }, [selectedDistrict, districts]);
 
   // Compute commander header metrics
   let avgAqi = 0;
@@ -126,6 +145,7 @@ export default function LiveMapPage() {
           selectedDistrictId={selectedDistrict?.id}
           onDistrictsComputed={() => {}}
           monitoringLocation={monitoringLocation}
+          recommendedDeployments={recommendedDeployments}
         />
 
         {selectedDistrict && (
@@ -134,6 +154,7 @@ export default function LiveMapPage() {
               district={selectedDistrict}
               city={activeCity}
               onReset={() => setSelectedDistrict(null)}
+              recommendedDeployments={recommendedDeployments}
             />
           </aside>
         )}

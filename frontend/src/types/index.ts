@@ -16,7 +16,20 @@ export interface Station {
   humidity?: number;
   pressure?: number;
   wind_speed?: number;
+  wind_dir?: number;
   pblh?: number;
+  districtName?: string;
 }
 
 export type CityId = 'Delhi' | 'Hyderabad' | 'Guwahati' | 'My Location' | string;
+
+export interface RecommendedDeployment {
+  districtId: string;
+  name: string;
+  priorityScore: number;
+  dominantSource: 'Traffic' | 'Industrial' | 'Dust';
+  reason: string;
+  benefit: string;
+  rank: number;
+  aqi: number;
+}

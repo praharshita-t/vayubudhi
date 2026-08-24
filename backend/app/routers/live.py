@@ -1,5 +1,6 @@
 import requests
 import os
+import time
 import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -27,6 +28,22 @@ except Exception as e:
         print(f"Failed local fallback: {e2}")
 
 router = APIRouter()
+
+
+def _get_with_retry(url: str, timeout: int = 10, retries: int = 3) -> requests.Response:
+    """Retry Open-Meteo requests — transient SSL/connection resets are common on Windows."""
+    last_err = None
+    for attempt in range(retries):
+        try:
+            resp = requests.get(url, timeout=timeout)
+            resp.raise_for_status()
+            return resp
+        except Exception as e:
+            last_err = e
+            if attempt < retries - 1:
+                time.sleep(1.0 * (attempt + 1))
+    raise last_err
+
 
 class LiveDataResponse(BaseModel):
     lat: float
@@ -82,8 +99,8 @@ def get_live_data(lat: float, lon: float):
     aq_url = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lon}&current=pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone,us_aqi"
     
     try:
-        weather_res = requests.get(weather_url, timeout=5)
-        aq_res = requests.get(aq_url, timeout=5)
+        weather_res = _get_with_retry(weather_url, timeout=8)
+        aq_res = _get_with_retry(aq_url, timeout=8)
         
         weather_data = weather_res.json()
         aq_data = aq_res.json()
@@ -207,6 +224,7 @@ class StationData(BaseModel):
     humidity: float = 50.0
     pressure: float = 1010.0
     wind_speed: float = 2.0
+    wind_dir: float = 0.0
     pblh: float = 800.0
     aqi: float
     source: str
@@ -293,7 +311,6 @@ CITY_CENTERS_BACKEND = {
 }
 
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor
 
 CITY_DATA_CACHE = {}        # key: city_name, value: (timestamp, CityDataResponse)
@@ -329,8 +346,8 @@ def get_city_data(city: str):
 
         # Concurrently fetch Weather and Air Quality APIs
         with ThreadPoolExecutor(max_workers=2) as executor:
-            future_weather = executor.submit(requests.get, weather_url, timeout=10)
-            future_aq = executor.submit(requests.get, aq_url, timeout=10)
+            future_weather = executor.submit(_get_with_retry, weather_url, 12, 3)
+            future_aq = executor.submit(_get_with_retry, aq_url, 12, 3)
             
             w_res = future_weather.result().json()
             aq_res = future_aq.result().json()
@@ -349,6 +366,7 @@ def get_city_data(city: str):
             base_hum = cw.get("relative_humidity_2m", 60.0)
             base_press = cw.get("surface_pressure", 1008.0)
             base_wind = cw.get("wind_speed_10m", 2.0)
+            base_wind_dir = cw.get("wind_direction_10m", 0.0)
             base_pblh = cw.get("boundary_layer_height", 800.0)
 
             base_pm25 = caq.get("pm2_5", 35.0)
@@ -358,14 +376,10 @@ def get_city_data(city: str):
             base_co = caq.get("carbon_monoxide", 1.0) / 1000 # convert ug/m3 to mg/m3 for NAQI
             base_o3 = caq.get("ozone", 30.0)
 
-            # Determine station source
-            source = "iot" if i % 5 == 0 else "caaqms"
-
-            # Apply Humidity Correction to PM2.5 ONLY if source is "iot"
-            if source == "iot":
-                corrected_pm25 = apply_humidity_correction(base_pm25, base_hum)
-            else:
-                corrected_pm25 = base_pm25
+            # Official CPCB/SPCB sites — portable deployed sensors are rendered
+            # on the map from district centroids, not from this station list.
+            source = "caaqms"
+            corrected_pm25 = base_pm25
 
             # Calibrate using full 6-pollutant Indian NAQI
             ml_aqi = calculate_full_naqi(corrected_pm25, base_pm10, base_no2, base_so2, base_co, base_o3)
@@ -386,6 +400,7 @@ def get_city_data(city: str):
                 humidity=base_hum,
                 pressure=base_press,
                 wind_speed=base_wind,
+                wind_dir=base_wind_dir,
                 pblh=base_pblh,
                 aqi=round(ml_aqi),
                 source=source,
@@ -402,8 +417,8 @@ def get_city_data(city: str):
             stations.append(StationData(
                 id=f"ST_{i}", name=st["name"], lat=st["lat"], lon=st["lon"],
                 pm25=35.0, pm10=45.0, no2=20.0, so2=10.0, co=1.0, o3=30.0,
-                temp=28.0, humidity=60.0, pressure=1008.0, wind_speed=2.0, pblh=800.0,
-                aqi=100.0, source="iot" if i % 5 == 0 else "caaqms", status="online"
+                temp=28.0, humidity=60.0, pressure=1008.0, wind_speed=2.0, wind_dir=0.0, pblh=800.0,
+                aqi=100.0, source="caaqms", status="online"
             ))
 
     if stations:
@@ -459,7 +474,7 @@ def get_city_historical(city: str = "Hyderabad", lat: float = None, lon: float =
     history = []
     try:
         url = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lon}&hourly=pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone&past_days=1&forecast_days=1"
-        res = requests.get(url, timeout=8).json()
+        res = _get_with_retry(url, timeout=10).json()
         
         times = res.get("hourly", {}).get("time", [])
         pm25s = res.get("hourly", {}).get("pm2_5", [])

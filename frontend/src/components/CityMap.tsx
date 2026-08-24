@@ -1,7 +1,7 @@
 'use client';
 import React, { useState, useMemo, useCallback } from 'react';
 import { getAqiCategory } from '@/utils/aqi';
-import { Station } from '@/types';
+import { Station, RecommendedDeployment } from '@/types';
 import { computeDelhiDistricts, District } from '@/data/delhiDistricts';
 import { computeHyderabadDistricts, computeGuwahatiDistricts, computeBengaluruDistricts } from '@/data/otherDistricts';
 import { createWindArrowLayers, useWindParticles, computeWindSummary } from './WindLayer';
@@ -208,7 +208,8 @@ export default function CityMap({
   onClick,
   selectedDistrictId,
   onDistrictsComputed,
-  monitoringLocation
+  monitoringLocation,
+  recommendedDeployments = [],
 }: { 
   alertStation?: Station | null, 
   city?: string, 
@@ -220,11 +221,13 @@ export default function CityMap({
   onClick?: (data: any) => void,
   selectedDistrictId?: string | null,
   onDistrictsComputed?: (districts: any[]) => void,
-  monitoringLocation?: { lat: number; lon: number; name?: string } | null
+  monitoringLocation?: { lat: number; lon: number; name?: string } | null;
+  recommendedDeployments?: RecommendedDeployment[];
 }) {
   const [hoveredHex, setHoveredHex] = useState<HexDataPoint | null>(null);
   const [hoveredDistrict, setHoveredDistrict] = useState<District | null>(null);
   const [hoveredStation, setHoveredStation] = useState<Station | null>(null);
+  const [hoveredRecommended, setHoveredRecommended] = useState<any | null>(null);
   const [viewState, setViewState] = useState<any>(getInitialViewState(city, userCoords));
   const [showSatellite, setShowSatellite] = useState(false);
   const [showWind, setShowWind] = useState(false);
@@ -268,6 +271,30 @@ export default function CityMap({
       return districtToDeployedSensor(district, lon, lat);
     });
   }, [dynamicDistricts, stations]);
+
+  const recommendedPins = useMemo(() => {
+    if (!recommendedDeployments.length) return [];
+    const placed: { lon: number; lat: number }[] = deployedSensors.map((s) => ({ lon: s.lon, lat: s.lat }));
+    const avoidBase = [...stations, ...placed];
+    return recommendedDeployments.map((rec) => {
+      const district = dynamicDistricts.find((d) => d.id === rec.districtId);
+      if (!district) return null;
+      const [lon, lat] = offsetInsideDistrict(district, [...avoidBase, ...placed], 0.45);
+      placed.push({ lon, lat });
+      return {
+        ...rec,
+        lat,
+        lon,
+        aqi: rec.aqi || district.aqi,
+        pm25: district.pm25,
+        pm10: district.pm10,
+        no2: district.no2,
+        so2: district.so2,
+        co: district.co,
+        o3: district.o3,
+      };
+    }).filter(Boolean) as any[];
+  }, [recommendedDeployments, dynamicDistricts, stations, deployedSensors]);
 
   React.useEffect(() => {
     if (onDistrictsComputed) {
@@ -672,6 +699,65 @@ export default function CityMap({
       );
     }
 
+    const recommendedLayers: any[] = [];
+    if (recommendedPins.length > 0) {
+      recommendedLayers.push(
+        new ScatterplotLayer({
+          id: 'recommended-glow',
+          data: recommendedPins,
+          pickable: false,
+          opacity: 0.4,
+          stroked: false,
+          filled: true,
+          radiusMinPixels: 14,
+          radiusMaxPixels: 32,
+          getPosition: (d: any) => [d.lon, d.lat],
+          getFillColor: [251, 191, 36, 90],
+          getRadius: 650,
+        }),
+        new ScatterplotLayer({
+          id: 'recommended-dots',
+          data: recommendedPins,
+          pickable: true,
+          opacity: 1,
+          stroked: true,
+          filled: true,
+          radiusMinPixels: 7,
+          radiusMaxPixels: 14,
+          lineWidthMinPixels: 2,
+          getPosition: (d: any) => [d.lon, d.lat],
+          getFillColor: [251, 191, 36, 255],
+          getLineColor: [255, 255, 255, 200],
+          getRadius: 420,
+          onHover: (info: any) => {
+            setHoveredRecommended(info.object || null);
+            if (info.object) {
+              setHoveredStation(null);
+              setHoveredDistrict(null);
+            }
+          },
+        }),
+        new TextLayer({
+          id: 'recommended-labels',
+          data: recommendedPins,
+          pickable: false,
+          getPosition: (d: any) => [d.lon, d.lat],
+          getText: (d: any) => `Recommend\n${d.name}`,
+          getSize: 7.5,
+          getColor: [251, 191, 36, 255],
+          getTextAnchor: 'middle' as const,
+          getAlignmentBaseline: 'bottom' as const,
+          getPixelOffset: [0, -14],
+          lineHeight: 1.15,
+          fontFamily: 'Inter, system-ui, sans-serif',
+          fontWeight: 700,
+          outlineWidth: 2,
+          outlineColor: [6, 8, 15, 220],
+          billboard: true,
+        })
+      );
+    }
+
     // Wind animation layers
     const windLayers: any[] = [];
     if (showWind) {
@@ -680,18 +766,30 @@ export default function CityMap({
     }
 
     if (dynamicDistricts.length > 0) {
-      return [satelliteLayer, districtLayer, stationGlowLayer, stationDotLayer, deployedGlowLayer, deployedDotLayer, deployedLabelLayer, alertLabelLayer, ...alertLayers, ...monitoringLayers, ...windLayers];
+      return [satelliteLayer, districtLayer, stationGlowLayer, stationDotLayer, deployedGlowLayer, deployedDotLayer, deployedLabelLayer, alertLabelLayer, ...alertLayers, ...monitoringLayers, ...recommendedLayers, ...windLayers];
     } else {
-      return [satelliteLayer, columnLayer, stationGlowLayer, stationDotLayer, deployedGlowLayer, deployedDotLayer, deployedLabelLayer, alertLabelLayer, ...alertLayers, ...monitoringLayers, ...windLayers];
+      return [satelliteLayer, columnLayer, stationGlowLayer, stationDotLayer, deployedGlowLayer, deployedDotLayer, deployedLabelLayer, alertLabelLayer, ...alertLayers, ...monitoringLayers, ...recommendedLayers, ...windLayers];
     }
-  }, [alertStation, stations, deployedSensors, hexGrid, city, hoveredDistrict, dynamicDistricts, showSatellite, monitoringLocation, selectedDistrictId, showWind, windArrowLayers, windParticleLayer]);
+  }, [alertStation, stations, deployedSensors, recommendedPins, hexGrid, city, hoveredDistrict, dynamicDistricts, showSatellite, monitoringLocation, selectedDistrictId, showWind, windArrowLayers, windParticleLayer]);
 
   const onViewStateChange = useCallback(({ viewState: vs }: any) => {
     setViewState(vs);
   }, []);
 
   // Build tooltip data — prefer a hovered deployed/CAAQMS pin over the district fill
-  const tooltipData = hoveredStation
+  const tooltipData = hoveredRecommended
+    ? {
+        name: `Recommend · ${hoveredRecommended.name}`,
+        aqi: hoveredRecommended.aqi,
+        pm25: hoveredRecommended.pm25,
+        pm10: hoveredRecommended.pm10,
+        no2: hoveredRecommended.no2,
+        so2: hoveredRecommended.so2,
+        co: hoveredRecommended.co,
+        o3: hoveredRecommended.o3,
+        type: `Recommended site · ${hoveredRecommended.dominantSource} · Score ${hoveredRecommended.priorityScore}`,
+      }
+    : hoveredStation
     ? {
           name: hoveredStation.name,
           aqi: hoveredStation.aqi,
@@ -869,6 +967,9 @@ export default function CityMap({
         <div className="legend-item"><div className="legend-dot" style={{ background: '#a855f7' }} />Industry (SO₂)</div>
         <div className="legend-item"><div className="legend-dot" style={{ background: '#eab308' }} />Dust (PM10)</div>
         <div className="legend-item"><div className="legend-dot" style={{ background: 'var(--accent-cyan)', boxShadow: '0 0 6px var(--accent-cyan)' }} />Deployed Sensor</div>
+        {recommendedPins.length > 0 && (
+          <div className="legend-item"><div className="legend-dot" style={{ background: '#fbbf24', boxShadow: '0 0 6px #fbbf24' }} />Recommended Site</div>
+        )}
       </div>
 
       {/* Hover tooltip — detailed district/station info */}

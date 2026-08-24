@@ -22,3 +22,14 @@ export interface Station {
 }
 
 export type CityId = 'Delhi' | 'Hyderabad' | 'Guwahati' | 'My Location' | string;
+
+export interface RecommendedDeployment {
+  districtId: string;
+  name: string;
+  priorityScore: number;
+  dominantSource: 'Traffic' | 'Industrial' | 'Dust';
+  reason: string;
+  benefit: string;
+  rank: number;
+  aqi: number;
+}

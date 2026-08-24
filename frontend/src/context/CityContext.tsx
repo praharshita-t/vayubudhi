@@ -67,14 +67,37 @@ export function CityProvider({ children }: { children: React.ReactNode }) {
     }
   }, [activeCity, userCoords]);
 
-  // Fetch city data for named cities
+  // Fetch city data for named cities with automatic retry
   useEffect(() => {
     if (activeCity !== 'My Location') {
+      let isMounted = true;
       setLiveLoading(true);
-      fetch(`http://127.0.0.1:8000/api/city-data?city=${activeCity}`)
-        .then((r) => r.json())
-        .then((data) => { setCityData(data); setLiveLoading(false); })
-        .catch(() => setLiveLoading(false));
+      
+      const fetchCity = (retryCount = 0) => {
+        fetch(`http://127.0.0.1:8000/api/city-data?city=${activeCity}`)
+          .then((r) => {
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return r.json();
+          })
+          .then((data) => {
+            if (isMounted) {
+              setCityData(data);
+              setLiveLoading(false);
+            }
+          })
+          .catch((err) => {
+            if (retryCount < 2) {
+              setTimeout(() => {
+                if (isMounted) fetchCity(retryCount + 1);
+              }, 1000);
+            } else if (isMounted) {
+              setLiveLoading(false);
+            }
+          });
+      };
+
+      fetchCity();
+      return () => { isMounted = false; };
     }
   }, [activeCity]);
 

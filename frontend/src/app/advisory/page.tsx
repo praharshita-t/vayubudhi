@@ -6,7 +6,7 @@ import { useCityContext } from '@/context/CityContext';
 const AdvisoryPanel = dynamic(() => import('@/components/AdvisoryPanel'), { ssr: false });
 
 export default function AdvisoryPage() {
-  const { activeCity, userCoords, liveData, cityData } = useCityContext();
+  const { activeCity, userCoords, liveData, cityData, districts } = useCityContext();
 
   return (
     <div className="page-wrapper">
@@ -25,7 +25,7 @@ export default function AdvisoryPage() {
         <div className="page-city-badge">{activeCity}</div>
       </div>
       <div className="page-content">
-        <AdvisoryPanel city={activeCity} userCoords={userCoords} liveData={liveData} cityData={cityData} />
+        <AdvisoryPanel city={activeCity} userCoords={userCoords} liveData={liveData} cityData={cityData} districts={districts} />
       </div>
     </div>
   );

@@ -1,35 +1,12 @@
 import os
-import joblib
-import numpy as np
-import pandas as pd
-from sklearn.metrics import mean_squared_error, r2_score, accuracy_score
-from sklearn.ensemble import RandomForestClassifier
-from xgboost import XGBRegressor, XGBClassifier
-import lightgbm as lgb
-from catboost import CatBoostRegressor
-from mapie.regression import SplitConformalRegressor
-from mapie.classification import SplitConformalClassifier
+import sys
+import subprocess
 
-from feature_engineering import build_features
-from source_labeling import assign_source_labels
+if __name__ == "__main__":
+    src_dir = os.path.dirname(os.path.abspath(__file__))
+    train_script = os.path.join(src_dir, "train_models.py")
+    subprocess.run([sys.executable, train_script], check=True)
 
-# Paths
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_PATH = os.path.join(BASE_DIR, '..', 'data', 'dataset_hyderabad_expanded.csv')
-MODEL_DIR = os.path.join(BASE_DIR, 'data')
-
-os.makedirs(MODEL_DIR, exist_ok=True)
-
-# Define feature columns
-FEATURES = [
-    'pm25_lag_1h', 'pm25_lag_3h', 'pm25_lag_6h', 'pm25_lag_12h', 'pm25_lag_24h',
-    'pm25_rolling_6h_mean', 'pm25_rolling_24h_mean', 'pm25_rolling_24h_std', 'pm25_delta_6h',
-    'temp_c', 'humidity', 'pressure_mb', 'wind_speed_ms', 'pblh',
-    'ventilation_index', 'stagnation_flag', 'pm_ratio',
-    'hour_sin', 'hour_cos', 'month_sin', 'month_cos',
-    'no2_so2_ratio', 'co_no2_ratio', 'o3_pm25_ratio',
-    'pm10', 'no2', 'so2', 'co', 'o3'
-]
 
 def create_time_series_split(df, train_frac=0.7, calib_frac=0.15):
     """Splits data strictly chronologically to prevent leakage."""

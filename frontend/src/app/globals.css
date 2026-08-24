@@ -683,8 +683,8 @@ body.dark {
   bottom: 96px;
   right: 28px;
   z-index: 999;
-  width: 380px;
-  max-height: 480px;
+  width: 440px;
+  max-height: 540px;
   background: var(--bg-primary);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-lg, 16px);

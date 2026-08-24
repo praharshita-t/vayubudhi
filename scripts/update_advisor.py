@@ -1,4 +1,6 @@
-"""
+import os
+
+code = '''"""
 Google Gemini API integration client.
 Constructs and generates Unified Multilingual Citizen Advisories:
 - Default: 24h State/City Forecast trajectory and comparative multi-district trend outlook.
@@ -162,17 +164,6 @@ DISTRICT_MICROCLIMATE_PROFILES = {
         'drivers_kn': 'ಕೃಷಿ ವಿಶ್ವವಿದ್ಯಾಲಯದ ಹಸಿರು ವಲಯ ಮತ್ತು ಶುದ್ಧ ನೈಸರ್ಗಿಕ ಗಾಳಿ',
         'dynamics_kn': 'ದಟ್ಟವಾದ ಮರಗಳಿಂದಾಗಿ ಗಾಳಿ ನೈಸರ್ಗಿಕವಾಗಿ ಶುದ್ಧವಾಗಿರುತ್ತದೆ.'
     },
-    'rajendra nagar': {
-        'character': 'agricultural university and lush southern green ecological belt',
-        'drivers': 'agricultural buffer vegetation, southern airflow, and minimal industrial load',
-        'dynamics': 'Extensive botanical tree canopies provide natural bio-filtration, maintaining the cleanest air in southern Hyderabad.',
-        'drivers_te': 'వ్యవసాయ విశ్వవిద్యాలయ పచ్చదనం, సహజ వృక్ష సంపద మరియు స్వచ్ఛమైన గాలి',
-        'dynamics_te': 'దట్టమైన చెట్ల వల్ల గాలి సహజంగా శుద్ధి చేయబడి నగరంలోనే అత్యంత స్వచ్ఛంగా ఉంటుంది.',
-        'drivers_hi': 'कृषि विश्वविद्यालय का हरित क्षेत्र, घने पेड़ और प्राकृतिक शुद्ध हवा',
-        'dynamics_hi': 'पेड़ों के घने आवरण से हवा प्राकृतिक रूप से साफ और शुद्ध रहती है।',
-        'drivers_kn': 'ಕೃಷಿ ವಿಶ್ವವಿದ್ಯಾಲಯದ ಹಸಿರು ವಲಯ ಮತ್ತು ಶುದ್ಧ ನೈಸರ್ಗಿಕ ಗಾಳಿ',
-        'dynamics_kn': 'ದಟ್ಟವಾದ ಮರಗಳಿಂದಾಗಿ ಗಾಳಿ ನೈಸರ್ಗಿಕವಾಗಿ ಶುದ್ಧವಾಗಿರುತ್ತದೆ.'
-    },
     'mehdipatnam': {
         'character': 'critical western commercial transit hub and airport corridor gateway',
         'drivers': 'dense diesel city bus fleet idling, PVNR Expressway corridor, and market congestion',
@@ -273,17 +264,6 @@ DISTRICT_MICROCLIMATE_PROFILES = {
         'dynamics_kn': 'ಮಧ್ಯಾಹ್ನ ವಾತಾವರಣ ಶುದ್ಧವಾಗಿರುತ್ತದೆ, ಸಂಜೆ ಟ್ರಾಫಿಕ್‌ನಿಂದ ಹೊಗೆ ಹೆಚ್ಚಬಹುದು.'
     },
     'chandanampet': {
-        'character': 'fast-growing western residential corridor along Mumbai Highway (NH65)',
-        'drivers': 'heavy tech commuter traffic, highway arterial transit, and active construction dust',
-        'dynamics': 'Open highway winds provide good midday clearance, though ongoing building activity elevates PM10 dust during dry afternoons.',
-        'drivers_te': 'ముంబై హైవేపై ట్రాఫిక్, ఐటీ ప్రయాణికులు మరియు భవన నిర్మాణాల దుమ్ము',
-        'dynamics_te': 'హైవే గాలి వల్ల పొగ త్వరగా చెదురుతుంది, కానీ నిర్మాణాల వల్ల దుమ్ము రేణువులు ఎక్కువగా ఉంటాయి.',
-        'drivers_hi': 'मुंबई हाईवे का ट्रैफिक, आईटी आवाजाही और निर्माण कार्यों की धूल',
-        'dynamics_hi': 'हाईवे की हवा से धुआं साफ होता है, पर निर्माण कार्यों के कारण धूल बनी रहती है।',
-        'drivers_kn': 'ಮುಂಬೈ ಹೆದ್ದಾರಿ ಸಂಚಾರ ಮತ್ತು ಕಟ್ಟಡ ಕಾಮಗಾರಿಗಳ ಧೂಳು',
-        'dynamics_kn': 'ಹೆದ್ದಾರಿಯ ಗಾಳಿಯಿಂದ ಹೊಗೆ ಕಡಿಮೆಯಾಗುತ್ತದೆ, ಆದರೆ ನಿರ್ಮಾಣದ ಧೂಳು ಇರುತ್ತದೆ.'
-    },
-    'chandanagar': {
         'character': 'fast-growing western residential corridor along Mumbai Highway (NH65)',
         'drivers': 'heavy tech commuter traffic, highway arterial transit, and active construction dust',
         'dynamics': 'Open highway winds provide good midday clearance, though ongoing building activity elevates PM10 dust during dry afternoons.',
@@ -503,6 +483,7 @@ DISTRICT_MICROCLIMATE_PROFILES = {
         'dynamics_kn': 'ದಟ್ಟವಾದ ಮರಗಳು ಗಾಳಿಯನ್ನು ನೈಸರ್ಗಿಕವಾಗಿ ಶುದ್ಧಗೊಳಿಸಿ ನಗರದಲ್ಲೇ ಅತ್ಯುತ್ತಮ ಗಾಳಿ ನೀಡುತ್ತವೆ.'
     }
 }
+
 
 class GeminiAdvisorClient:
     def __init__(self, api_key: str = None):
@@ -844,7 +825,7 @@ class GeminiAdvisorClient:
             else:
                 # Dynamic fallback derived from ML source attribution
                 if 'industr' in primary_source:
-                    char_desc = 'manufacturing & industrial cluster'
+                    char_desc = 'manufacturing & industrial manufacturing cluster'
                     drivers_desc = f'industrial boiler stack emissions ({primary_pct}%) and heavy freight transport ({secondary_pct}%)'
                     dyn_desc = 'Thermal inversion traps stack plumes near ground level during night and early morning hours.'
                     drivers_te = f'కర్మాగారాల బాయిలర్ల పొగ ({primary_pct}%) మరియు సరుకు లారీల రద్దీ ({secondary_pct}%)'
@@ -894,45 +875,69 @@ class GeminiAdvisorClient:
                 header = f'**{target_name} లో ప్రత్యక్ష వాతావరణం (AQI {live_aqi} • {cat_te} • PM2.5: {live_pm25} µg/m³):**'
                 summary = f'ప్రస్తుతం {target_name} లో గాలి నాణ్యత {cat_te} గా ఉంది. {src_text_te}. ఇక్కడ {drivers_te} ప్రధాన ప్రభావం చూపుతున్నాయి. {dyn_te}'
                 bullets = (
-                    f"\n\n• **వ్యాయామం:** {actions.get('workout', 'వ్యాయామాలకు అనుకూలం')}\n"
-                    f"• **కిటికీలు/గాలి:** {actions.get('ventilation', 'కిటికీలు తెరవండి')}\n"
-                    f"• **మాస్క్ సలహా:** {actions.get('mask', 'మాస్క్ అవసరం లేదు')}\n"
+                    f"
+
+• **వ్యాయామం:** {actions.get('workout', 'వ్యాయామాలకు అనుకూలం')}
+"
+                    f"• **కిటికీలు/గాలి:** {actions.get('ventilation', 'కిటికీలు తెరవండి')}
+"
+                    f"• **మాస్క్ సలహా:** {actions.get('mask', 'మాస్క్ అవసరం లేదు')}
+"
                     f"• **సున్నిత వర్గాలు:** {actions.get('vulnerable', 'జాగ్రత్త వహించండి')}"
                 )
-                full_text = f'{header}\n{summary}{bullets}'
+                full_text = f'{header}
+{summary}{bullets}'
 
             elif lang == 'Hindi':
                 header = f'**{target_name} में लाइव वायु गुणवत्ता (AQI {live_aqi} • {cat_hi} • PM2.5: {live_pm25} µg/m³):**'
                 summary = f'वर्तमान में {target_name} में वायु गुणवत्ता {cat_hi} है। {src_text_hi}। {drivers_hi} के कारण स्थानीय स्तर पर प्रभाव देखा जा रहा है। {dyn_hi}'
                 bullets = (
-                    f"\n\n• **बाहरी व्यायाम:** {actions.get('workout', 'सुरक्षित')}\n"
-                    f"• **हवादार कमरे:** {actions.get('ventilation', 'खिड़कियां खोलें')}\n"
-                    f"• **मास्क सलाह:** {actions.get('mask', 'आवश्यक नहीं')}\n"
+                    f"
+
+• **बाहरी व्यायाम:** {actions.get('workout', 'सुरक्षित')}
+"
+                    f"• **हवादार कमरे:** {actions.get('ventilation', 'खिड़कियां खोलें')}
+"
+                    f"• **मास्क सलाह:** {actions.get('mask', 'आवश्यक नहीं')}
+"
                     f"• **संवेदनशील समूह:** {actions.get('vulnerable', 'सावधानी रखें')}"
                 )
-                full_text = f'{header}\n{summary}{bullets}'
+                full_text = f'{header}
+{summary}{bullets}'
 
             elif lang == 'Kannada':
                 header = f'**{target_name} ನಲ್ಲಿ ನೇರ ವಾಯು ಗುಣಮಟ್ಟ (AQI {live_aqi} • {cat_kn}):**'
                 summary = f'ಪ್ರಸ್ತುತ {target_name} ನಲ್ಲಿ ಗಾಳಿ ಗುಣಮಟ್ಟ {cat_kn} ಆಗಿದೆ. {src_text_kn}. {drivers_kn} ಪ್ರಮುಖ ಕಾರಣವಾಗಿದೆ. {dyn_kn}'
                 bullets = (
-                    f"\n\n• **ವ್ಯಾಯಾಮ:** {actions.get('workout', 'ಸೂಕ್ತ')}\n"
-                    f"• **ವಾತಾಯನ:** {actions.get('ventilation', 'ತೆರೆಯಿರಿ')}\n"
-                    f"• **ಮಾಸ್ಕ್ ಸಲಹೆ:** {actions.get('mask', 'ಅಗತ್ಯವಿಲ್ಲ')}\n"
+                    f"
+
+• **ವ್ಯಾಯಾಮ:** {actions.get('workout', 'ಸೂಕ್ತ')}
+"
+                    f"• **ವಾತಾಯನ:** {actions.get('ventilation', 'ತೆರೆಯಿರಿ')}
+"
+                    f"• **ಮಾಸ್ಕ್ ಸಲಹೆ:** {actions.get('mask', 'ಅಗತ್ಯವಿಲ್ಲ')}
+"
                     f"• **ಸೂಕ್ಷ್ಮ ಜನರು:** {actions.get('vulnerable', 'ಎಚ್ಚರಿಕೆ')}"
                 )
-                full_text = f'{header}\n{summary}{bullets}'
+                full_text = f'{header}
+{summary}{bullets}'
 
             else: # English
                 header = f'**Live Conditions for {target_name} (AQI {live_aqi} • {cat_en} • PM2.5: {live_pm25} µg/m³):**'
                 summary = f'Air quality across {target_name} is currently {cat_en}. {src_text_en}. As a {char_desc}, the area is influenced by {drivers_desc}. {dyn_desc}'
                 bullets = (
-                    f"\n\n• **Outdoor Exercise:** {actions.get('workout', 'Safe for workouts')}\n"
-                    f"• **Home Ventilation:** {actions.get('ventilation', 'Open windows')}\n"
-                    f"• **Mask Advisory:** {actions.get('mask', 'No mask needed')}\n"
+                    f"
+
+• **Outdoor Exercise:** {actions.get('workout', 'Safe for workouts')}
+"
+                    f"• **Home Ventilation:** {actions.get('ventilation', 'Open windows')}
+"
+                    f"• **Mask Advisory:** {actions.get('mask', 'No mask needed')}
+"
                     f"• **Sensitive Groups:** {actions.get('vulnerable', 'Normal precautions')}"
                 )
-                full_text = f'{header}\n{summary}{bullets}'
+                full_text = f'{header}
+{summary}{bullets}'
 
         else: # Mode == 'city_forecast'
             if lang == 'Telugu':
@@ -945,12 +950,18 @@ class GeminiAdvisorClient:
                     summary = f'రాబోయే 24 గంటల్లో {city} లో కాలుష్యం పెరిగే అవకాశం ఉంది. {worst_str} వంటి రద్దీ ప్రదేశాలలో కాలుష్య తీవ్రత ఎక్కువగా ఉంటుంది.'
 
                 bullets = (
-                    f"\n\n• **వ్యాయామం:** {actions.get('workout', 'వ్యాయామాలకు అనుకూలం')}\n"
-                    f"• **కిటికీలు/గాలి:** {actions.get('ventilation', 'కిటికీలు తెరవండి')}\n"
-                    f"• **మాస్క్ సలహా:** {actions.get('mask', 'మాస్క్ అవసరం లేదు')}\n"
+                    f"
+
+• **వ్యాయామం:** {actions.get('workout', 'వ్యాయామాలకు అనుకూలం')}
+"
+                    f"• **కిటికీలు/గాలి:** {actions.get('ventilation', 'కిటికీలు తెరవండి')}
+"
+                    f"• **మాస్క్ సలహా:** {actions.get('mask', 'మాస్క్ అవసరం లేదు')}
+"
                     f"• **సున్నిత వర్గాలు:** {actions.get('vulnerable', 'జాగ్రత్త వహించండి')}"
                 )
-                full_text = f'{header}\n{summary}{bullets}'
+                full_text = f'{header}
+{summary}{bullets}'
 
             elif lang == 'Hindi':
                 header = f'**{city} क्षेत्र के लिए 24 घंटे का पूर्वानुमान (पूर्वानुमानित AQI {forecast_aqi} • {cat_hi}):**'
@@ -962,23 +973,35 @@ class GeminiAdvisorClient:
                     summary = f'अगले 24 घंटों में {city} में वायु प्रदूषण बढ़ने की संभावना है। {worst_str} जैसे औद्योगिक इलाकों में विशेष सतर्कता बरतें।'
 
                 bullets = (
-                    f"\n\n• **बाहरी व्यायाम:** {actions.get('workout', 'सुरक्षित')}\n"
-                    f"• **हवादार कमरे:** {actions.get('ventilation', 'खिड़कियां खोलें')}\n"
-                    f"• **मास्क सलाह:** {actions.get('mask', 'आवश्यक नहीं')}\n"
+                    f"
+
+• **बाहरी व्यायाम:** {actions.get('workout', 'सुरक्षित')}
+"
+                    f"• **हवादार कमरे:** {actions.get('ventilation', 'खिड़कियां खोलें')}
+"
+                    f"• **मास्क सलाह:** {actions.get('mask', 'आवश्यक नहीं')}
+"
                     f"• **संवेदनशील समूह:** {actions.get('vulnerable', 'सावधानी रखें')}"
                 )
-                full_text = f'{header}\n{summary}{bullets}'
+                full_text = f'{header}
+{summary}{bullets}'
 
             elif lang == 'Kannada':
                 header = f'**{city} ನಗರಕ್ಕೆ 24 ಗಂಟೆಗಳ ಮುನ್ಸೂಚನೆ (ಅಂದಾಜು AQI {forecast_aqi} • {cat_kn}):**'
                 summary = f'ಮುಂದಿನ 24 ಗಂಟೆಗಳಲ್ಲಿ {city} ನಲ್ಲಿ ವಾಯು ಗುಣಮಟ್ಟ {cat_kn} ಆಗಿರುವ ಸಾಧ್ಯತೆಯಿದೆ. {best_str} ಪ್ರದೇಶಗಳಲ್ಲಿ ಶುದ್ಧ ಗಾಳಿ ಇರುತ್ತದೆ, ಆದರೆ {worst_str} ಬಳಿ ಮಾಲಿನ್ಯ ಹೆಚ್ಚಿರಬಹುದು.'
                 bullets = (
-                    f"\n\n• **ವ್ಯಾಯಾಮ:** {actions.get('workout', 'ಸೂಕ್ತ')}\n"
-                    f"• **ವಾತಾಯನ:** {actions.get('ventilation', 'ತೆರೆಯಿರಿ')}\n"
-                    f"• **ಮಾಸ್ಕ್ ಸಲಹೆ:** {actions.get('mask', 'ಅಗತ್ಯವಿಲ್ಲ')}\n"
+                    f"
+
+• **ವ್ಯಾಯಾಮ:** {actions.get('workout', 'ಸೂಕ್ತ')}
+"
+                    f"• **ವಾತಾಯನ:** {actions.get('ventilation', 'ತೆರೆಯಿರಿ')}
+"
+                    f"• **ಮಾಸ್ಕ್ ಸಲಹೆ:** {actions.get('mask', 'ಅಗತ್ಯವಿಲ್ಲ')}
+"
                     f"• **ಸೂಕ್ಷ್ಮ ಜನರು:** {actions.get('vulnerable', 'ಎಚ್ಚರಿಕೆ')}"
                 )
-                full_text = f'{header}\n{summary}{bullets}'
+                full_text = f'{header}
+{summary}{bullets}'
 
             else: # English
                 header = f'**24-Hour Forecast Outlook for {city} Region (Projected AQI {forecast_aqi} • {cat_en}):**'
@@ -990,12 +1013,18 @@ class GeminiAdvisorClient:
                     summary = f'For {city} over the next 24 hours, air pollution is forecasted to elevate into the Unhealthy range. Corridors around **{worst_str}** will experience peak smog; vulnerable citizens should plan indoor activities.'
 
                 bullets = (
-                    f"\n\n• **Outdoor Exercise:** {actions.get('workout', 'Safe for normal exercise')}\n"
-                    f"• **Home Ventilation:** {actions.get('ventilation', 'Good time to ventilate')}\n"
-                    f"• **Mask Advisory:** {actions.get('mask', 'No mask required')}\n"
+                    f"
+
+• **Outdoor Exercise:** {actions.get('workout', 'Safe for normal exercise')}
+"
+                    f"• **Home Ventilation:** {actions.get('ventilation', 'Good time to ventilate')}
+"
+                    f"• **Mask Advisory:** {actions.get('mask', 'No mask required')}
+"
                     f"• **Sensitive Groups:** {actions.get('vulnerable', 'Sensitive individuals take precautions')}"
                 )
-                full_text = f'{header}\n{summary}{bullets}'
+                full_text = f'{header}
+{summary}{bullets}'
 
         # If live Gemini API key is configured, enrich the text with Gemini AI
         if self.model:
@@ -1043,3 +1072,7 @@ class GeminiAdvisorClient:
             },
             'actions': actions
         }
+'''
+
+with open(r'agent_advisor/src/gemini_client.py', 'w', encoding='utf-8') as f:
+    f.write(code)

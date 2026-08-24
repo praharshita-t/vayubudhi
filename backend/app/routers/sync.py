@@ -9,7 +9,7 @@ router = APIRouter()
 
 # Constants
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1myYlsoOTpXPPN9mKfZkEDrX_H5mlAiIPbM0HxA6L0OY/export?format=csv"
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 ML_DATA_DIR = os.path.join(BASE_DIR, 'ml_model', 'data')
 ML_SRC_DIR = os.path.join(BASE_DIR, 'ml_model', 'src')
 DATASET_PATH = os.path.join(ML_DATA_DIR, 'dataset.csv')
@@ -26,13 +26,13 @@ def run_sync_pipeline():
         print(f"Error running fetch_expanded_dataset.py: {e}")
         return False
         
-    # 2. Run train_models_v2.py
+    # 2. Run production train_models.py
     try:
-        print("Training models...")
-        train_script = os.path.join(ML_SRC_DIR, "train_models_v2.py")
+        print("Training models with physical PM2.5 targets...")
+        train_script = os.path.join(ML_SRC_DIR, "train_models.py")
         subprocess.run([sys.executable, train_script], cwd=BASE_DIR, check=True)
     except subprocess.CalledProcessError as e:
-        print(f"Error running train_models_v2.py: {e}")
+        print(f"Error running train_models.py: {e}")
         return False
         
     # 4. Hot-reload the models in the ML service

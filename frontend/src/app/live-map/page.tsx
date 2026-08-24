@@ -83,11 +83,10 @@ export default function LiveMapPage() {
             <optgroup label="Core Monitored Cities">
               <option value="Delhi">Delhi NCR</option>
               <option value="Hyderabad">Hyderabad</option>
-              <option value="Guwahati">Guwahati</option>
+              <option value="Bengaluru">Bengaluru</option>
             </optgroup>
             <optgroup label="Tier 1 Cities">
               <option value="Mumbai">Mumbai</option>
-              <option value="Bengaluru">Bengaluru</option>
               <option value="Chennai">Chennai</option>
               <option value="Kolkata">Kolkata</option>
               <option value="Pune">Pune</option>
@@ -98,6 +97,7 @@ export default function LiveMapPage() {
               <option value="Thiruvananthapuram">Thiruvananthapuram</option>
             </optgroup>
             <optgroup label="Tier 2 Cities">
+              <option value="Guwahati">Guwahati</option>
               <option value="Kanpur">Kanpur</option>
               <option value="Nagpur">Nagpur</option>
               <option value="Indore">Indore</option>
@@ -194,7 +194,15 @@ export default function LiveMapPage() {
             </button>
           </div>
           <div className="advisory-popup-body">
-            <AdvisoryPanel city={activeCity} userCoords={userCoords} liveData={liveData} cityData={cityData} />
+            <AdvisoryPanel
+              city={activeCity}
+              userCoords={userCoords}
+              liveData={liveData}
+              cityData={cityData}
+              selectedDistrict={selectedDistrict}
+              hoveredLocation={hoveredLocation}
+              districts={districts}
+            />
           </div>
         </div>
       )}

@@ -45,9 +45,8 @@ function idwForDistrict(centroid: [number, number], stations: any[]): Omit<Distr
         temp: s.temp || 30, humidity: s.humidity || 50, pressure: s.pressure || 1010, wind_speed: s.wind_speed || 2, pblh: s.pblh || 800
       };
     }
-    // Using power of 5 for Inverse Distance Weighting to preserve sharp, highly localized gradients 
-    // instead of smoothing them out over the whole city.
-    const w = 1 / Math.pow(dist, 5);
+    // Standard Inverse Distance Squared Weighting (p=2) for atmospheric spatial fields
+    const w = 1 / Math.pow(dist, 2);
     wSum += w;
     aqiS += w * (s.aqi || 0);
     pm25S += w * (s.pm25 || 0);
@@ -61,6 +60,10 @@ function idwForDistrict(centroid: [number, number], stations: any[]): Omit<Distr
     pressS += w * (s.pressure || 1010);
     windS += w * (s.wind_speed || 2);
     pblhS += w * (s.pblh || 800);
+  }
+
+  if (wSum === 0 || isNaN(wSum)) {
+    return { aqi: 50, pm25: 15, pm10: 30, no2: 25, so2: 10, co: 1.0, o3: 30, temp: 30, humidity: 50, pressure: 1010, wind_speed: 2, pblh: 800 };
   }
 
   return {

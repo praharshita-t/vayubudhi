@@ -18,6 +18,7 @@ export interface District {
   humidity: number;
   pressure: number;
   wind_speed: number;
+  wind_dir: number;
   pblh: number;
 }
 
@@ -28,9 +29,11 @@ function idwForDistrict(centroid: [number, number], stations: any[]): Omit<Distr
   let tempS = 0, humS = 0, pressS = 0, windS = 0, pblhS = 0;
 
   if (!stations || stations.length === 0) {
-    return { aqi: 0, pm25: 0, pm10: 0, no2: 0, so2: 0, co: 0, o3: 0, temp: 30, humidity: 50, pressure: 1010, wind_speed: 2, pblh: 800 };
+    return { aqi: 0, pm25: 0, pm10: 0, no2: 0, so2: 0, co: 0, o3: 0, temp: 30, humidity: 50, pressure: 1010, wind_speed: 2, wind_dir: 0, pblh: 800 };
   }
 
+  // Circular mean accumulators for wind direction
+  let windDirSinS = 0, windDirCosS = 0;
   for (const s of stations) {
     const dx = (s.lon - cLon) * 85;
     const dy = (s.lat - cLat) * 111;
@@ -38,7 +41,7 @@ function idwForDistrict(centroid: [number, number], stations: any[]): Omit<Distr
     if (dist < 0.01) {
       return { 
         aqi: s.aqi || 0, pm25: s.pm25 || 0, pm10: s.pm10 || 0, no2: s.no2 || 40, so2: s.so2 || 12, co: s.co || 1.5, o3: s.o3 || 30,
-        temp: s.temp || 30, humidity: s.humidity || 50, pressure: s.pressure || 1010, wind_speed: s.wind_speed || 2, pblh: s.pblh || 800
+        temp: s.temp || 30, humidity: s.humidity || 50, pressure: s.pressure || 1010, wind_speed: s.wind_speed || 2, wind_dir: s.wind_dir || 0, pblh: s.pblh || 800
       };
     }
     // Standard Inverse Distance Squared Weighting (p=2) for atmospheric spatial fields
@@ -55,6 +58,9 @@ function idwForDistrict(centroid: [number, number], stations: any[]): Omit<Distr
     humS += w * (s.humidity || 50);
     pressS += w * (s.pressure || 1010);
     windS += w * (s.wind_speed || 2);
+    const dirRad = ((s.wind_dir || 0) * Math.PI) / 180;
+    windDirSinS += w * Math.sin(dirRad);
+    windDirCosS += w * Math.cos(dirRad);
     pblhS += w * (s.pblh || 800);
   }
 
@@ -74,6 +80,7 @@ function idwForDistrict(centroid: [number, number], stations: any[]): Omit<Distr
     humidity: Math.round(humS / wSum),
     pressure: Math.round(pressS / wSum),
     wind_speed: Math.round((windS / wSum) * 10) / 10,
+    wind_dir: Math.round(((Math.atan2(windDirSinS / wSum, windDirCosS / wSum) * 180) / Math.PI + 360) % 360),
     pblh: Math.round(pblhS / wSum),
   };
 }

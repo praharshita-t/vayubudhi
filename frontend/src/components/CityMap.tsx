@@ -1,9 +1,10 @@
 'use client';
 import React, { useState, useMemo, useCallback } from 'react';
 import { getAqiCategory } from '@/utils/aqi';
-import { Station } from '@/types';
+import { Station, RecommendedDeployment } from '@/types';
 import { computeDelhiDistricts, District } from '@/data/delhiDistricts';
 import { computeHyderabadDistricts, computeGuwahatiDistricts, computeBengaluruDistricts } from '@/data/otherDistricts';
+import { createWindArrowLayers, useWindParticles, computeWindSummary } from './WindLayer';
 
 export interface HexDataPoint {
   lat: number;
@@ -90,6 +91,125 @@ function aqiToHeight(aqi: number): number {
   return Math.max(50, aqi * 15);
 }
 
+function isDeployed(d: Station): boolean {
+  return d.source === 'deployed' || d.source === 'iot';
+}
+
+function pointInPolygon(lon: number, lat: number, polygon: [number, number][]): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const [xi, yi] = polygon[i];
+    const [xj, yj] = polygon[j];
+    const intersect = ((yi > lat) !== (yj > lat)) &&
+      (lon < ((xj - xi) * (lat - yi)) / ((yj - yi) || 1e-12) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function distKm(lon1: number, lat1: number, lon2: number, lat2: number): number {
+  const dx = (lon1 - lon2) * 85;
+  const dy = (lat1 - lat2) * 111;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function nearestDistKm(lon: number, lat: number, points: { lon: number; lat: number }[]): number {
+  let min = Infinity;
+  for (const p of points) {
+    const d = distKm(lon, lat, p.lon, p.lat);
+    if (d < min) min = d;
+  }
+  return min;
+}
+
+/** Stable 0–1 hash so pins stay put across re-renders but differ per district. */
+function districtSeed(key: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0) / 4294967296;
+}
+
+/** Keep the pin in-district but offset from CAAQMS in a per-district direction. */
+function offsetInsideDistrict(
+  district: District,
+  avoid: { lon: number; lat: number }[],
+  minSepKm = 0.5
+): [number, number] {
+  const [cLon, cLat] = district.centroid;
+  const polygon = district.polygon;
+  const seedA = districtSeed(district.id);
+  const seedB = districtSeed(`${district.id}:${district.name}`);
+  const seedC = districtSeed(`${district.name}|${district.id}`);
+
+  const isClear = (lon: number, lat: number) =>
+    pointInPolygon(lon, lat, polygon) && nearestDistKm(lon, lat, avoid) >= minSepKm;
+
+  const preferredAngle = seedA * Math.PI * 2;
+  const preferredKm = 0.35 + seedB * 1.25; // 0.35–1.6 km
+  const jitter = (seedC - 0.5) * 0.35;
+
+  const dirs: [number, number][] = [];
+  for (let a = 0; a < 18; a++) {
+    const rad = preferredAngle + jitter + (a / 18) * Math.PI * 2;
+    dirs.push([Math.cos(rad), Math.sin(rad)]);
+  }
+
+  const steps = [preferredKm, preferredKm * 0.65, preferredKm * 1.2, 0.45, 0.75, 1.05, 1.4];
+  for (const stepKm of steps) {
+    for (const [ux, uy] of dirs) {
+      const lon = cLon + (ux * stepKm) / 85;
+      const lat = cLat + (uy * stepKm) / 111;
+      if (isClear(lon, lat)) return [lon, lat];
+    }
+  }
+
+  if (isClear(cLon, cLat)) return [cLon, cLat];
+
+  let best: [number, number] = [cLon, cLat];
+  let bestScore = nearestDistKm(cLon, cLat, avoid);
+  for (const stepKm of [0.3, 0.55, 0.85, 1.2]) {
+    for (const [ux, uy] of dirs) {
+      const lon = cLon + (ux * stepKm) / 85;
+      const lat = cLat + (uy * stepKm) / 111;
+      if (!pointInPolygon(lon, lat, polygon)) continue;
+      const score = nearestDistKm(lon, lat, avoid);
+      if (score > bestScore) {
+        bestScore = score;
+        best = [lon, lat];
+      }
+    }
+  }
+  return best;
+}
+
+function districtToDeployedSensor(d: District, lon: number, lat: number): Station {
+  return {
+    id: `DEPLOYED_${d.id}`,
+    name: `Deployed · ${d.name}`,
+    districtName: d.name,
+    lat,
+    lon,
+    pm25: d.pm25,
+    pm10: d.pm10,
+    no2: d.no2,
+    so2: d.so2,
+    co: d.co,
+    o3: d.o3,
+    aqi: d.aqi,
+    source: 'deployed',
+    status: 'online',
+    temp: d.temp,
+    humidity: d.humidity,
+    pressure: d.pressure,
+    wind_speed: d.wind_speed,
+    wind_dir: d.wind_dir,
+    pblh: d.pblh,
+  };
+}
+
 export default function CityMap({ 
   alertStation, 
   city = 'Delhi', 
@@ -101,7 +221,8 @@ export default function CityMap({
   onClick,
   selectedDistrictId,
   onDistrictsComputed,
-  monitoringLocation
+  monitoringLocation,
+  recommendedDeployments = [],
 }: { 
   alertStation?: Station | null, 
   city?: string, 
@@ -113,13 +234,16 @@ export default function CityMap({
   onClick?: (data: any) => void,
   selectedDistrictId?: string | null,
   onDistrictsComputed?: (districts: any[]) => void,
-  monitoringLocation?: { lat: number; lon: number; name?: string } | null
+  monitoringLocation?: { lat: number; lon: number; name?: string } | null;
+  recommendedDeployments?: RecommendedDeployment[];
 }) {
   const [hoveredHex, setHoveredHex] = useState<HexDataPoint | null>(null);
   const [hoveredDistrict, setHoveredDistrict] = useState<District | null>(null);
   const [hoveredStation, setHoveredStation] = useState<Station | null>(null);
+  const [hoveredRecommended, setHoveredRecommended] = useState<any | null>(null);
   const [viewState, setViewState] = useState<any>(getInitialViewState(city, userCoords));
   const [showSatellite, setShowSatellite] = useState(false);
+  const [showWind, setShowWind] = useState(false);
 
   const stations = useMemo(() => {
     if (city === 'My Location' && liveData) {
@@ -132,12 +256,17 @@ export default function CityMap({
         pm10: liveData.reading.pm10,
         no2: 40, so2: 12, co: 1.5, o3: 30,
         aqi: liveData.live_aqi,
-        source: 'iot' as const,
+        source: 'deployed' as const,
         status: 'online' as const
       }];
     }
     return cityData ? cityData.stations : [];
   }, [city, liveData, cityData, userCoords]);
+
+  // Wind animation layers (must be after stations is defined)
+  const windArrowLayers = useMemo(() => createWindArrowLayers(stations, showWind), [stations, showWind]);
+  const windParticleLayer = useWindParticles(stations, showWind, city);
+  const windSummary = useMemo(() => computeWindSummary(stations), [stations]);
 
   const dynamicDistricts = useMemo(() => {
     if (city === 'Delhi') return computeDelhiDistricts(stations);
@@ -146,6 +275,39 @@ export default function CityMap({
     if (city === 'Bengaluru') return computeBengaluruDistricts(stations);
     return [];
   }, [city, stations]);
+
+  const deployedSensors = useMemo(() => {
+    const placed: { lon: number; lat: number }[] = [];
+    return dynamicDistricts.map((district) => {
+      const [lon, lat] = offsetInsideDistrict(district, [...stations, ...placed]);
+      placed.push({ lon, lat });
+      return districtToDeployedSensor(district, lon, lat);
+    });
+  }, [dynamicDistricts, stations]);
+
+  const recommendedPins = useMemo(() => {
+    if (!recommendedDeployments.length) return [];
+    const placed: { lon: number; lat: number }[] = deployedSensors.map((s) => ({ lon: s.lon, lat: s.lat }));
+    const avoidBase = [...stations, ...placed];
+    return recommendedDeployments.map((rec) => {
+      const district = dynamicDistricts.find((d) => d.id === rec.districtId);
+      if (!district) return null;
+      const [lon, lat] = offsetInsideDistrict(district, [...avoidBase, ...placed], 0.45);
+      placed.push({ lon, lat });
+      return {
+        ...rec,
+        lat,
+        lon,
+        aqi: rec.aqi || district.aqi,
+        pm25: district.pm25,
+        pm10: district.pm10,
+        no2: district.no2,
+        so2: district.so2,
+        co: district.co,
+        o3: district.o3,
+      };
+    }).filter(Boolean) as any[];
+  }, [recommendedDeployments, dynamicDistricts, stations, deployedSensors]);
 
   React.useEffect(() => {
     if (onDistrictsComputed) {
@@ -355,10 +517,12 @@ export default function CityMap({
       },
     });
 
-    // Layer 2: Station glow rings
+    const caaqmsStations = stations;
+
+    // Layer 2: Station glow rings (official CAAQMS)
     const stationGlowLayer = new ScatterplotLayer<Station>({
       id: 'station-glow',
-      data: stations,
+      data: caaqmsStations,
       pickable: false,
       opacity: 0.25,
       stroked: false,
@@ -367,16 +531,29 @@ export default function CityMap({
       radiusMaxPixels: 24,
       getPosition: (d: Station) => [d.lon, d.lat],
       getFillColor: (d: Station) => {
-        if (d.source === 'iot') return [57, 210, 192, 80];
         const c = aqiToColor(d.aqi, 220);
         return [c[0], c[1], c[2], 60];
       },
-      getRadius: (d: Station) => d.source === 'iot' ? 500 : 300,
+      getRadius: 300,
+    });
+
+    const deployedGlowLayer = new ScatterplotLayer<Station>({
+      id: 'deployed-glow',
+      data: deployedSensors,
+      pickable: false,
+      opacity: 0.35,
+      stroked: false,
+      filled: true,
+      radiusMinPixels: 12,
+      radiusMaxPixels: 28,
+      getPosition: (d: Station) => [d.lon, d.lat],
+      getFillColor: [57, 210, 192, 90],
+      getRadius: 500,
     });
 
     // Helper to determine dominant pollution cause for distinct colored dots
     const getCauseColor = (d: Station): [number, number, number, number] => {
-      if (d.source === 'iot') return [57, 210, 192, 255]; // IoT sensors stay cyan
+      if (isDeployed(d)) return [57, 210, 192, 255];
       
       // Calculate a normalized score for each cause based on typical unhealthy thresholds
       const trafficScore = (d.no2 / 80) + (d.co / 2.0); // NO2 and CO
@@ -402,7 +579,7 @@ export default function CityMap({
     // Layer 3: Station core dots (Distinct colors for pollution causes)
     const stationDotLayer = new ScatterplotLayer<Station>({
       id: 'station-dots',
-      data: stations,
+      data: caaqmsStations,
       pickable: true,
       opacity: 1,
       stroked: true,
@@ -413,19 +590,58 @@ export default function CityMap({
       getPosition: (d: Station) => [d.lon, d.lat],
       getFillColor: getCauseColor,
       getLineColor: [255, 255, 255, 120] as [number, number, number, number],
-      getRadius: (d: Station) => d.source === 'iot' ? 350 : 200,
+      getRadius: 200,
       onHover: (info: any) => setHoveredStation(info.object || null),
     });
 
-    // Layer 4: Station name labels (IoT + alert stations only)
-    const labelLayer = new TextLayer<Station>({
-      id: 'station-labels',
-      data: stations.filter((s: Station) => s.source === 'iot' || s.status === 'alert'),
+    const deployedDotLayer = new ScatterplotLayer<Station>({
+      id: 'deployed-dots',
+      data: deployedSensors,
+      pickable: true,
+      opacity: 1,
+      stroked: true,
+      filled: true,
+      radiusMinPixels: 6,
+      radiusMaxPixels: 12,
+      lineWidthMinPixels: 2,
+      getPosition: (d: Station) => [d.lon, d.lat],
+      getFillColor: [57, 210, 192, 255],
+      getLineColor: [255, 255, 255, 160] as [number, number, number, number],
+      getRadius: 350,
+      onHover: (info: any) => {
+        setHoveredStation(info.object || null);
+        if (info.object) setHoveredDistrict(null);
+      },
+    });
+
+    // Layer 4: Labels — stacked "Deployed" / district name, plus alert CAAQMS names
+    const deployedLabelLayer = new TextLayer<Station>({
+      id: 'deployed-labels',
+      data: deployedSensors,
       pickable: false,
       getPosition: (d: Station) => [d.lon, d.lat],
-      getText: (d: Station) => d.source === 'iot' ? `IoT  ${d.aqi}` : d.name,
+      getText: (d: Station) => `Deployed\n${d.districtName || d.name}`,
+      getSize: 7.5,
+      getColor: [57, 210, 192, 255],
+      getTextAnchor: 'middle' as const,
+      getAlignmentBaseline: 'bottom' as const,
+      getPixelOffset: [0, -12],
+      lineHeight: 1.15,
+      fontFamily: 'Inter, system-ui, sans-serif',
+      fontWeight: 600,
+      outlineWidth: 2,
+      outlineColor: [6, 8, 15, 220],
+      billboard: true,
+    });
+
+    const alertLabelLayer = new TextLayer<Station>({
+      id: 'station-labels',
+      data: caaqmsStations.filter((s: Station) => s.status === 'alert' && !isDeployed(s)),
+      pickable: false,
+      getPosition: (d: Station) => [d.lon, d.lat],
+      getText: (d: Station) => d.name,
       getSize: 11,
-      getColor: (d: Station) => d.source === 'iot' ? [57, 210, 192, 255] : [230, 237, 243, 200],
+      getColor: [230, 237, 243, 200],
       getTextAnchor: 'middle' as const,
       getAlignmentBaseline: 'bottom' as const,
       getPixelOffset: [0, -14],
@@ -496,19 +712,114 @@ export default function CityMap({
       );
     }
 
-    if (dynamicDistricts.length > 0) {
-      return [satelliteLayer, districtLayer, stationGlowLayer, stationDotLayer, labelLayer, ...alertLayers, ...monitoringLayers];
-    } else {
-      return [satelliteLayer, columnLayer, stationGlowLayer, stationDotLayer, labelLayer, ...alertLayers, ...monitoringLayers];
+    const recommendedLayers: any[] = [];
+    if (recommendedPins.length > 0) {
+      recommendedLayers.push(
+        new ScatterplotLayer({
+          id: 'recommended-glow',
+          data: recommendedPins,
+          pickable: false,
+          opacity: 0.4,
+          stroked: false,
+          filled: true,
+          radiusMinPixels: 14,
+          radiusMaxPixels: 32,
+          getPosition: (d: any) => [d.lon, d.lat],
+          getFillColor: [251, 191, 36, 90],
+          getRadius: 650,
+        }),
+        new ScatterplotLayer({
+          id: 'recommended-dots',
+          data: recommendedPins,
+          pickable: true,
+          opacity: 1,
+          stroked: true,
+          filled: true,
+          radiusMinPixels: 7,
+          radiusMaxPixels: 14,
+          lineWidthMinPixels: 2,
+          getPosition: (d: any) => [d.lon, d.lat],
+          getFillColor: [251, 191, 36, 255],
+          getLineColor: [255, 255, 255, 200],
+          getRadius: 420,
+          onHover: (info: any) => {
+            setHoveredRecommended(info.object || null);
+            if (info.object) {
+              setHoveredStation(null);
+              setHoveredDistrict(null);
+            }
+          },
+        }),
+        new TextLayer({
+          id: 'recommended-labels',
+          data: recommendedPins,
+          pickable: false,
+          getPosition: (d: any) => [d.lon, d.lat],
+          getText: (d: any) => `Recommend\n${d.name}`,
+          getSize: 7.5,
+          getColor: [251, 191, 36, 255],
+          getTextAnchor: 'middle' as const,
+          getAlignmentBaseline: 'bottom' as const,
+          getPixelOffset: [0, -14],
+          lineHeight: 1.15,
+          fontFamily: 'Inter, system-ui, sans-serif',
+          fontWeight: 700,
+          outlineWidth: 2,
+          outlineColor: [6, 8, 15, 220],
+          billboard: true,
+        })
+      );
     }
-  }, [alertStation, stations, hexGrid, city, hoveredDistrict, dynamicDistricts, showSatellite, monitoringLocation, selectedDistrictId]);
+
+    // Wind animation layers
+    const windLayers: any[] = [];
+    if (showWind) {
+      windLayers.push(...windArrowLayers);
+      if (windParticleLayer) windLayers.push(windParticleLayer);
+    }
+
+    if (dynamicDistricts.length > 0) {
+      return [satelliteLayer, districtLayer, stationGlowLayer, stationDotLayer, deployedGlowLayer, deployedDotLayer, deployedLabelLayer, alertLabelLayer, ...alertLayers, ...monitoringLayers, ...recommendedLayers, ...windLayers];
+    } else {
+      return [satelliteLayer, columnLayer, stationGlowLayer, stationDotLayer, deployedGlowLayer, deployedDotLayer, deployedLabelLayer, alertLabelLayer, ...alertLayers, ...monitoringLayers, ...recommendedLayers, ...windLayers];
+    }
+  }, [alertStation, stations, deployedSensors, recommendedPins, hexGrid, city, hoveredDistrict, dynamicDistricts, showSatellite, monitoringLocation, selectedDistrictId, showWind, windArrowLayers, windParticleLayer]);
 
   const onViewStateChange = useCallback(({ viewState: vs }: any) => {
     setViewState(vs);
   }, []);
 
-  // Build tooltip data
-  const tooltipData = hoveredDistrict
+  // Build tooltip data — prefer a hovered deployed/CAAQMS pin over the district fill
+  const tooltipData = hoveredRecommended
+    ? {
+        name: `Recommend · ${hoveredRecommended.name}`,
+        aqi: hoveredRecommended.aqi,
+        pm25: hoveredRecommended.pm25,
+        pm10: hoveredRecommended.pm10,
+        no2: hoveredRecommended.no2,
+        so2: hoveredRecommended.so2,
+        co: hoveredRecommended.co,
+        o3: hoveredRecommended.o3,
+        type: `Recommended site · ${hoveredRecommended.dominantSource} · Score ${hoveredRecommended.priorityScore}`,
+      }
+    : hoveredStation
+    ? {
+          name: hoveredStation.name,
+          aqi: hoveredStation.aqi,
+          pm25: hoveredStation.pm25,
+          pm10: hoveredStation.pm10,
+          no2: hoveredStation.no2,
+          so2: hoveredStation.so2,
+          co: hoveredStation.co,
+          o3: hoveredStation.o3,
+          temp: (hoveredStation as any).temp,
+          humidity: (hoveredStation as any).humidity,
+          pressure: (hoveredStation as any).pressure,
+          wind_speed: (hoveredStation as any).wind_speed,
+          pblh: (hoveredStation as any).pblh,
+          type: isDeployed(hoveredStation) ? 'Deployed Sensor' : 'CAAQMS Station',
+        }
+    : hoveredDistrict
     ? {
         name: hoveredDistrict.name,
         aqi: hoveredDistrict.aqi,
@@ -525,23 +836,6 @@ export default function CityMap({
         pblh: hoveredDistrict.pblh,
         type: 'District',
       }
-    : hoveredStation
-      ? {
-          name: hoveredStation.name,
-          aqi: hoveredStation.aqi,
-          pm25: hoveredStation.pm25,
-          pm10: hoveredStation.pm10,
-          no2: hoveredStation.no2,
-          so2: hoveredStation.so2,
-          co: hoveredStation.co,
-          o3: hoveredStation.o3,
-          temp: (hoveredStation as any).temp,
-          humidity: (hoveredStation as any).humidity,
-          pressure: (hoveredStation as any).pressure,
-          wind_speed: (hoveredStation as any).wind_speed,
-          pblh: (hoveredStation as any).pblh,
-          type: hoveredStation.source === 'iot' ? 'IoT Sensor' : 'CAAQMS Station',
-        }
       : null;
 
   const tooltipCat = tooltipData ? getAqiCategory(tooltipData.aqi) : null;
@@ -582,8 +876,19 @@ export default function CityMap({
             CAMS NO₂ Overlay: <span className="chip-value" style={{ color: showSatellite ? 'var(--accent-cyan)' : 'inherit' }}>{showSatellite ? 'ON' : 'OFF'}</span>
           </button>
         )}
+        <button 
+          className={`map-stat-chip ${showWind ? 'active' : ''}`}
+          onClick={() => setShowWind(!showWind)}
+          style={{ 
+            cursor: 'pointer', 
+            border: showWind ? '1px solid rgba(200,220,255,0.6)' : '1px solid var(--border-primary)',
+            background: showWind ? 'rgba(200,220,255,0.1)' : 'var(--bg-secondary)'
+          }}
+        >
+          🌬️ Wind Flow: <span className="chip-value" style={{ color: showWind ? 'rgba(200,220,255,0.95)' : 'inherit' }}>{showWind ? 'ON' : 'OFF'}</span>
+        </button>
         <div className="map-stat-chip">
-          Stations Online: <span className="chip-value">{stations.filter((s: Station) => s.status !== 'offline').length}</span>
+          Stations Online: <span className="chip-value">{stations.filter((s: Station) => s.status !== 'offline').length + deployedSensors.length}</span>
         </div>
         <div className="map-stat-chip">
           Alerts Active: <span className="chip-value" style={{ color: 'var(--accent-red)' }}>{stations.filter((s: Station) => s.status === 'alert').length}</span>
@@ -626,12 +931,58 @@ export default function CityMap({
         </div>
       </div>
 
+      {/* Wind Compass Legend — shown when wind layer is active */}
+      {showWind && windSummary.speed > 0 && (
+        <div style={{
+          position: 'absolute', bottom: 80, left: 12, zIndex: 5,
+          background: 'var(--bg-surface)', backdropFilter: 'blur(12px)',
+          border: '1px solid rgba(200,220,255,0.2)', borderRadius: 'var(--radius-md)',
+          padding: '10px 14px', minWidth: 100,
+        }}>
+          <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
+            Wind Direction
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {/* Compass circle with rotated arrow */}
+            <div style={{
+              width: 40, height: 40, borderRadius: '50%',
+              border: '1px solid rgba(200,220,255,0.25)',
+              background: 'rgba(200,220,255,0.05)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              position: 'relative',
+            }}>
+              {/* N marker */}
+              <span style={{ position: 'absolute', top: 1, fontSize: '0.45rem', color: 'rgba(200,220,255,0.5)', fontWeight: 700 }}>N</span>
+              {/* Arrow — points in direction wind is going TO (windDir + 180) */}
+              <div style={{
+                transform: `rotate(${(windSummary.direction + 180) % 360}deg)`,
+                transition: 'transform 1s ease',
+                fontSize: '1.1rem',
+                lineHeight: 1,
+                color: 'rgba(200,220,255,0.9)',
+              }}>↑</div>
+            </div>
+            <div>
+              <div style={{ fontSize: '0.85rem', fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'rgba(200,220,255,0.9)' }}>
+                {windSummary.speed} m/s
+              </div>
+              <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>
+                From {windSummary.label}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Map Legend for Station Dots */}
       <div className="map-legend" style={{ left: 'auto', right: 12, bottom: 12, gap: '12px' }}>
         <div className="legend-item"><div className="legend-dot" style={{ background: '#ef4444' }} />Traffic (NO₂)</div>
         <div className="legend-item"><div className="legend-dot" style={{ background: '#a855f7' }} />Industry (SO₂)</div>
         <div className="legend-item"><div className="legend-dot" style={{ background: '#eab308' }} />Dust (PM10)</div>
-        <div className="legend-item"><div className="legend-dot" style={{ background: 'var(--accent-cyan)', boxShadow: '0 0 6px var(--accent-cyan)' }} />IoT Sensor</div>
+        <div className="legend-item"><div className="legend-dot" style={{ background: 'var(--accent-cyan)', boxShadow: '0 0 6px var(--accent-cyan)' }} />Deployed Sensor</div>
+        {recommendedPins.length > 0 && (
+          <div className="legend-item"><div className="legend-dot" style={{ background: '#fbbf24', boxShadow: '0 0 6px #fbbf24' }} />Recommended Site</div>
+        )}
       </div>
 
       {/* Hover tooltip — detailed district/station info */}

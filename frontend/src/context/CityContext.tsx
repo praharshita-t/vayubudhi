@@ -113,7 +113,7 @@ export function CityProvider({ children }: { children: React.ReactNode }) {
         pm10: liveData.reading.pm10,
         no2: 40, so2: 12, co: 1.5, o3: 30,
         aqi: liveData.live_aqi,
-        source: 'iot',
+        source: 'deployed',
         status: 'online',
       }];
     }

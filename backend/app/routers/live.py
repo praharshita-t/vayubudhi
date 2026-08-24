@@ -1,12 +1,12 @@
-import os
-import time
 import json
+import os
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Dict, Any
 
-import requests
 import pandas as pd
+import requests
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -192,6 +192,22 @@ def get_traffic_multiplier(lat: float, lon: float) -> float:
 
 router = APIRouter()
 
+
+def _get_with_retry(url: str, timeout: int = 10, retries: int = 3) -> requests.Response:
+    """Retry Open-Meteo requests — transient SSL/connection resets are common on Windows."""
+    last_err = None
+    for attempt in range(retries):
+        try:
+            resp = requests.get(url, timeout=timeout)
+            resp.raise_for_status()
+            return resp
+        except Exception as e:
+            last_err = e
+            if attempt < retries - 1:
+                time.sleep(1.0 * (attempt + 1))
+    raise last_err
+
+
 class LiveDataResponse(BaseModel):
     lat: float
     lon: float
@@ -210,8 +226,8 @@ def get_live_data(lat: float, lon: float):
     aq_url = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lon}&current=pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone,us_aqi"
     
     try:
-        weather_res = requests.get(weather_url, timeout=5)
-        aq_res = requests.get(aq_url, timeout=5)
+        weather_res = _get_with_retry(weather_url, timeout=8)
+        aq_res = _get_with_retry(aq_url, timeout=8)
         
         weather_data = weather_res.json()
         aq_data = aq_res.json()
@@ -342,6 +358,7 @@ class StationData(BaseModel):
     humidity: float = 50.0
     pressure: float = 1010.0
     wind_speed: float = 2.0
+    wind_dir: float = 0.0
     pblh: float = 800.0
     aqi: float
     source: str
@@ -634,6 +651,7 @@ def get_city_data(city: str):
             base_hum = cw.get("relative_humidity_2m", 60.0)
             base_press = cw.get("surface_pressure", 1008.0)
             base_wind = cw.get("wind_speed_10m", 2.0)
+            base_wind_dir = cw.get("wind_direction_10m", 0.0)
             base_pblh = cw.get("boundary_layer_height", 800.0)
 
             raw_pm25 = caq.get("pm2_5", 35.0)
@@ -655,7 +673,7 @@ def get_city_data(city: str):
                 lat=st["lat"], traffic_congestion=congestion
             )
 
-            source = "iot" if i % 5 == 0 else "caaqms"
+            source = "caaqms"
             total_aqi += dyn['aqi']
 
             stations.append(StationData(
@@ -673,6 +691,7 @@ def get_city_data(city: str):
                 humidity=round(float(base_hum), 1),
                 pressure=round(float(base_press), 1),
                 wind_speed=round(float(base_wind), 1),
+                wind_dir=round(float(base_wind_dir), 1),
                 pblh=round(float(base_pblh), 1),
                 aqi=dyn['aqi'],
                 source=source,
@@ -699,9 +718,9 @@ def get_city_data(city: str):
                 so2=dyn['so2'],
                 co=dyn['co'],
                 o3=30.0,
-                temp=28.0, humidity=60.0, pressure=1008.0, wind_speed=2.0, pblh=800.0,
+                temp=28.0, humidity=60.0, pressure=1008.0, wind_speed=2.0, wind_dir=0.0, pblh=800.0,
                 aqi=dyn['aqi'],
-                source="iot" if i % 5 == 0 else "caaqms",
+                source="caaqms",
                 status="alert" if dyn['aqi'] > 200 else "online"
             ))
 
@@ -760,7 +779,7 @@ def get_city_historical(city: str = "Hyderabad", lat: float = None, lon: float =
     history = []
     try:
         url = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lon}&hourly=pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone,us_aqi&past_days=1&forecast_days=1"
-        res = requests.get(url, timeout=8).json()
+        res = _get_with_retry(url, timeout=10).json()
         
         times = res.get("hourly", {}).get("time", [])
         pm25s = res.get("hourly", {}).get("pm2_5", [])

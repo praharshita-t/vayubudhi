@@ -6,7 +6,7 @@ import {
   LineChart, Line
 } from 'recharts';
 
-export default function DeepDivePanel({ district, city, onReset }: { district: any, city: string, onReset: () => void }) {
+export default function DeepDivePanel({ district, city, onReset, recommendedDeployments = [] }: { district: any, city: string, onReset: () => void, recommendedDeployments?: any[] }) {
   const [attribution, setAttribution] = useState<any>(null);
   const [fingerprint, setFingerprint] = useState<any>(null);
   const [shap, setShap] = useState<any>(null);
@@ -142,6 +142,56 @@ export default function DeepDivePanel({ district, city, onReset }: { district: a
           ✕ Close
         </button>
       </div>
+
+      {recommendedDeployments.length > 0 && (
+        <div className="panel" style={{ background: 'var(--bg-surface)', border: '1px solid rgba(251, 191, 36, 0.35)' }}>
+          <div className="panel-header" style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-primary)' }}>
+            <div className="panel-title" style={{ fontSize: '0.82rem', fontWeight: 700, color: '#fbbf24' }}>
+              Recommended Portable Sensor Sites
+            </div>
+            <div style={{ fontSize: '0.58rem', color: 'var(--text-muted)' }}>
+              MCDA · {city} · gold pins on map
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '10px 12px 12px' }}>
+            {recommendedDeployments.map((rec: any, i: number) => {
+              const sourceColor = rec.dominantSource === 'Traffic' ? '#ef4444' : rec.dominantSource === 'Industrial' ? '#a855f7' : '#eab308';
+              const isHere = rec.districtId === district.id;
+              return (
+                <div key={rec.districtId} style={{
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  background: isHere ? 'rgba(251, 191, 36, 0.12)' : 'var(--bg-elevated)',
+                  border: isHere ? '1px solid rgba(251, 191, 36, 0.45)' : '1px solid var(--border-primary)',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                    <div>
+                      <div style={{ fontSize: '0.78rem', fontWeight: 700 }}>
+                        #{i + 1} {rec.name}{isHere ? ' · this district' : ''}
+                      </div>
+                      <div style={{ fontSize: '0.62rem', color: 'var(--text-secondary)', marginTop: 3, lineHeight: 1.4 }}>
+                        {rec.reason}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+                      <div style={{
+                        fontSize: '0.62rem', fontWeight: 700, color: '#fbbf24',
+                        background: 'rgba(251, 191, 36, 0.12)', border: '1px solid rgba(251, 191, 36, 0.4)',
+                        borderRadius: 4, padding: '2px 6px',
+                      }}>
+                        {rec.priorityScore.toFixed(1)}
+                      </div>
+                      <div style={{ fontSize: '0.55rem', fontWeight: 700, color: sourceColor }}>
+                        {rec.dominantSource}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Section 1: Headline Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>

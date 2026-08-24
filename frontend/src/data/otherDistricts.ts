@@ -65,7 +65,7 @@ function idwForDistrict(centroid: [number, number], stations: any[]): Omit<Distr
   }
 
   if (wSum === 0 || isNaN(wSum)) {
-    return { aqi: 50, pm25: 15, pm10: 30, no2: 25, so2: 10, co: 1.0, o3: 30, temp: 30, humidity: 50, pressure: 1010, wind_speed: 2, pblh: 800 };
+    return { aqi: 50, pm25: 15, pm10: 30, no2: 25, so2: 10, co: 1.0, o3: 30, temp: 30, humidity: 50, pressure: 1010, wind_speed: 2, wind_dir: 0, pblh: 800 };
   }
 
   return {

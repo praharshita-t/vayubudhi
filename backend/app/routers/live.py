@@ -71,39 +71,40 @@ def compute_fully_dynamic_pollution(
     traffic_congestion: float = 0.25
 ) -> dict:
     """
-    Continuous Physical Atmospheric Conservation & Chemical Transport Equation.
-    Operates dynamically 24/7/365 across all global coordinates without any hardcoded city/station lists.
+    Continuous 24/7 Physical Atmospheric Conservation & Chemical Transport Equation.
+    Dynamically couples diurnal planetary boundary layer height (PBLH) convection, barometric
+    hydrostatic altitudinal scaling, and micro-urban street canopy traffic entrapment across all 24 hours.
     """
     # 1. Barometric Hydrostatic Altitudinal Scaling
     p_ref = 1013.25
     p_ratio = p_ref / max(700.0, pressure)
-    altitudinal_factor = math.pow(p_ratio, 1.35)
+    altitudinal_factor = math.pow(p_ratio, 0.50)
     
-    # 2. Convective Atmospheric Boundary Layer Dispersion (Box Model Mass Conservation)
-    pblh_clamped = max(200.0, min(3000.0, pblh))
-    ventilation_factor = math.pow(800.0 / pblh_clamped, 0.45) * math.pow(2.8 / max(0.8, wind), 0.30)
+    # 2. Convective Atmospheric Boundary Layer Dispersion
+    # Bounded to [0.75, 1.35] to prevent runaway spikes during shallow night inversions
+    pblh_eff = max(100.0, min(3000.0, pblh))
+    ventilation_scalar = math.pow(600.0 / pblh_eff, 0.22) * math.pow(3.0 / max(1.2, wind), 0.18)
+    dispersion_factor = max(0.75, min(1.35, ventilation_scalar))
     
-    # 3. Secondary Organic Aerosols (SOA) Photochemical Formation
-    soa_formation = ((raw_no2 or 15.0) * 0.22 + (raw_so2 or 8.0) * 0.25) * min(1.3, ventilation_factor)
+    # 3. Dynamic Micro-Urban Canopy Baseline (breathes naturally with diurnal convection)
+    # Deep convective afternoon (PBLH > 1500m) naturally flushes urban floor;
+    # Stagnant nocturnal inversion (PBLH < 250m) and rush-hour traffic traps localized exhaust.
+    diurnal_vent_coupling = math.pow(800.0 / pblh_eff, 0.20)
+    urban_canopy_floor_pm25 = (22.0 * diurnal_vent_coupling) + (14.0 * traffic_congestion)
     
-    # 4. Urban Ground-Level Anthropogenic Baseline
-    urban_baseline_pm25 = 7.5 * ventilation_factor
+    # 4. Continuous Mass Conservation PM2.5 calculation
+    pm25_satellite_contrib = (raw_pm25 or 15.0) * altitudinal_factor * dispersion_factor * 0.75
+    final_pm25 = max(urban_canopy_floor_pm25, pm25_satellite_contrib + (urban_canopy_floor_pm25 * 0.35))
     
-    # 5. Dynamic PM2.5 calculation
-    pm25_background = raw_pm25 * altitudinal_factor * ventilation_factor * 0.78
-    traffic_pm25_injection = 15.0 * traffic_congestion * ventilation_factor
-    final_pm25 = max(5.0, pm25_background + urban_baseline_pm25 + soa_formation + traffic_pm25_injection)
+    # 5. Dynamic PM10 calculation
+    dust_contrib = (dust or 0.0) * 0.25
+    pm10_satellite_contrib = (raw_pm10 or 30.0) * altitudinal_factor * dispersion_factor * 0.80
+    final_pm10 = max(final_pm25 * 1.35, pm10_satellite_contrib + dust_contrib + (18.0 * diurnal_vent_coupling))
     
-    # 6. Dynamic PM10 calculation
-    dust_val = (dust or 0.0)
-    dust_contribution = dust_val * 0.18 * ventilation_factor
-    traffic_pm10_injection = 25.0 * traffic_congestion * ventilation_factor
-    final_pm10 = max(final_pm25 * 1.35, (raw_pm10 * altitudinal_factor * ventilation_factor * 0.70) + dust_contribution + traffic_pm10_injection + 10.0 * ventilation_factor)
-    
-    # 7. Gaseous Pollutants
-    final_no2 = max(5.0, (raw_no2 or 15.0) * (1.0 + traffic_congestion * 0.4))
-    final_so2 = max(2.0, (raw_so2 or 8.0) * ventilation_factor)
-    final_co = max(0.2, (raw_co or 500.0) / 1000.0 * (1.0 + traffic_congestion * 0.4))
+    # 6. Gaseous Pollutants
+    final_no2 = max(5.0, (raw_no2 or 15.0) * (1.0 + traffic_congestion * 0.3))
+    final_so2 = max(2.0, (raw_so2 or 8.0))
+    final_co = max(0.2, (raw_co or 500.0) / 1000.0 * (1.0 + traffic_congestion * 0.3))
     
     aqi_pm25 = calc_epa_pm25_aqi(final_pm25)
     aqi_pm10 = calc_epa_pm10_aqi(final_pm10)
@@ -141,25 +142,25 @@ def get_traffic_multipliers_bulk(station_list: list) -> dict:
         key, lat, lon = item
         try:
             url = f"https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json?point={lat},{lon}&unit=KMPH&key={TOMTOM_API_KEY}"
-            res = requests.get(url, timeout=1.2).json()
+            res = requests.get(url, timeout=0.8).json()
             flow = res.get("flowSegmentData", {})
             current = flow.get("currentSpeed", 1)
             free = flow.get("freeFlowSpeed", 1)
             if free <= 0:
-                congestion = 0.2
+                congestion = 0.25
             else:
                 congestion = max(0.0, min(1.0, (free - current) / free))
             with CACHE_LOCK:
                 TRAFFIC_CACHE[key] = {'val': congestion, 'time': now}
             return key, congestion
         except Exception:
-            return key, 0.2
+            return key, 0.25
 
-    with ThreadPoolExecutor(max_workers=min(12, len(to_fetch))) as executor:
+    with ThreadPoolExecutor(max_workers=min(8, len(to_fetch))) as executor:
         futures = [executor.submit(fetch_single, item) for item in to_fetch]
         for f in futures:
             try:
-                k, v = f.result()
+                k, v = f.result(timeout=1.0)
                 results[k] = v
             except Exception:
                 pass
@@ -604,38 +605,13 @@ def get_city_data(city: str):
         # 2. Bulk Air Quality (Including Aerosol Optical Depth & Atmospheric Dust)
         aq_url = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lats_str}&longitude={lons_str}&current=pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone,aerosol_optical_depth,dust"
 
-        headers = {"User-Agent": "VayuBudhi/1.0 (Contact: admin@vayubudhi.local)"}
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            future_weather = executor.submit(_get_with_retry, weather_url, 6, 2)
+            future_aq = executor.submit(_get_with_retry, aq_url, 6, 2)
 
-        def fetch_weather():
-            try:
-                r = requests.get(weather_url, headers=headers, timeout=8)
-                r.raise_for_status()
-                return r.json()
-            except Exception:
-                time.sleep(0.5)
-                r = requests.get(weather_url, headers=headers, timeout=10)
-                r.raise_for_status()
-                return r.json()
-
-        def fetch_aq():
-            try:
-                r = requests.get(aq_url, headers=headers, timeout=8)
-                r.raise_for_status()
-                return r.json()
-            except Exception:
-                time.sleep(0.5)
-                r = requests.get(aq_url, headers=headers, timeout=10)
-                r.raise_for_status()
-                return r.json()
-
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            fw = executor.submit(fetch_weather)
-            faq = executor.submit(fetch_aq)
-            ftraffic = executor.submit(get_traffic_multipliers_bulk, station_list)
-
-            w_res = fw.result()
-            aq_res = faq.result()
-            traffic_map = ftraffic.result()
+            w_res = future_weather.result().json()
+            aq_res = future_aq.result().json()
+            traffic_map = get_traffic_multipliers_bulk(station_list)
 
         # If the API returns a single object (e.g. only 1 station), wrap it in a list for consistent iteration
         if isinstance(w_res, dict) and "current" in w_res:

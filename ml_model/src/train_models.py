@@ -49,13 +49,14 @@ def load_and_prepare_data():
     # Sort chronologically to prepare for time-series shift
     df = df.sort_values(by=['station', 'Date'])
     
-    # 1. Forecast Target: True 24h, 48h, 72h Future AQI based on historical dataset trends
-    df['target_aqi_24h'] = df.groupby('station')['aqi'].shift(-1)
-    df['target_aqi_48h'] = df.groupby('station')['aqi'].shift(-2)
-    df['target_aqi_72h'] = df.groupby('station')['aqi'].shift(-3)
+    # 1. Forecast Target: True 24h, 48h, 72h Future PM2.5 based on historical dataset trends
+    df['target_pm25_24h'] = df.groupby('station')['pm25'].shift(-1)
+    df['target_pm25_48h'] = df.groupby('station')['pm25'].shift(-2)
+    df['target_pm25_72h'] = df.groupby('station')['pm25'].shift(-3)
     
     # Drop rows where we don't have all next 3 days
-    df = df.dropna(subset=['target_aqi_24h', 'target_aqi_48h', 'target_aqi_72h'])
+    df = df.dropna(subset=['target_pm25_24h', 'target_pm25_48h', 'target_pm25_72h'])
+
     
     # 2. Classification Target: Pollution Source
     # Let's create a heuristic so the model learns from the clean features
@@ -75,60 +76,74 @@ def load_and_prepare_data():
     
     # The required EXACT feature order
     features = ['pm25', 'pm10', 'temp', 'humidity', 'pressure', 'wind_speed', 'pblh']
-    X = df[features]
-    y_reg_24h = df['target_aqi_24h']
-    y_reg_48h = df['target_aqi_48h']
-    y_reg_72h = df['target_aqi_72h']
-    y_clf = df['target_source']
     
-    return X, y_reg_24h, y_reg_48h, y_reg_72h, y_clf
+    # Extract City from station string (e.g. "Soni Ni Chali, Ahmedabad, Gujarat, India")
+    df['city'] = df['station'].apply(lambda x: [part.strip() for part in x.split(',')][1] if len(x.split(',')) > 1 else 'Unknown')
+    
+    return df, features
+
 
 def train_models():
-    X, y_reg_24h, y_reg_48h, y_reg_72h, y_clf = load_and_prepare_data()
+    df, features = load_and_prepare_data()
     
-    X_train_c, X_test_c, y_train_c, y_test_c = train_test_split(X, y_clf, test_size=0.2, random_state=42)
-    
-    print("Training 3-Day XGBoost Forecasters with MAPIE...")
-    models_dict = {}
-    
-    for label, y_target in [('24h', y_reg_24h), ('48h', y_reg_48h), ('72h', y_reg_72h)]:
-        X_train_r, X_test_r, y_train_r, y_test_r = train_test_split(X, y_target, test_size=0.2, random_state=42)
-        xgb = XGBRegressor(n_estimators=100, learning_rate=0.1, random_state=42)
-        mapie_reg = SplitConformalRegressor(estimator=xgb)
-        
-        # Split train further to prefit Mapie
-        X_train_reg_sub, X_cal_reg, y_train_reg_sub, y_cal_reg = train_test_split(X_train_r, y_train_r, test_size=0.3, random_state=42)
-        xgb.fit(X_train_reg_sub, y_train_reg_sub)
-        mapie_reg.conformalize(X_cal_reg, y_cal_reg)
-        
-        models_dict[label] = mapie_reg
-        print(f"Finished training {label} model.")
+    cities_to_train = ['Delhi', 'Bangalore', 'Hyderabad']
     
     print("Training Random Forest Classifier with MAPIE...")
+    # Train one global classifier
+    X_clf = df[features]
+    y_clf = df['target_source']
+    X_train_c, X_test_c, y_train_c, y_test_c = train_test_split(X_clf, y_clf, test_size=0.2, random_state=42)
+    
     rfc = RandomForestClassifier(n_estimators=100, random_state=42)
     mapie_clf = SplitConformalClassifier(estimator=rfc)
     
     X_train_clf_sub, X_cal_clf, y_train_clf_sub, y_cal_clf = train_test_split(X_train_c, y_train_c, test_size=0.3, random_state=42)
     rfc.fit(X_train_clf_sub, y_train_clf_sub)
     mapie_clf.conformalize(X_cal_clf, y_cal_clf)
+    joblib.dump(mapie_clf, os.path.join(ML_DATA_DIR, 'classifier_v2.pkl'))
     
-    # Save models
-    joblib.dump(models_dict, os.path.join(ML_DATA_DIR, 'forecaster.pkl'))
-    joblib.dump(mapie_clf, os.path.join(ML_DATA_DIR, 'classifier.pkl'))
+    # Base model (using all data)
+    print("Training Global Base XGBoost Forecasters...")
+    for label, target_col in [('24h', 'target_pm25_24h'), ('48h', 'target_pm25_48h'), ('72h', 'target_pm25_72h')]:
+        X_all = df[features]
+        y_all = df[target_col]
+        X_train_r, X_test_r, y_train_r, y_test_r = train_test_split(X_all, y_all, test_size=0.2, random_state=42)
+        xgb = XGBRegressor(n_estimators=100, learning_rate=0.1, random_state=42)
+        mapie_reg = SplitConformalRegressor(estimator=xgb)
+        
+        X_train_reg_sub, X_cal_reg, y_train_reg_sub, y_cal_reg = train_test_split(X_train_r, y_train_r, test_size=0.3, random_state=42)
+        xgb.fit(X_train_reg_sub, y_train_reg_sub)
+        mapie_reg.conformalize(X_cal_reg, y_cal_reg)
+        
+        joblib.dump(mapie_reg, os.path.join(ML_DATA_DIR, f'forecast_model_{label}.pkl'))
     
+    print("Training City-Specific XGBoost Forecasters...")
+    for city in cities_to_train:
+        city_df = df[df['city'] == city]
+        if city_df.empty:
+            print(f"Skipping {city}, no data.")
+            continue
+            
+        # Standardize 'Bangalore' to 'Bengaluru' for the filename matching the backend expectation
+        city_name = "Bengaluru" if city == "Bangalore" else city
+        
+        for label, target_col in [('24h', 'target_pm25_24h'), ('48h', 'target_pm25_48h'), ('72h', 'target_pm25_72h')]:
+            X_city = city_df[features]
+            y_city = city_df[target_col]
+            X_train_r, X_test_r, y_train_r, y_test_r = train_test_split(X_city, y_city, test_size=0.2, random_state=42)
+            
+            xgb = XGBRegressor(n_estimators=50, learning_rate=0.1, random_state=42)
+            mapie_reg = SplitConformalRegressor(estimator=xgb)
+            
+            X_train_reg_sub, X_cal_reg, y_train_reg_sub, y_cal_reg = train_test_split(X_train_r, y_train_r, test_size=0.3, random_state=42)
+            xgb.fit(X_train_reg_sub, y_train_reg_sub)
+            mapie_reg.conformalize(X_cal_reg, y_cal_reg)
+            
+            model_path = os.path.join(ML_DATA_DIR, f'forecast_model_{city_name.lower()}_{label}.pkl')
+            joblib.dump(mapie_reg, model_path)
+            print(f"Saved {model_path}")
+            
     print("Models successfully trained and saved!")
-    
-    print("\nVerifying model predictions on a sample (matching API requirement):")
-    sample_df = X.head(1)
-    
-    pred_point = models_dict['24h'].predict(sample_df)[0]
-    pred_class = mapie_clf.predict(sample_df)[0]
-    
-    print(f"Sample Input:\n{sample_df}")
-    print(f"Forecasted PM2.5 24h: {pred_point:.2f}")
-    print(f"Attributed Source: {pred_class}")
-    
-    print("\nTraining completed successfully!")
 
 if __name__ == "__main__":
     train_models()

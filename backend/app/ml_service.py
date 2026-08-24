@@ -12,13 +12,7 @@ DATASET_PATH = os.path.join(BASE_DIR, 'data', 'dataset_hyderabad_expanded.csv')
 
 # Use the feature list from training
 FEATURES = [
-    'pm25_lag_1h', 'pm25_lag_3h', 'pm25_lag_6h', 'pm25_lag_12h', 'pm25_lag_24h',
-    'pm25_rolling_6h_mean', 'pm25_rolling_24h_mean', 'pm25_rolling_24h_std', 'pm25_delta_6h',
-    'temp_c', 'humidity', 'pressure_mb', 'wind_speed_ms', 'pblh',
-    'ventilation_index', 'stagnation_flag', 'pm_ratio',
-    'hour_sin', 'hour_cos', 'month_sin', 'month_cos',
-    'no2_so2_ratio', 'co_no2_ratio', 'o3_pm25_ratio',
-    'pm10', 'no2', 'so2', 'co', 'o3'
+    'pm25', 'pm10', 'temp', 'humidity', 'pressure', 'wind_speed', 'pblh'
 ]
 
 class MLService:
@@ -90,92 +84,20 @@ class MLService:
 
     def _prepare_features(self, reading):
         """
-        Takes a reading, looks up the latest historical row for that district,
-        and overrides the physics/chemistry features with the new reading values.
-        This provides a complete feature vector (including lags) for the model.
+        Extracts the EXACT 7 features that the model was trained on.
         """
-        if self.dataset_cache is None:
-            # Fallback if no dataset (shouldn't happen in production)
-            return pd.DataFrame(np.zeros((1, len(FEATURES))), columns=FEATURES)
-            
-        # Get latest row for this district (match by name or ID)
-        # If the reading has a 'station_id' that matches a district name (e.g. 'Kukatpally')
-        district_name = getattr(reading, 'station_id', None)
-        
-        if district_name:
-            district_rows = self.dataset_cache[self.dataset_cache['district_name'] == district_name]
-            if not district_rows.empty:
-                latest_row = district_rows.iloc[-1].copy()
-            else:
-                latest_row = self.dataset_cache.iloc[-1].copy()
-        else:
-            latest_row = self.dataset_cache.iloc[-1].copy()
-            
-        # Override with current reading values
-        latest_row['pm25'] = reading.pm25
-        latest_row['pm10'] = reading.pm10
-        latest_row['temp_c'] = reading.temp
-        latest_row['humidity'] = reading.humidity
-        latest_row['pressure_mb'] = reading.pressure
-        latest_row['wind_speed_ms'] = reading.wind_speed
-        latest_row['pblh'] = reading.pblh
-        latest_row['no2'] = getattr(reading, 'no2', 20.0)
-        latest_row['so2'] = getattr(reading, 'so2', 10.0)
-        
-        # Scale CO to ppb if it's passed in mg/m3 to match training data scale
-        co_val = getattr(reading, 'co', 300.0)
-        if co_val < 10.0:
-            co_val = co_val * 1000.0
-        latest_row['co'] = co_val
-        
-        latest_row['o3'] = getattr(reading, 'o3', 40.0)
-        
-        # Recompute derived physics/chemistry
-        latest_row['ventilation_index'] = latest_row['pblh'] * latest_row['wind_speed_ms']
-        latest_row['stagnation_flag'] = 1 if latest_row['ventilation_index'] < 2000 else 0
-        latest_row['pm_ratio'] = latest_row['pm25'] / (latest_row['pm10'] + 1e-5)
-        latest_row['no2_so2_ratio'] = latest_row['no2'] / (latest_row['so2'] + 1e-5)
-        latest_row['co_no2_ratio'] = latest_row['co'] / (latest_row['no2'] + 1e-5)
-        latest_row['o3_pm25_ratio'] = latest_row['o3'] / (latest_row['pm25'] + 1e-5)
-        
-        # Compute Time cyclical features
-        import datetime
-        now = datetime.datetime.now()
-        hour = now.hour
-        month = now.month
-        latest_row['hour_sin'] = np.sin(2 * np.pi * hour / 24.0)
-        latest_row['hour_cos'] = np.cos(2 * np.pi * hour / 24.0)
-        latest_row['month_sin'] = np.sin(2 * np.pi * month / 12.0)
-        latest_row['month_cos'] = np.cos(2 * np.pi * month / 12.0)
-
-        # Impute missing lag features for real-time inference using real historical proportions when available
-        pm = reading.pm25
-        hist_pm = latest_row.get('pm25', 0)
-        
-        if hist_pm and float(hist_pm) > 0 and 'pm25_lag_1h' in latest_row:
-            scale = pm / float(hist_pm)
-            latest_row['pm25_lag_1h'] = float(latest_row.get('pm25_lag_1h', pm)) * scale
-            latest_row['pm25_lag_3h'] = float(latest_row.get('pm25_lag_3h', pm)) * scale
-            latest_row['pm25_lag_6h'] = float(latest_row.get('pm25_lag_6h', pm)) * scale
-            latest_row['pm25_lag_12h'] = float(latest_row.get('pm25_lag_12h', pm)) * scale
-            latest_row['pm25_lag_24h'] = float(latest_row.get('pm25_lag_24h', pm)) * scale
-            latest_row['pm25_rolling_6h_mean'] = float(latest_row.get('pm25_rolling_6h_mean', pm)) * scale
-            latest_row['pm25_rolling_24h_mean'] = float(latest_row.get('pm25_rolling_24h_mean', pm)) * scale
-            latest_row['pm25_rolling_24h_std'] = max(1.0, float(latest_row.get('pm25_rolling_24h_std', 5.0)) * scale)
-            latest_row['pm25_delta_6h'] = pm - latest_row['pm25_lag_6h']
-        else:
-            latest_row['pm25_lag_1h'] = pm
-            latest_row['pm25_lag_3h'] = pm
-            latest_row['pm25_lag_6h'] = pm
-            latest_row['pm25_lag_12h'] = pm
-            latest_row['pm25_lag_24h'] = pm
-            latest_row['pm25_rolling_6h_mean'] = pm
-            latest_row['pm25_rolling_24h_mean'] = pm
-            latest_row['pm25_rolling_24h_std'] = max(1.0, pm * 0.1)
-            latest_row['pm25_delta_6h'] = 0.0
+        row = {
+            'pm25': reading.pm25,
+            'pm10': reading.pm10,
+            'temp': reading.temp,
+            'humidity': reading.humidity,
+            'pressure': reading.pressure,
+            'wind_speed': reading.wind_speed,
+            'pblh': reading.pblh
+        }
         
         # Return as a 1-row DataFrame with the exact feature columns
-        df = pd.DataFrame([latest_row])
+        df = pd.DataFrame([row])
         return df[FEATURES]
 
     def predict_forecast(self, reading):

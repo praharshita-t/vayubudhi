@@ -30,11 +30,7 @@ export function CityProvider({ children }: { children: React.ReactNode }) {
   const [userCoords, setUserCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [liveLoading, setLiveLoading] = useState(false);
 
-  // Reset data on city change
-  useEffect(() => {
-    setCityData(null);
-    setLiveData(null);
-  }, [activeCity]);
+  const cityCacheRef = React.useRef<Record<string, any>>({});
 
   // Geolocate for "My Location"
   useEffect(() => {
@@ -67,11 +63,16 @@ export function CityProvider({ children }: { children: React.ReactNode }) {
     }
   }, [activeCity, userCoords]);
 
-  // Fetch city data for named cities with automatic retry
+  // Fetch city data with instant cache-first and background revalidation
   useEffect(() => {
     if (activeCity !== 'My Location') {
       let isMounted = true;
-      setLiveLoading(true);
+      if (cityCacheRef.current[activeCity]) {
+        setCityData(cityCacheRef.current[activeCity]);
+        setLiveLoading(false);
+      } else {
+        setLiveLoading(true);
+      }
       
       const fetchCity = (retryCount = 0) => {
         fetch(`http://127.0.0.1:8000/api/city-data?city=${activeCity}`)
@@ -81,6 +82,7 @@ export function CityProvider({ children }: { children: React.ReactNode }) {
           })
           .then((data) => {
             if (isMounted) {
+              cityCacheRef.current[activeCity] = data;
               setCityData(data);
               setLiveLoading(false);
             }

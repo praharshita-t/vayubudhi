@@ -109,14 +109,18 @@ const CITY_COLORS: Record<string, { main: string; light: string; border: string;
   'Patna': { main: '#e11d48', light: 'rgba(225, 29, 72, 0.15)', border: '#be123c', glow: 'rgba(225, 29, 72, 0.3)' },
 };
 
+// In-memory client cache for instant 0ms tab & city toggling
+const CITY_TELEMETRY_CACHE: Record<string, { timestamp: number; data: CityCompareData }> = {};
+const CACHE_MAX_AGE_MS = 180000; // 3 minutes
+
 export default function CompareCitiesPage() {
   const { activeCity } = useCityContext();
-  const [mounted, setMounted] = useState<boolean>(false);
   const [selectedCityIds, setSelectedCityIds] = useState<string[]>(['Delhi', 'Hyderabad', 'Bengaluru']);
   const [citiesData, setCitiesData] = useState<Record<string, CityCompareData>>({});
   const [loading, setLoading] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'forecast' | 'pollutants' | 'attribution' | 'physics'>('overview');
   const [lastUpdated, setLastUpdated] = useState<string>('');
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -124,6 +128,12 @@ export default function CompareCitiesPage() {
   }, []);
 
   const fetchCityTelemetry = async (cityId: string): Promise<CityCompareData> => {
+    // 0. Check in-memory client cache
+    const now = Date.now();
+    if (CITY_TELEMETRY_CACHE[cityId] && now - CITY_TELEMETRY_CACHE[cityId].timestamp < CACHE_MAX_AGE_MS) {
+      return CITY_TELEMETRY_CACHE[cityId].data;
+    }
+
     const meta = ALL_AVAILABLE_CITIES.find((c) => c.id === cityId) || {
       id: cityId,
       name: cityId,
@@ -134,8 +144,12 @@ export default function CompareCitiesPage() {
     };
 
     try {
-      // 1. Fetch live city telemetry & real stations from backend
-      const cityRes = await fetch(`http://127.0.0.1:8000/api/city-data?city=${cityId}`);
+      // 1. Fetch live city telemetry & historical in parallel
+      const [cityRes, histRes] = await Promise.all([
+        fetch(`http://127.0.0.1:8000/api/city-data?city=${cityId}`),
+        fetch(`http://127.0.0.1:8000/api/city-historical?city=${cityId}`).catch(() => null)
+      ]);
+
       const cityJson = await cityRes.json();
       const stations: any[] = cityJson?.stations || [];
 
@@ -145,9 +159,7 @@ export default function CompareCitiesPage() {
         ? Math.round(stations.reduce((s, st) => s + (st.aqi || 0), 0) / count)
         : 80;
       
-      // Match center_aqi from backend for exact parity with Live Map
       const avgAqi = Math.round(cityJson?.center_aqi ?? computedAvgAqi);
-
       const avgPm25 = Math.round((stations.reduce((s, st) => s + (st.pm25 || 0), 0) / count) * 10) / 10 || 35.0;
       const avgPm10 = Math.round((stations.reduce((s, st) => s + (st.pm10 || 0), 0) / count) * 10) / 10 || 55.0;
       const avgNo2 = Math.round((stations.reduce((s, st) => s + (st.no2 || 0), 0) / count) * 10) / 10 || 28.0;
@@ -172,12 +184,11 @@ export default function CompareCitiesPage() {
         alerts = stations.filter((s) => s.status === 'alert' || s.aqi > 200).length;
       }
 
-      // 2. Fetch Historical telemetry (Past 24h)
+      // Process historical
       let historyPoints: Array<{ hour: string; aqi: number; pm25: number }> = [];
       let hist24Avg = avgAqi;
-      try {
-        const histRes = await fetch(`http://127.0.0.1:8000/api/city-historical?city=${cityId}`);
-        if (histRes.ok) {
+      if (histRes && histRes.ok) {
+        try {
           const histJson = await histRes.json();
           historyPoints = (histJson?.history || []).map((h: any) => ({
             hour: h.time,
@@ -187,12 +198,12 @@ export default function CompareCitiesPage() {
           if (historyPoints.length > 0) {
             hist24Avg = Math.round(historyPoints.reduce((acc, h) => acc + h.aqi, 0) / historyPoints.length);
           }
+        } catch {
+          // ignore
         }
-      } catch (err) {
-        console.warn(`Historical fetch error for ${cityId}:`, err);
       }
 
-      // 3. Call ML XGBoost Forecast & Random Forest Attribution with exact coordinates
+      // 2. Call ML Forecast & Attribution in parallel
       const aggregateReading = {
         station_id: `${cityId}_AGGREGATE`,
         timestamp: new Date().toISOString(),
@@ -215,25 +226,6 @@ export default function CompareCitiesPage() {
       let forecastIntervals = [[avgPm25 * 0.8, avgPm25 * 1.2], [avgPm25 * 0.75, avgPm25 * 1.25], [avgPm25 * 0.7, avgPm25 * 1.3]];
       let ventIndex = avgPblh * avgWind;
 
-      try {
-        const fcRes = await fetch('http://127.0.0.1:8000/api/forecast', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(aggregateReading),
-        });
-        if (fcRes.ok) {
-          const fcJson = await fcRes.json();
-          if (fcJson?.points && fcJson.points.length >= 3) {
-            forecastPoints = fcJson.points;
-            forecastIntervals = fcJson.intervals || forecastIntervals;
-            ventIndex = fcJson.ventilation_index || ventIndex;
-          }
-        }
-      } catch (err) {
-        console.warn(`Forecast fetch error for ${cityId}:`, err);
-      }
-
-      // Attribution from ML classifier
       let attributionData = {
         vehicular: 0.65,
         industrial: 0.20,
@@ -244,13 +236,34 @@ export default function CompareCitiesPage() {
         confidence: 0.9,
       };
 
-      try {
-        const attrRes = await fetch('http://127.0.0.1:8000/api/attribution', {
+      const [fcRes, attrRes] = await Promise.all([
+        fetch('http://127.0.0.1:8000/api/forecast', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(aggregateReading),
-        });
-        if (attrRes.ok) {
+        }).catch(() => null),
+        fetch('http://127.0.0.1:8000/api/attribution', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(aggregateReading),
+        }).catch(() => null)
+      ]);
+
+      if (fcRes && fcRes.ok) {
+        try {
+          const fcJson = await fcRes.json();
+          if (fcJson?.points && fcJson.points.length >= 3) {
+            forecastPoints = fcJson.points;
+            forecastIntervals = fcJson.intervals || forecastIntervals;
+            ventIndex = fcJson.ventilation_index || ventIndex;
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      if (attrRes && attrRes.ok) {
+        try {
           const attrJson = await attrRes.json();
           const probs = attrJson?.probabilities || {};
           const rawVehicular = probs.vehicular || 0.65;
@@ -278,9 +291,9 @@ export default function CompareCitiesPage() {
             primaryPct: primaryPct,
             confidence: attrJson?.confidence || 0.9,
           };
+        } catch {
+          // ignore
         }
-      } catch (err) {
-        console.warn(`Attribution fetch error for ${cityId}:`, err);
       }
 
       // Convert ML PM2.5 Forecast Points to EPA AQI
@@ -289,7 +302,7 @@ export default function CompareCitiesPage() {
       const aqi72 = pm25ToAqi(forecastPoints[2]);
       const trendPct = avgAqi > 0 ? Math.round(((aqi24 - avgAqi) / avgAqi) * 100) : 0;
 
-      return {
+      const result = {
         id: cityId,
         name: meta.name,
         state: meta.state,
@@ -322,6 +335,9 @@ export default function CompareCitiesPage() {
         history: historyPoints,
         attribution: attributionData,
       };
+
+      CITY_TELEMETRY_CACHE[cityId] = { timestamp: now, data: result };
+      return result;
     } catch (e) {
       console.error(`Error loading city data for ${cityId}:`, e);
       return {

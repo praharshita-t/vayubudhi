@@ -20,10 +20,23 @@ import { ColumnLayer, PolygonLayer, ScatterplotLayer, TextLayer, BitmapLayer } f
 
 const CITY_CENTERS: Record<string, {longitude: number, latitude: number, zoom: number}> = {
   'Delhi': { longitude: 77.17, latitude: 28.62, zoom: 11 },
-  'Mumbai': { longitude: 72.85, latitude: 19.08, zoom: 10.5 },
+  'Mumbai': { longitude: 72.85, latitude: 19.08, zoom: 11 },
   'Bengaluru': { longitude: 77.59, latitude: 12.97, zoom: 11 },
   'Hyderabad': { longitude: 78.44, latitude: 17.42, zoom: 11 },
   'Guwahati': { longitude: 91.73, latitude: 26.16, zoom: 11.5 },
+  'Chennai': { longitude: 80.27, latitude: 13.08, zoom: 11 },
+  'Kolkata': { longitude: 88.36, latitude: 22.57, zoom: 11 },
+  'Pune': { longitude: 73.85, latitude: 18.52, zoom: 11 },
+  'Ahmedabad': { longitude: 72.57, latitude: 23.02, zoom: 11 },
+  'Jaipur': { longitude: 75.78, latitude: 26.91, zoom: 11 },
+  'Lucknow': { longitude: 80.94, latitude: 26.84, zoom: 11 },
+  'Chandigarh': { longitude: 76.77, latitude: 30.73, zoom: 11.5 },
+  'Thiruvananthapuram': { longitude: 76.93, latitude: 8.52, zoom: 11.5 },
+  'Kanpur': { longitude: 80.33, latitude: 26.44, zoom: 11 },
+  'Nagpur': { longitude: 79.08, latitude: 21.14, zoom: 11 },
+  'Indore': { longitude: 75.85, latitude: 22.71, zoom: 11 },
+  'Bhopal': { longitude: 77.41, latitude: 23.25, zoom: 11 },
+  'Patna': { longitude: 85.13, latitude: 25.59, zoom: 11 },
 };
 
 // Bounding boxes for satellite NO₂ overlay: [west, south, east, north]

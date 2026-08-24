@@ -41,7 +41,9 @@ function idwForDistrict(centroid: [number, number], stations: any[]): Omit<Distr
         temp: s.temp || 30, humidity: s.humidity || 50, pressure: s.pressure || 1010, wind_speed: s.wind_speed || 2, pblh: s.pblh || 800
       };
     }
-    const w = 1 / Math.pow(dist, 2);
+    // Using power of 5 for Inverse Distance Weighting to preserve sharp, highly localized gradients 
+    // instead of smoothing them out over the whole city.
+    const w = 1 / Math.pow(dist, 5);
     wSum += w;
     aqiS += w * (s.aqi || 0);
     pm25S += w * (s.pm25 || 0);

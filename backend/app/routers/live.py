@@ -1,5 +1,6 @@
 import requests
 import os
+import time
 import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -27,6 +28,22 @@ except Exception as e:
         print(f"Failed local fallback: {e2}")
 
 router = APIRouter()
+
+
+def _get_with_retry(url: str, timeout: int = 10, retries: int = 3) -> requests.Response:
+    """Retry Open-Meteo requests — transient SSL/connection resets are common on Windows."""
+    last_err = None
+    for attempt in range(retries):
+        try:
+            resp = requests.get(url, timeout=timeout)
+            resp.raise_for_status()
+            return resp
+        except Exception as e:
+            last_err = e
+            if attempt < retries - 1:
+                time.sleep(1.0 * (attempt + 1))
+    raise last_err
+
 
 class LiveDataResponse(BaseModel):
     lat: float
@@ -82,8 +99,8 @@ def get_live_data(lat: float, lon: float):
     aq_url = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lon}&current=pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone,us_aqi"
     
     try:
-        weather_res = requests.get(weather_url, timeout=5)
-        aq_res = requests.get(aq_url, timeout=5)
+        weather_res = _get_with_retry(weather_url, timeout=8)
+        aq_res = _get_with_retry(aq_url, timeout=8)
         
         weather_data = weather_res.json()
         aq_data = aq_res.json()
@@ -294,7 +311,6 @@ CITY_CENTERS_BACKEND = {
 }
 
 import threading
-import time
 from concurrent.futures import ThreadPoolExecutor
 
 CITY_DATA_CACHE = {}        # key: city_name, value: (timestamp, CityDataResponse)
@@ -330,8 +346,8 @@ def get_city_data(city: str):
 
         # Concurrently fetch Weather and Air Quality APIs
         with ThreadPoolExecutor(max_workers=2) as executor:
-            future_weather = executor.submit(requests.get, weather_url, timeout=10)
-            future_aq = executor.submit(requests.get, aq_url, timeout=10)
+            future_weather = executor.submit(_get_with_retry, weather_url, 12, 3)
+            future_aq = executor.submit(_get_with_retry, aq_url, 12, 3)
             
             w_res = future_weather.result().json()
             aq_res = future_aq.result().json()
@@ -462,7 +478,7 @@ def get_city_historical(city: str = "Hyderabad", lat: float = None, lon: float =
     history = []
     try:
         url = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lon}&hourly=pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone&past_days=1&forecast_days=1"
-        res = requests.get(url, timeout=8).json()
+        res = _get_with_retry(url, timeout=10).json()
         
         times = res.get("hourly", {}).get("time", [])
         pm25s = res.get("hourly", {}).get("pm2_5", [])

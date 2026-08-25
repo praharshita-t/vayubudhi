@@ -6,6 +6,7 @@ from app.routers.optimize import router as optimize_router
 from app.routers.health import router as health_router
 from app.routers.live import router as live_router
 from app.routers.satellite import router as satellite_router
+from app.routers.report import router as report_router
 
 api_router = APIRouter()
 
@@ -16,3 +17,4 @@ api_router.include_router(optimize_router)
 api_router.include_router(health_router)
 api_router.include_router(live_router)
 api_router.include_router(satellite_router)
+api_router.include_router(report_router)

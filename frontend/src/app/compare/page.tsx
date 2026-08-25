@@ -1,5 +1,6 @@
 'use client';
 import React, { useState, useEffect, useMemo } from 'react';
+import dynamic from 'next/dynamic';
 import { useCityContext } from '@/context/CityContext';
 import { getAqiCategory, pm25ToAqi } from '@/utils/aqi';
 import {
@@ -19,6 +20,8 @@ import {
   PolarAngleAxis,
   PolarRadiusAxis,
 } from 'recharts';
+
+const ReportModal = dynamic(() => import('@/components/ReportModal'), { ssr: false });
 
 export interface CityCompareData {
   id: string;
@@ -121,6 +124,7 @@ export default function CompareCitiesPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'forecast' | 'pollutants' | 'attribution' | 'physics'>('overview');
   const [lastUpdated, setLastUpdated] = useState<string>('');
   const [mounted, setMounted] = useState(false);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -538,6 +542,24 @@ export default function CompareCitiesPage() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button
+            onClick={() => setIsReportModalOpen(true)}
+            style={{
+              background: 'rgba(56, 189, 248, 0.15)',
+              border: '1px solid rgba(56, 189, 248, 0.4)',
+              color: '#38bdf8',
+              padding: '6px 14px',
+              borderRadius: '6px',
+              fontSize: '0.75rem',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              cursor: 'pointer'
+            }}
+          >
+            📄 Generate AI Audit Report
+          </button>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
             SYNC: <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{lastUpdated || 'LIVE'}</span>
           </div>
@@ -1099,6 +1121,14 @@ export default function CompareCitiesPage() {
           </div>
         )}
       </div>
+
+      {/* Executive AI Multi-City/State Audit Modal */}
+      <ReportModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        initialCity={activeCity}
+        initialMode="state_audit"
+      />
     </div>
   );
 }

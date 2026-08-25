@@ -749,10 +749,10 @@ class CityHistoricalResponse(BaseModel):
 @router.get("/city-historical", response_model=CityHistoricalResponse)
 def get_city_historical(city: str = "Hyderabad", lat: float = None, lon: float = None):
     """
-    Fetches real 24-hour historical hourly telemetry from Open-Meteo Air Quality satellite archive
-    and computes the calibrated Indian NAQI for each past hour.
+    Fetches real 24-hour historical hourly telemetry from Open-Meteo Air Quality & Weather archive
+    and computes the calibrated Indian NAQI for each past hour with diurnal boundary layer coupling.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
     
     # Resolve coordinates
     if lat is None or lon is None:
@@ -761,42 +761,73 @@ def get_city_historical(city: str = "Hyderabad", lat: float = None, lon: float =
         lon = coords["lon"]
         
     cache_key = f"{city}_{lat}_{lon}"
-    now = time.time()
+    now_ts = time.time()
     with CACHE_LOCK:
         if cache_key in CITY_HIST_CACHE:
             ts, val = CITY_HIST_CACHE[cache_key]
-            if now - ts < CACHE_TTL:
+            if now_ts - ts < CACHE_TTL:
                 return val
 
     history = []
     try:
-        url = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lon}&hourly=pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone,us_aqi&past_days=1&forecast_days=1"
-        res = _get_with_retry(url, timeout=10).json()
-        
-        times = res.get("hourly", {}).get("time", [])
-        pm25s = res.get("hourly", {}).get("pm2_5", [])
-        pm10s = res.get("hourly", {}).get("pm10", [])
-        no2s = res.get("hourly", {}).get("nitrogen_dioxide", [])
-        so2s = res.get("hourly", {}).get("sulphur_dioxide", [])
-        cos = res.get("hourly", {}).get("carbon_monoxide", [])
-        o3s = res.get("hourly", {}).get("ozone", [])
-        us_aqis = res.get("hourly", {}).get("us_aqi", [])
+        w_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=surface_pressure,relative_humidity_2m,wind_speed_10m,boundary_layer_height&past_days=1&forecast_days=1&timezone=auto"
+        aq_url = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lon}&hourly=pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone,dust,aerosol_optical_depth&past_days=1&forecast_days=1&timezone=auto"
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            fw = executor.submit(_get_with_retry, w_url, 6.0, 2)
+            faq = executor.submit(_get_with_retry, aq_url, 6.0, 2)
+            w_res = fw.result().json()
+            aq_res = faq.result().json()
+
+        w_hourly = w_res.get("hourly", {})
+        aq_hourly = aq_res.get("hourly", {})
+
+        times = aq_hourly.get("time", [])
+        pm25s = aq_hourly.get("pm2_5", [])
+        pm10s = aq_hourly.get("pm10", [])
+        no2s = aq_hourly.get("nitrogen_dioxide", [])
+        so2s = aq_hourly.get("sulphur_dioxide", [])
+        cos = aq_hourly.get("carbon_monoxide", [])
+        o3s = aq_hourly.get("ozone", [])
+        dusts = aq_hourly.get("dust", [])
+        aods = aq_hourly.get("aerosol_optical_depth", [])
+
+        pblhs = w_hourly.get("boundary_layer_height", [])
+        pressures = w_hourly.get("surface_pressure", [])
+        rhs = w_hourly.get("relative_humidity_2m", [])
+        winds = w_hourly.get("wind_speed_10m", [])
         
         now = datetime.now()
         for i in range(len(times)):
             t = datetime.fromisoformat(times[i])
             if t <= now:
-                p25_raw = pm25s[i] if i < len(pm25s) and pm25s[i] is not None else 30.0
-                p10_raw = pm10s[i] if i < len(pm10s) and pm10s[i] is not None else 45.0
+                p25_raw = pm25s[i] if i < len(pm25s) and pm25s[i] is not None else 25.0
+                p10_raw = pm10s[i] if i < len(pm10s) and pm10s[i] is not None else 40.0
                 no2_raw = no2s[i] if i < len(no2s) and no2s[i] is not None else 20.0
-                so2_raw = so2s[i] if i < len(so2s) and so2s[i] is not None else 10.0
+                so2_raw = so2s[i] if i < len(so2s) and so2s[i] is not None else 8.0
                 co_raw = cos[i] if i < len(cos) and cos[i] is not None else 500.0
                 o3_raw = o3s[i] if i < len(o3s) and o3s[i] is not None else 30.0
+                dust_raw = dusts[i] if i < len(dusts) and dusts[i] is not None else 10.0
+                aod_raw = aods[i] if i < len(aods) and aods[i] is not None else 0.5
+
+                pblh_val = pblhs[i] if i < len(pblhs) and pblhs[i] is not None else 800.0
+                press_val = pressures[i] if i < len(pressures) and pressures[i] is not None else 1008.0
+                rh_val = rhs[i] if i < len(rhs) and rhs[i] is not None else 60.0
+                wind_val = winds[i] if i < len(winds) and winds[i] is not None else 2.0
+
+                # Diurnal traffic congestion profile by hour
+                hr = t.hour
+                if 8 <= hr <= 10 or 18 <= hr <= 22:
+                    traffic_congestion = 0.48  # Rush hour peaks
+                elif 11 <= hr <= 17:
+                    traffic_congestion = 0.25  # Daytime moderate
+                else:
+                    traffic_congestion = 0.12  # Night-time lull
                 
                 dyn = compute_fully_dynamic_pollution(
                     raw_pm25=p25_raw, raw_pm10=p10_raw, raw_no2=no2_raw, raw_so2=so2_raw, raw_co=co_raw, raw_o3=o3_raw,
-                    pblh=800.0, pressure=1008.0, rh=60.0, wind=2.0, aod=0.5, dust=10.0,
-                    lat=lat, traffic_congestion=0.20
+                    pblh=pblh_val, pressure=press_val, rh=rh_val, wind=wind_val, aod=aod_raw, dust=dust_raw,
+                    lat=lat, traffic_congestion=traffic_congestion
                 )
                 
                 history.append(HourlyAqiPoint(
@@ -809,6 +840,36 @@ def get_city_historical(city: str = "Hyderabad", lat: float = None, lon: float =
                 
         # Keep last 24 hours of data
         history = history[-24:]
+
+        # Seamlessly calibrate historical curve against live station telemetry for exact zero-drift parity
+        try:
+            city_live = get_city_data(city)
+            if history and city_live and city_live.center_aqi > 0:
+                raw_last_aqi = history[-1].aqi
+                raw_last_pm25 = history[-1].pm25
+                raw_last_pm10 = history[-1].pm10
+                
+                live_aqi = float(city_live.center_aqi)
+                live_pm25 = float(round(sum(s.pm25 for s in city_live.stations) / len(city_live.stations), 1)) if city_live.stations else raw_last_pm25
+                live_pm10 = float(round(sum(s.pm10 for s in city_live.stations) / len(city_live.stations), 1)) if city_live.stations else raw_last_pm10
+                
+                aqi_ratio = live_aqi / max(1.0, raw_last_aqi)
+                pm25_ratio = live_pm25 / max(1.0, raw_last_pm25)
+                pm10_ratio = live_pm10 / max(1.0, raw_last_pm10)
+                
+                # Apply smooth weighted calibration so historical diurnal variation is preserved
+                for pt in history:
+                    pt.aqi = float(round(max(10.0, pt.aqi * aqi_ratio)))
+                    pt.pm25 = float(round(max(5.0, pt.pm25 * pm25_ratio), 1))
+                    pt.pm10 = float(round(max(10.0, pt.pm10 * pm10_ratio), 1))
+                    
+                # Exact pin for the latest point
+                history[-1].aqi = live_aqi
+                history[-1].pm25 = live_pm25
+                history[-1].pm10 = live_pm10
+        except Exception as e:
+            print(f"Historical calibration error: {e}")
+
     except Exception as e:
         print(f"Failed to fetch historical AQI for {city}: {e}")
         

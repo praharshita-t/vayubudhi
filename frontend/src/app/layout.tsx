@@ -1,6 +1,7 @@
 import './globals.css'
 import React from 'react'
 import { CityProvider } from '@/context/CityContext'
+import { SimulationProvider } from '@/context/SimulationContext'
 import Sidebar from '@/components/Sidebar'
 import EntrySplash from '@/components/EntrySplash'
 import ThemeToggle from '@/components/ThemeToggle'
@@ -23,14 +24,16 @@ export default function RootLayout({
       </head>
       <body suppressHydrationWarning>
         <CityProvider>
-          <EntrySplash />
-          <div className="global-top-right-controls">
-            <ThemeToggle />
-          </div>
-          <div className="app-layout">
-            <Sidebar />
-            <main className="main-content">{children}</main>
-          </div>
+          <SimulationProvider>
+            <EntrySplash />
+            <div className="global-top-right-controls">
+              <ThemeToggle />
+            </div>
+            <div className="app-layout">
+              <Sidebar />
+              <main className="main-content">{children}</main>
+            </div>
+          </SimulationProvider>
         </CityProvider>
       </body>
     </html>

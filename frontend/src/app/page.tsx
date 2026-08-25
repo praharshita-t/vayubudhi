@@ -181,12 +181,28 @@ export default function HomePage() {
 
   // Prefer real live hourly API telemetry over model extrapolation
   const rawHistoricalData = useMemo(() => {
-    if (realHistory.length > 0) return realHistory;
+    if (realHistory.length > 0) {
+      const copy = realHistory.map((item) => ({
+        ...item,
+        aqi: Math.round(item.aqi),
+        pm25: typeof item.pm25 === 'number' ? Math.round(item.pm25 * 10) / 10 : Math.round(item.aqi * 0.45),
+        pm10: typeof item.pm10 === 'number' ? Math.round(item.pm10 * 10) / 10 : Math.round(item.aqi * 0.85),
+      }));
+      if (copy.length > 0 && avgAqi > 0) {
+        copy[copy.length - 1] = {
+          ...copy[copy.length - 1],
+          aqi: avgAqi,
+          pm25: avgPm25 > 0 ? avgPm25 : copy[copy.length - 1].pm25,
+          pm10: avgPm10 > 0 ? avgPm10 : copy[copy.length - 1].pm10
+        };
+      }
+      return copy;
+    }
     return generateHistoricalData(avgAqi, 24);
-  }, [realHistory, avgAqi]);
+  }, [realHistory, avgAqi, avgPm25, avgPm10]);
 
   const historicalData = useMemo(() => {
-    const count = timeRange === '6h' ? 7 : timeRange === '12h' ? 13 : 25;
+    const count = timeRange === '6h' ? 7 : timeRange === '12h' ? 13 : 24;
     return rawHistoricalData.slice(-count);
   }, [rawHistoricalData, timeRange]);
 
@@ -464,15 +480,17 @@ export default function HomePage() {
                 className={`home-chart-toggle ${chartType === 'line' ? 'active' : ''}`} 
                 onClick={() => setChartType('line')}
                 title="Line Chart View"
+                style={{ fontSize: '0.72rem', fontWeight: 700 }}
               >
-                📈
+                Line
               </button>
               <button 
                 className={`home-chart-toggle ${chartType === 'bar' ? 'active' : ''}`} 
                 onClick={() => setChartType('bar')}
                 title="Bar Chart View"
+                style={{ fontSize: '0.72rem', fontWeight: 700 }}
               >
-                📊
+                Bar
               </button>
               <select
                 className="home-chart-select"
@@ -504,18 +522,18 @@ export default function HomePage() {
               <span className="home-minmax-value" style={{ background: 'rgba(34,197,94,0.2)', color: '#22c55e' }}>{minPoint.val}</span>
               <div className="home-minmax-info">
                 <span className="home-minmax-label" style={{ color: '#22c55e' }}>
-                  ↓ Min. {chartMetric === 'aqi' ? 'AQI' : chartMetric.toUpperCase()}
+                  &darr; Min. {chartMetric === 'aqi' ? 'AQI' : chartMetric.toUpperCase()}
                 </span>
-                <span className="home-minmax-time">⏱ {minPoint.time}</span>
+                <span className="home-minmax-time">at {minPoint.time}</span>
               </div>
             </div>
             <div className="home-minmax-badge" style={{ background: 'rgba(239,68,68,0.1)' }}>
               <span className="home-minmax-value" style={{ background: 'rgba(239,68,68,0.2)', color: '#ef4444' }}>{maxPoint.val}</span>
               <div className="home-minmax-info">
                 <span className="home-minmax-label" style={{ color: '#ef4444' }}>
-                  ↑ Max. {chartMetric === 'aqi' ? 'AQI' : chartMetric.toUpperCase()}
+                  &uarr; Max. {chartMetric === 'aqi' ? 'AQI' : chartMetric.toUpperCase()}
                 </span>
-                <span className="home-minmax-time">⏱ {maxPoint.time}</span>
+                <span className="home-minmax-time">at {maxPoint.time}</span>
               </div>
             </div>
           </div>

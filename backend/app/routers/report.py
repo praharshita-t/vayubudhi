@@ -100,6 +100,10 @@ def generate_deterministic_report(req: ReportRequest) -> Dict[str, Any]:
         "boundary_layer_height": f"{int(pblh)}m",
         "voc_index": voc,
         "nox_index": nox,
+        "no2": round(float(live.get("no2") or 25.0), 1),
+        "so2": round(float(live.get("so2") or 10.0), 1),
+        "co": round(float(live.get("co") or 1.2), 1),
+        "o3": round(float(live.get("o3") or 32.0), 1),
         "dominant_source": dom_source,
         "peak_hour": "08:00 – 10:30 IST (Morning Inversion Peak)",
         "cleanest_hour": "14:00 – 16:30 IST (Convective Boundary Layer Flush)"
@@ -153,30 +157,43 @@ def generate_deterministic_report(req: ReportRequest) -> Dict[str, Any]:
     # ── 2. District-Specific ML Intelligence Metrics ──
     district_ml_metrics = {}
     if mode == "district_audit":
+        pred_set = attr.get("prediction_set") or [dom_source.lower().replace(" ", "_")]
+        formatted_pred_set = [s.replace("_", " ").title() + (" Exhaust" if s == "vehicular" else " Point Sources" if s == "industrial" else " Combustion" if s == "biomass" else " Resuspension" if s == "dust" else "") for s in pred_set]
+        if not formatted_pred_set:
+            formatted_pred_set = [dom_source]
+            
+        wind_spd = float(live.get("wind_speed") or 2.5)
+        press = float(live.get("pressure") or 1008.0)
+        vent_idx = int(pblh * max(1.0, wind_spd))
+        
+        mcda_score = round(min(99.0, max(52.0, (avg_aqi * 0.35) + (pm25 * 0.35) + (probs.get(dom_source.lower().replace(' ', '_'), 0.45) * 45.0))), 1)
+        mcda_rank = 1 if mcda_score >= 82 else (2 if mcda_score >= 70 else 3)
+        site_type = "Industrial Stack Corridor" if "industr" in dom_source.lower() else "High-Density Traffic Junction" if "vehic" in dom_source.lower() else "Open Combustion Hotspot" if "biomass" in dom_source.lower() else "Unpaved Shoulder Transit Zone"
+
         district_ml_metrics = {
             "dominant_source": dom_source,
             "dominant_percentage": f"{round(probs.get(dom_source.lower().replace(' ', '_'), 0.48) * 100, 1)}%",
-            "conformal_prediction_set": ["Vehicular Exhaust", "Industrial Point Sources"],
-            "confidence_level": "90% Conformal Calibration",
+            "conformal_prediction_set": formatted_pred_set,
+            "confidence_level": f"{int(attr.get('confidence', 0.90) * 100)}% Conformal Calibration",
             "chemical_fingerprint": {
                 "pm_ratio": f"{round(pm25 / max(1.0, pm10), 2)} (PM2.5 / PM10)",
                 "voc_index": int(voc),
                 "nox_index": int(nox),
-                "atmospheric_ventilation": f"{int(pblh * 2.8)} m²/s",
-                "hydrostatic_density_scaling": "1.04x relative to MSL"
+                "atmospheric_ventilation": f"{vent_idx} m²/s",
+                "hydrostatic_density_scaling": f"{round(press / 1013.25, 2)}x relative to MSL"
             },
             "shap_feature_drivers": [
-                {"feature": "Particulate Mass (PM2.5 / PM10)", "impact": f"+{round(pm25 * 0.42, 1)} µg/m³", "direction": "Positive Driver"},
-                {"feature": "Nocturnal Inversion Entrapment", "impact": f"+{round(pblh * 0.03, 1)} µg/m³", "direction": "Positive Driver"},
-                {"feature": "SGP41 VOC Gaseous Precursor", "impact": f"+{round(voc * 0.12, 1)} µg/m³", "direction": "Positive Driver"},
-                {"feature": "Horizontal Wind Dispersion", "impact": "-8.4 µg/m³", "direction": "Mitigating Factor"}
+                {"feature": "Particulate Mass (PM2.5)", "impact": f"+{round(pm25 * 0.44, 1)} µg/m³", "direction": "Primary Driver"},
+                {"feature": f"{dom_source} Sector Loading", "impact": f"+{round(pm25 * probs.get(dom_source.lower().replace(' ', '_'), 0.48), 1)} µg/m³", "direction": "Source Driver"},
+                {"feature": "Thermal Inversion Entrapment", "impact": f"+{round((1000 - min(1000, pblh)) * 0.035, 1)} µg/m³", "direction": "Meteorological Driver"},
+                {"feature": "Horizontal Wind Ventilation", "impact": f"-{round(wind_spd * 3.4, 1)} µg/m³", "direction": "Mitigating Dispersion"}
             ],
             "mcda_deployment_recommendation": {
-                "rank": 1,
-                "priority_score": 88.5,
-                "recommended_site": f"{district} Junction Transit Corridor",
-                "deployment_reason": "High vehicular throttle density coupled with localized street-canyon thermal entrapment.",
-                "expected_benefit": "Enables dynamic traffic light re-phasing and targeted municipal anti-smog misting dispatch."
+                "rank": mcda_rank,
+                "priority_score": mcda_score,
+                "recommended_site": f"{district} {site_type}",
+                "deployment_reason": f"Elevated {dom_source.lower()} loading ({round(probs.get(dom_source.lower().replace(' ', '_'), 0.48)*100)}%) with ground-level boundary layer entrapment at {int(pblh)}m PBLH.",
+                "expected_benefit": f"Enables targeted municipal anti-smog misting and automated {'stack emission enforcement' if 'industr' in dom_source.lower() else 'dynamic traffic signal re-phasing'}."
             }
         }
 

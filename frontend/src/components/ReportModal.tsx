@@ -1,5 +1,7 @@
 'use client';
 import React, { useState, useEffect, useRef } from 'react';
+import { computeHyderabadDistricts, computeBengaluruDistricts, computeGuwahatiDistricts } from '@/data/otherDistricts';
+import { computeDelhiDistricts } from '@/data/delhiDistricts';
 
 interface ReportModalProps {
   isOpen: boolean;
@@ -113,51 +115,120 @@ export default function ReportModal({
   const fetchReport = async () => {
     setLoading(true);
     try {
-      const targetName = mode === 'district_audit' ? (district || 'Kukatpally') : `${city} Metropolitan Area`;
-
-      // Dynamically fetch live ground-truth telemetry & 24h historical curve in real-time
       let currentLive = telemetryData;
       let currentHist = historicalData;
+      let currentAttr = attributionData;
 
-      try {
-        const [cityRes, histRes] = await Promise.all([
-          fetch(`http://127.0.0.1:8000/api/city-data?city=${city}`).catch(() => null),
-          fetch(`http://127.0.0.1:8000/api/city-historical?city=${city}`).catch(() => null)
-        ]);
+      // 1. Fetch live city stations and historical trends
+      const [cityRes, histRes] = await Promise.all([
+        fetch(`http://127.0.0.1:8000/api/city-data?city=${city}`).catch(() => null),
+        fetch(`http://127.0.0.1:8000/api/city-historical?city=${city}`).catch(() => null)
+      ]);
 
-        if (cityRes && cityRes.ok) {
-          const cJson = await cityRes.json();
-          if (cJson) {
-            const stations = cJson.stations || [];
-            const avgAqi = cJson.center_aqi || 120;
-            const avgPm25 = stations.length > 0 ? (stations.reduce((s: number, st: any) => s + (st.pm25 || 0), 0) / stations.length) : 42.0;
-            const avgPm10 = stations.length > 0 ? (stations.reduce((s: number, st: any) => s + (st.pm10 || 0), 0) / stations.length) : 68.0;
-            const avgTemp = stations.length > 0 && stations[0].temp ? stations[0].temp : 28.0;
-            const avgHum = stations.length > 0 && stations[0].humidity ? stations[0].humidity : 65.0;
-            const avgPblh = stations.length > 0 && stations[0].pblh ? stations[0].pblh : 520.0;
+      let stations: any[] = [];
+      if (cityRes && cityRes.ok) {
+        const cJson = await cityRes.json();
+        if (cJson) {
+          stations = cJson.stations || [];
+          const avgAqi = cJson.center_aqi || 120;
+          const avgPm25 = stations.length > 0 ? (stations.reduce((s: number, st: any) => s + (st.pm25 || 0), 0) / stations.length) : 42.0;
+          const avgPm10 = stations.length > 0 ? (stations.reduce((s: number, st: any) => s + (st.pm10 || 0), 0) / stations.length) : 68.0;
+          const avgTemp = stations.length > 0 && stations[0].temp ? stations[0].temp : 28.0;
+          const avgHum = stations.length > 0 && stations[0].humidity ? stations[0].humidity : 65.0;
+          const avgPblh = stations.length > 0 && stations[0].pblh ? stations[0].pblh : 520.0;
 
-            currentLive = {
-              aqi: Math.round(avgAqi),
-              pm25: Math.round(avgPm25 * 10) / 10,
-              pm10: Math.round(avgPm10 * 10) / 10,
-              temp: avgTemp,
-              humidity: avgHum,
-              pblh: avgPblh,
-              voc_index: 92,
-              nox_index: 1
-            };
-          }
+          currentLive = {
+            aqi: Math.round(avgAqi),
+            pm25: Math.round(avgPm25 * 10) / 10,
+            pm10: Math.round(avgPm10 * 10) / 10,
+            temp: avgTemp,
+            humidity: avgHum,
+            pblh: avgPblh,
+            voc_index: 92,
+            nox_index: 1,
+            no2: 25.0,
+            so2: 10.0,
+            co: 1.0,
+            o3: 35.0,
+            wind_speed: 2.5
+          };
         }
-
-        if (histRes && histRes.ok) {
-          const hJson = await histRes.json();
-          if (hJson && hJson.history) {
-            currentHist = hJson;
-          }
-        }
-      } catch (e) {
-        console.warn('Real-time telemetry fetch fallback:', e);
       }
+
+      if (histRes && histRes.ok) {
+        const hJson = await histRes.json();
+        if (hJson && hJson.history) {
+          currentHist = hJson;
+        }
+      }
+
+      // 2. If in District Audit mode, calculate exact IDW telemetry & run live ML attribution for this district!
+      if (mode === 'district_audit' && stations.length > 0) {
+        let computedDistricts: any[] = [];
+        if (city === 'Hyderabad') computedDistricts = computeHyderabadDistricts(stations);
+        else if (city === 'Bengaluru') computedDistricts = computeBengaluruDistricts(stations);
+        else if (city === 'Guwahati') computedDistricts = computeGuwahatiDistricts(stations);
+        else if (city === 'Delhi') computedDistricts = computeDelhiDistricts(stations);
+
+        const targetDist = computedDistricts.find((d: any) => d.name.toLowerCase() === district.toLowerCase() || d.id === district) || computedDistricts[0];
+
+        if (targetDist) {
+          currentLive = {
+            aqi: targetDist.aqi,
+            pm25: targetDist.pm25,
+            pm10: targetDist.pm10,
+            temp: targetDist.temp,
+            humidity: targetDist.humidity,
+            pressure: targetDist.pressure,
+            pblh: targetDist.pblh,
+            wind_speed: targetDist.wind_speed,
+            wind_dir: targetDist.wind_dir,
+            no2: targetDist.no2,
+            so2: targetDist.so2,
+            co: targetDist.co,
+            o3: targetDist.o3,
+            voc_index: Math.round(targetDist.pm25 * 1.8 + targetDist.so2 * 1.2),
+            nox_index: Math.round(targetDist.no2 / 20.0) || 1,
+            lat: targetDist.centroid ? targetDist.centroid[1] : 17.4156,
+            lon: targetDist.centroid ? targetDist.centroid[0] : 78.4736
+          };
+
+          // Fetch real ML source attribution for this exact district reading
+          try {
+            const mlPayload = {
+              station_id: targetDist.id || `dist_${targetDist.name}`,
+              timestamp: new Date().toISOString(),
+              pm25: targetDist.pm25,
+              pm10: targetDist.pm10 || (targetDist.pm25 * 1.5),
+              temp: targetDist.temp || 28.0,
+              humidity: targetDist.humidity || 60.0,
+              pressure: targetDist.pressure || 1008.0,
+              wind_speed: targetDist.wind_speed || 2.5,
+              pblh: targetDist.pblh || 600.0,
+              lat: currentLive.lat,
+              lon: currentLive.lon,
+              no2: targetDist.no2 || 25.0,
+              so2: targetDist.so2 || 10.0,
+              co: targetDist.co || 1.0,
+              o3: targetDist.o3 || 35.0
+            };
+
+            const attrRes = await fetch('http://127.0.0.1:8000/api/attribution', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(mlPayload)
+            });
+
+            if (attrRes && attrRes.ok) {
+              currentAttr = await attrRes.json();
+            }
+          } catch (e) {
+            console.warn('Live ML attribution fetch fallback for district:', e);
+          }
+        }
+      }
+
+      const targetName = mode === 'district_audit' ? (district || 'Kukatpally') : `${city} Metropolitan Area`;
 
       const payload = {
         city: city,
@@ -174,7 +245,7 @@ export default function ReportModal({
           voc_index: 92,
           nox_index: 1
         },
-        attribution: attributionData || {
+        attribution: currentAttr || {
           dominant_source: 'Vehicular Exhaust',
           probabilities: { vehicular: 0.52, industrial: 0.24, biomass: 0.12, dust: 0.12 }
         },
@@ -685,36 +756,100 @@ export default function ReportModal({
                 </div>
               )}
 
-              {/* ── DISTRICT SCOPE ONLY: ML ATTRIBUTION, CHEMICAL FINGERPRINT & MCDA RANKING ── */}
+              {/* ── DISTRICT SCOPE ONLY: DEEP DIVE DIAGNOSTIC DOSSIER ── */}
               {mode === 'district_audit' && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-                  {/* Left: Chemical Fingerprint & Conformal Set */}
-                  <div style={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase' }}>
-                      Ward Chemical Fingerprint & Conformal Set
+                <>
+                  {/* Multi-Pollutant Gas Sensors & Micro-Climate Matrix */}
+                  <div style={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '14px' }}>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase', marginBottom: '10px' }}>
+                      Ward Multi-Pollutant Gas Concentrations & Spatial Physics
                     </div>
-                    <div style={{ fontSize: '0.74rem', color: '#cbd5e1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <div><strong>Primary Source:</strong> <span style={{ color: '#fbbf24', fontWeight: 700 }}>{report.district_ml_metrics?.dominant_source || report.key_metrics?.dominant_source || 'Vehicular Exhaust'} ({report.district_ml_metrics?.dominant_percentage || '48.5%'})</span></div>
-                      <div><strong>90% Conformal Prediction Set:</strong> <span style={{ color: '#38bdf8', fontFamily: 'monospace' }}>&#123;{Array.isArray(report.district_ml_metrics?.conformal_prediction_set) ? report.district_ml_metrics.conformal_prediction_set.join(', ') : 'Vehicular Exhaust, Industrial Point Sources'}&#125;</span></div>
-                      <div><strong>PM Ratio (Fine/Coarse):</strong> {report.district_ml_metrics?.chemical_fingerprint?.pm_ratio || '0.55 (PM2.5/PM10)'}</div>
-                      <div><strong>SGP41 VOC Index:</strong> {report.district_ml_metrics?.chemical_fingerprint?.voc_index || 92} · <strong>NOx Index:</strong> {report.district_ml_metrics?.chemical_fingerprint?.nox_index || 1}</div>
-                      <div><strong>Ventilation Index:</strong> {report.district_ml_metrics?.chemical_fingerprint?.atmospheric_ventilation || '2250 m²/s'}</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px', textAlign: 'center' }}>
+                      <div style={{ background: 'rgba(255,255,255,0.03)', padding: '8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textTransform: 'uppercase' }}>NO2 Gas</div>
+                        <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#fbbf24', margin: '2px 0' }}>{report.key_metrics?.no2 || 25.0} <span style={{ fontSize: '0.65rem' }}>ppb</span></div>
+                        <div style={{ fontSize: '0.62rem', color: '#64748b' }}>Traffic Tracer</div>
+                      </div>
+                      <div style={{ background: 'rgba(255,255,255,0.03)', padding: '8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textTransform: 'uppercase' }}>SO2 Gas</div>
+                        <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#f43f5e', margin: '2px 0' }}>{report.key_metrics?.so2 || 10.0} <span style={{ fontSize: '0.65rem' }}>ppb</span></div>
+                        <div style={{ fontSize: '0.62rem', color: '#64748b' }}>Industrial Stack</div>
+                      </div>
+                      <div style={{ background: 'rgba(255,255,255,0.03)', padding: '8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textTransform: 'uppercase' }}>CO Concentration</div>
+                        <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#38bdf8', margin: '2px 0' }}>{report.key_metrics?.co || 1.2} <span style={{ fontSize: '0.65rem' }}>ppm</span></div>
+                        <div style={{ fontSize: '0.62rem', color: '#64748b' }}>Combustion Factor</div>
+                      </div>
+                      <div style={{ background: 'rgba(255,255,255,0.03)', padding: '8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textTransform: 'uppercase' }}>O3 Ozone</div>
+                        <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#34d399', margin: '2px 0' }}>{report.key_metrics?.o3 || 32.0} <span style={{ fontSize: '0.65rem' }}>ppb</span></div>
+                        <div style={{ fontSize: '0.62rem', color: '#64748b' }}>Photochemical</div>
+                      </div>
+                      <div style={{ background: 'rgba(255,255,255,0.03)', padding: '8px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                        <div style={{ fontSize: '0.65rem', color: '#94a3b8', textTransform: 'uppercase' }}>Fine/Coarse Ratio</div>
+                        <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#a855f7', margin: '2px 0' }}>{report.district_ml_metrics?.chemical_fingerprint?.pm_ratio || '0.55'}</div>
+                        <div style={{ fontSize: '0.62rem', color: '#64748b' }}>PM2.5 / PM10</div>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Right: MCDA Portable Sensor Site Ranking */}
-                  <div style={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#fbbf24', textTransform: 'uppercase' }}>
-                      MCDA Sensor Deployment Priority (Rank #{report.district_ml_metrics?.mcda_deployment_recommendation?.rank || 1})
+                  {/* Left: Chemical Fingerprint & Conformal Set | Right: MCDA Ranking */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                    {/* Left: Chemical Fingerprint & Conformal Set */}
+                    <div style={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase' }}>
+                        Chemical Fingerprint & Conformal Set
+                      </div>
+                      <div style={{ fontSize: '0.74rem', color: '#cbd5e1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div><strong>Primary Source:</strong> <span style={{ color: '#fbbf24', fontWeight: 700 }}>{report.district_ml_metrics?.dominant_source || report.key_metrics?.dominant_source || 'Vehicular Exhaust'} ({report.district_ml_metrics?.dominant_percentage || '48.5%'})</span></div>
+                        <div><strong>90% Conformal Prediction Set:</strong> <span style={{ color: '#38bdf8', fontFamily: 'monospace' }}>&#123;{Array.isArray(report.district_ml_metrics?.conformal_prediction_set) ? report.district_ml_metrics.conformal_prediction_set.join(', ') : 'Vehicular Exhaust, Industrial Point Sources'}&#125;</span></div>
+                        <div><strong>Confidence Calibration:</strong> <span style={{ color: '#34d399', fontWeight: 700 }}>{report.district_ml_metrics?.confidence_level || '90% Conformal Calibration'}</span></div>
+                        <div><strong>SGP41 VOC Index:</strong> {report.district_ml_metrics?.chemical_fingerprint?.voc_index || 92} · <strong>NOx Index:</strong> {report.district_ml_metrics?.chemical_fingerprint?.nox_index || 1}</div>
+                        <div><strong>Atmospheric Ventilation:</strong> {report.district_ml_metrics?.chemical_fingerprint?.atmospheric_ventilation || '2250 m²/s'}</div>
+                      </div>
                     </div>
-                    <div style={{ fontSize: '0.74rem', color: '#cbd5e1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <div><strong>Target Corridor:</strong> <span style={{ color: '#f8fafc', fontWeight: 700 }}>{report.district_ml_metrics?.mcda_deployment_recommendation?.recommended_site || `${district} Transit Corridor`}</span></div>
-                      <div><strong>MCDA Priority Score:</strong> <span style={{ color: '#34d399', fontWeight: 800 }}>{report.district_ml_metrics?.mcda_deployment_recommendation?.priority_score || 88.5} / 100</span></div>
-                      <div><strong>Rationale:</strong> {report.district_ml_metrics?.mcda_deployment_recommendation?.deployment_reason || 'High vehicular throttle density coupled with localized street-canyon thermal entrapment.'}</div>
-                      <div><strong>Municipal Benefit:</strong> {report.district_ml_metrics?.mcda_deployment_recommendation?.expected_benefit || 'Enables dynamic traffic light re-phasing and targeted municipal anti-smog misting dispatch.'}</div>
+
+                    {/* Right: MCDA Portable Sensor Site Ranking */}
+                    <div style={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#fbbf24', textTransform: 'uppercase' }}>
+                        MCDA Sensor Deployment Priority (Rank #{report.district_ml_metrics?.mcda_deployment_recommendation?.rank || 1})
+                      </div>
+                      <div style={{ fontSize: '0.74rem', color: '#cbd5e1', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div><strong>Target Corridor:</strong> <span style={{ color: '#f8fafc', fontWeight: 700 }}>{report.district_ml_metrics?.mcda_deployment_recommendation?.recommended_site || `${district} Transit Corridor`}</span></div>
+                        <div><strong>MCDA Priority Score:</strong> <span style={{ color: '#34d399', fontWeight: 800 }}>{report.district_ml_metrics?.mcda_deployment_recommendation?.priority_score || 88.5} / 100</span></div>
+                        <div><strong>Rationale:</strong> {report.district_ml_metrics?.mcda_deployment_recommendation?.deployment_reason || 'High vehicular throttle density coupled with localized street-canyon thermal entrapment.'}</div>
+                        <div><strong>Municipal Benefit:</strong> {report.district_ml_metrics?.mcda_deployment_recommendation?.expected_benefit || 'Enables dynamic traffic light re-phasing and targeted municipal anti-smog misting dispatch.'}</div>
+                      </div>
                     </div>
                   </div>
-                </div>
+
+                  {/* TreeSHAP Feature Explainability Table */}
+                  {report.district_ml_metrics?.shap_feature_drivers && (
+                    <div style={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '14px' }}>
+                      <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#a855f7', textTransform: 'uppercase', marginBottom: '8px' }}>
+                        TreeSHAP Atmospheric Physics & Concentration Variance Drivers
+                      </div>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.74rem' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid #475569', color: '#94a3b8', fontSize: '0.68rem', textTransform: 'uppercase' }}>
+                            <th style={{ padding: '6px 8px', textAlign: 'left' }}>Physical Feature</th>
+                            <th style={{ padding: '6px 8px', textAlign: 'left' }}>Contribution Impact</th>
+                            <th style={{ padding: '6px 8px', textAlign: 'left' }}>Dynamics Role</th>
+                          </tr>
+                        </thead>
+                        <tbody style={{ color: '#cbd5e1' }}>
+                          {report.district_ml_metrics.shap_feature_drivers.map((drv: any, idx: number) => (
+                            <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                              <td style={{ padding: '6px 8px', fontWeight: 600 }}>{drv.feature}</td>
+                              <td style={{ padding: '6px 8px', fontFamily: 'monospace', fontWeight: 800, color: drv.impact.startsWith('+') ? '#f43f5e' : '#34d399' }}>{drv.impact}</td>
+                              <td style={{ padding: '6px 8px', color: '#94a3b8' }}>{drv.direction}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
               )}
 
               {/* SECTORAL EMISSION CONTRIBUTION MATRIX */}

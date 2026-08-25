@@ -5,6 +5,7 @@ import {
   PieChart, Pie, Legend,
   LineChart, Line
 } from 'recharts';
+import ReportModal from './ReportModal';
 
 export default function DeepDivePanel({ district, city, onReset, recommendedDeployments = [] }: { district: any, city: string, onReset: () => void, recommendedDeployments?: any[] }) {
   const [attribution, setAttribution] = useState<any>(null);
@@ -12,6 +13,7 @@ export default function DeepDivePanel({ district, city, onReset, recommendedDepl
   const [shap, setShap] = useState<any>(null);
   const [diurnal, setDiurnal] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [isReportOpen, setIsReportOpen] = useState(false);
   
   // Simulation states
   const [simTraffic, setSimTraffic] = useState(0);
@@ -125,22 +127,43 @@ export default function DeepDivePanel({ district, city, onReset, recommendedDepl
             Hyperlocal ML Intelligence
           </div>
         </div>
-        <button 
-          onClick={onReset} 
-          style={{ 
-            background: 'var(--bg-elevated)', 
-            border: '1px solid var(--border-primary)', 
-            color: 'var(--text-primary)', 
-            padding: '6px 12px', 
-            borderRadius: '6px', 
-            cursor: 'pointer', 
-            fontSize: '0.75rem',
-            fontWeight: 600,
-            transition: 'var(--transition-fast)' 
-          }}
-        >
-          ✕ Close
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button 
+            onClick={() => setIsReportOpen(true)} 
+            style={{ 
+              background: 'rgba(56, 189, 248, 0.15)', 
+              border: '1px solid rgba(56, 189, 248, 0.4)', 
+              color: '#38bdf8', 
+              padding: '6px 12px', 
+              borderRadius: '6px', 
+              cursor: 'pointer', 
+              fontSize: '0.75rem',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 4,
+              transition: 'var(--transition-fast)' 
+            }}
+          >
+            📄 AI Report
+          </button>
+          <button 
+            onClick={onReset} 
+            style={{ 
+              background: 'var(--bg-elevated)', 
+              border: '1px solid var(--border-primary)', 
+              color: 'var(--text-primary)', 
+              padding: '6px 12px', 
+              borderRadius: '6px', 
+              cursor: 'pointer', 
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              transition: 'var(--transition-fast)' 
+            }}
+          >
+            ✕ Close
+          </button>
+        </div>
       </div>
 
       {recommendedDeployments.length > 0 && (
@@ -360,6 +383,17 @@ export default function DeepDivePanel({ district, city, onReset, recommendedDepl
           </ResponsiveContainer>
         </div>
       </div>
+
+      {/* Executive AI Report Modal */}
+      <ReportModal
+        isOpen={isReportOpen}
+        onClose={() => setIsReportOpen(false)}
+        initialCity={city}
+        initialDistrict={district.name || district.id}
+        initialMode="district_audit"
+        telemetryData={district}
+        attributionData={attribution}
+      />
 
     </div>
   );

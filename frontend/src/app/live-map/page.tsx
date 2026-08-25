@@ -9,6 +9,7 @@ import { Station, CityId, RecommendedDeployment } from '@/types';
 const CityMap = dynamic(() => import('@/components/CityMap'), { ssr: false });
 const DeepDivePanel = dynamic(() => import('@/components/DeepDivePanel'), { ssr: false });
 const AdvisoryPanel = dynamic(() => import('@/components/AdvisoryPanel'), { ssr: false });
+const ReportModal = dynamic(() => import('@/components/ReportModal'), { ssr: false });
 
 function LiveClock() {
   const [time, setTime] = useState('--:--:--');
@@ -37,6 +38,7 @@ export default function LiveMapPage() {
   const [selectedDistrict, setSelectedDistrict] = useState<any>(null);
   const [monitoringLocation, setMonitoringLocation] = useState<{ lat: number; lon: number; name?: string } | null>(null);
   const [advisoryOpen, setAdvisoryOpen] = useState(false);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
   React.useEffect(() => {
     setSelectedDistrict(null);
@@ -141,7 +143,26 @@ export default function LiveMapPage() {
           </div>
         </div>
 
-        <div className="header-status">
+        <div className="header-status" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button
+            onClick={() => setIsReportModalOpen(true)}
+            style={{
+              background: 'rgba(56, 189, 248, 0.15)',
+              border: '1px solid rgba(56, 189, 248, 0.4)',
+              color: '#38bdf8',
+              padding: '6px 12px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '0.75rem',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              transition: 'var(--transition-fast)'
+            }}
+          >
+            📄 AI Report
+          </button>
           <div className="status-badge live">
             <div className="dot" />
             Live
@@ -227,6 +248,16 @@ export default function LiveMapPage() {
           </div>
         </div>
       )}
+
+      {/* Executive AI Report Modal */}
+      <ReportModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        initialCity={activeCity}
+        initialMode="city_audit"
+        telemetryData={{ aqi: avgAqi, pm25: stations[0]?.pm25 || 42, pm10: stations[0]?.pm10 || 68 }}
+        historicalData={cityData}
+      />
     </div>
   );
 }

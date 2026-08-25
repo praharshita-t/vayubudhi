@@ -1122,12 +1122,12 @@ export default function CompareCitiesPage() {
         )}
       </div>
 
-      {/* Executive AI Multi-City/State Audit Modal */}
+      {/* Executive AI Environmental Audit Modal */}
       <ReportModal
         isOpen={isReportModalOpen}
         onClose={() => setIsReportModalOpen(false)}
         initialCity={activeCity}
-        initialMode="state_audit"
+        initialMode="city_audit"
       />
     </div>
   );

@@ -841,15 +841,34 @@ def get_city_historical(city: str = "Hyderabad", lat: float = None, lon: float =
         # Keep last 24 hours of data
         history = history[-24:]
 
-        # Seamlessly pin current hour's point to live telemetry for exact zero-drift parity
+        # Seamlessly calibrate historical curve against live station telemetry for exact zero-drift parity
         try:
             city_live = get_city_data(city)
             if history and city_live and city_live.center_aqi > 0:
-                history[-1].aqi = float(city_live.center_aqi)
-                if city_live.stations:
-                    history[-1].pm25 = float(round(sum(s.pm25 for s in city_live.stations) / len(city_live.stations), 1))
-        except Exception:
-            pass
+                raw_last_aqi = history[-1].aqi
+                raw_last_pm25 = history[-1].pm25
+                raw_last_pm10 = history[-1].pm10
+                
+                live_aqi = float(city_live.center_aqi)
+                live_pm25 = float(round(sum(s.pm25 for s in city_live.stations) / len(city_live.stations), 1)) if city_live.stations else raw_last_pm25
+                live_pm10 = float(round(sum(s.pm10 for s in city_live.stations) / len(city_live.stations), 1)) if city_live.stations else raw_last_pm10
+                
+                aqi_ratio = live_aqi / max(1.0, raw_last_aqi)
+                pm25_ratio = live_pm25 / max(1.0, raw_last_pm25)
+                pm10_ratio = live_pm10 / max(1.0, raw_last_pm10)
+                
+                # Apply smooth weighted calibration so historical diurnal variation is preserved
+                for pt in history:
+                    pt.aqi = float(round(max(10.0, pt.aqi * aqi_ratio)))
+                    pt.pm25 = float(round(max(5.0, pt.pm25 * pm25_ratio), 1))
+                    pt.pm10 = float(round(max(10.0, pt.pm10 * pm10_ratio), 1))
+                    
+                # Exact pin for the latest point
+                history[-1].aqi = live_aqi
+                history[-1].pm25 = live_pm25
+                history[-1].pm10 = live_pm10
+        except Exception as e:
+            print(f"Historical calibration error: {e}")
 
     except Exception as e:
         print(f"Failed to fetch historical AQI for {city}: {e}")

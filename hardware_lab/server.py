@@ -337,7 +337,7 @@ def index():
       </div>
       <div class="glass-card px-3.5 py-2 flex flex-col">
         <span class="text-slate-400 text-[10px] uppercase">Surge Event Status</span>
-        <span class="text-amber-400 font-bold flex items-center gap-1">⚠️ Combustion Detected</span>
+        <span class="text-amber-400 font-bold flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-amber-400"></span> Combustion Surge Active</span>
       </div>
     </div>
   </header>
@@ -351,11 +351,11 @@ def index():
         <span class="text-xs text-slate-400 mono" id="scrubberTimestamp">2026-08-24 21:07:45</span>
       </div>
       <div class="flex items-center gap-2 flex-wrap">
-        <button id="btnPrev" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 border border-slate-700 transition">◀ Step Prev</button>
-        <button id="btnPlay" class="px-4 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-xs font-bold text-white shadow-lg shadow-sky-600/30 transition">▶ Play Stream</button>
-        <button id="btnNext" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 border border-slate-700 transition">Step Next ▶</button>
-        <button id="btnSurge" class="px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs font-bold transition">🔥 Jump to Surge Event</button>
-        <button id="btnReport" class="px-3.5 py-1.5 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 text-xs font-bold transition">📄 AI Forensic Brief</button>
+        <button id="btnPrev" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 border border-slate-700 transition">&larr; Step Prev</button>
+        <button id="btnPlay" class="px-4 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-xs font-bold text-white shadow-lg shadow-sky-600/30 transition">Play Stream</button>
+        <button id="btnNext" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 border border-slate-700 transition">Step Next &rarr;</button>
+        <button id="btnSurge" class="px-3 py-1.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs font-bold transition">Jump to Surge Event</button>
+        <button id="btnReport" class="px-3.5 py-1.5 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 text-xs font-bold transition">AI Forensic Brief</button>
       </div>
     </div>
     <input type="range" id="packetSlider" min="0" max="141" value="0" class="w-full h-2 bg-slate-800 rounded-lg cursor-pointer">
@@ -427,7 +427,7 @@ def index():
         <div class="flex flex-col gap-3">
           <div>
             <div class="flex justify-between text-xs mb-1 font-semibold">
-              <span class="text-slate-300">🚗 Vehicular Exhaust</span>
+              <span class="text-slate-300">Vehicular Exhaust</span>
               <span class="mono text-rose-400" id="pctVehicular">65.0%</span>
             </div>
             <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
@@ -437,7 +437,7 @@ def index():
 
           <div>
             <div class="flex justify-between text-xs mb-1 font-semibold">
-              <span class="text-slate-300">🏭 Industrial Emissions</span>
+              <span class="text-slate-300">Industrial Emissions</span>
               <span class="mono text-purple-400" id="pctIndustrial">15.0%</span>
             </div>
             <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
@@ -447,7 +447,7 @@ def index():
 
           <div>
             <div class="flex justify-between text-xs mb-1 font-semibold">
-              <span class="text-slate-300">🔥 Biomass / Smoke Combustion</span>
+              <span class="text-slate-300">Biomass & Smoke Combustion</span>
               <span class="mono text-amber-400" id="pctBiomass">10.0%</span>
             </div>
             <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
@@ -457,7 +457,7 @@ def index():
 
           <div>
             <div class="flex justify-between text-xs mb-1 font-semibold">
-              <span class="text-slate-300">🏜️ Dust & Construction</span>
+              <span class="text-slate-300">Road Dust & Construction Activity</span>
               <span class="mono text-yellow-400" id="pctDust">10.0%</span>
             </div>
             <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
@@ -798,7 +798,7 @@ def index():
       const btn = document.getElementById('btnPlay');
       if (!isPlaying) {
         isPlaying = true;
-        btn.innerText = '⏸ Pause Stream';
+        btn.innerText = 'Pause Stream';
         btn.className = 'px-4 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-xs font-bold text-white shadow-lg shadow-amber-600/30 transition';
         playTimer = setInterval(() => {
           if (currentIndex < packets.length - 1) {
@@ -809,7 +809,7 @@ def index():
         }, 600);
       } else {
         isPlaying = false;
-        btn.innerText = '▶ Play Stream';
+        btn.innerText = 'Play Stream';
         btn.className = 'px-4 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-xs font-bold text-white shadow-lg shadow-sky-600/30 transition';
         clearInterval(playTimer);
       }
@@ -858,8 +858,8 @@ def index():
           <p class="text-xs text-slate-400">Reference: <span id="modalReportId" class="mono text-sky-400">VB-ESP32-01</span> · Time: <span id="modalTimestamp" class="mono text-slate-300"></span></p>
         </div>
         <div class="flex items-center gap-2">
-          <button id="modalPrint" class="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-xs font-bold text-white transition">🖨️ Print / Export PDF</button>
-          <button id="modalClose" class="px-2.5 py-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-slate-200 text-xs font-bold transition">✕</button>
+          <button id="modalPrint" class="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-xs font-bold text-white transition">Print / Export PDF</button>
+          <button id="modalClose" class="px-2.5 py-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-slate-200 text-xs font-bold transition">Close</button>
         </div>
       </div>
 
@@ -883,7 +883,7 @@ def index():
       </div>
 
       <div class="bg-sky-500/10 border-l-4 border-sky-500 p-4 rounded-r-lg">
-        <span class="text-xs uppercase font-bold text-sky-400 block mb-1">📌 Forensic Narrative & Root-Cause</span>
+        <span class="text-xs uppercase font-bold text-sky-400 block mb-1">Forensic Narrative & Root-Cause Diagnostics</span>
         <p id="modalNarrative" class="text-xs text-slate-200 leading-relaxed"></p>
       </div>
 

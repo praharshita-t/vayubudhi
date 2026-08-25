@@ -47,14 +47,20 @@ def generate_deterministic_report(req: ReportRequest) -> Dict[str, Any]:
     attr = req.attribution or {}
     fc = req.forecast or {}
     
-    avg_aqi = int(live.get("aqi") or hist.get("avg_aqi") or (120 if city == "Hyderabad" else 185 if city == "Delhi" else 75))
-    pm25 = float(live.get("pm25") or hist.get("avg_pm25") or (42.0 if city == "Hyderabad" else 95.0 if city == "Delhi" else 28.0))
-    pm10 = float(live.get("pm10") or hist.get("avg_pm10") or pm25 * 1.5)
+    if mode == "district_audit" and live.get("aqi") is not None:
+        avg_aqi = int(live.get("aqi"))
+        pm25 = float(live.get("pm25", 42.0))
+        pm10 = float(live.get("pm10", pm25 * 1.5))
+    else:
+        avg_aqi = int(live.get("aqi") or hist.get("avg_aqi") or (120 if city == "Hyderabad" else 185 if city == "Delhi" else 75))
+        pm25 = float(live.get("pm25") or hist.get("avg_pm25") or (42.0 if city == "Hyderabad" else 95.0 if city == "Delhi" else 28.0))
+        pm10 = float(live.get("pm10") or hist.get("avg_pm10") or pm25 * 1.5)
+
     temp = float(live.get("temp") or 28.0)
     humidity = float(live.get("humidity") or 65.0)
     pblh = float(live.get("pblh") or 600.0)
-    voc = float(live.get("voc_index") or 95.0)
-    nox = float(live.get("nox_index") or 1.0)
+    voc = float(live.get("voc_index") or (pm25 * 1.8 + float(live.get("so2") or 10.0) * 1.2))
+    nox = float(live.get("nox_index") or (float(live.get("no2") or 25.0) / 20.0))
     
     # Calculate NCAP Grade
     if avg_aqi <= 50:

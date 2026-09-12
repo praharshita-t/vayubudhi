@@ -102,7 +102,7 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
     startTimer();
 
     try {
-      appendLog(`▶ Simulation started — monitoring IoT sensor ${iotSensor.id} (${iotSensor.name}${activeCity ? `, ${activeCity}` : ''})`);
+      appendLog(`[INIT] Simulation started — monitoring IoT sensor ${iotSensor.id} (${iotSensor.name}${activeCity ? `, ${activeCity}` : ''})`);
       await sleep(1800);
       if (!stillRunning()) return;
 
@@ -229,13 +229,13 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
         if (!stillRunning()) return;
         const notif = await notifRes.json().catch(() => ({}));
         if (notif.status === 'sent') {
-          appendLog(`✓ Mobile notification delivered (${notif.notification_id}) via ${notif.channel || 'unknown'}`, 'success');
+          appendLog(`[OK] Mobile notification delivered (${notif.notification_id}) via ${notif.channel || 'unknown'}`, 'success');
         } else {
-          appendLog(`⚠ Notification failed: ${notif.error || 'unknown'} — continuing dispatch`, 'warn');
+          appendLog(`[WARN] Notification failed: ${notif.error || 'unknown'} — continuing dispatch`, 'warn');
         }
       } catch (notifErr: any) {
         if (!stillRunning()) return;
-        appendLog(`⚠ Notification failed: ${notifErr?.message || 'unknown'} — continuing dispatch`, 'warn');
+        appendLog(`[WARN] Notification failed: ${notifErr?.message || 'unknown'} — continuing dispatch`, 'warn');
       }
 
       await sleep(1800);
@@ -245,7 +245,7 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
       appendLog('Enforcement unit dispatched — alert active on commander map', 'success');
       await sleep(1500);
       if (!stillRunning()) return;
-      appendLog('▶ Pipeline complete');
+      appendLog('[STATUS] Pipeline sequence complete');
     } catch (err: any) {
       if (!stillRunning()) return;
       appendLog(`Pipeline failed: ${err?.message || String(err)}`, 'error');

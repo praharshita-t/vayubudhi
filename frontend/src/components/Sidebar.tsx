@@ -74,6 +74,7 @@ export default function Sidebar() {
                 <span className={`sidebar-nav-label${expanded ? ' visible' : ''}`}>
                   {item.label}
                 </span>
+                {isActive && expanded && <div className="sidebar-active-glow-dot" />}
               </Link>
             );
           })}

@@ -6,6 +6,7 @@ import {
   LineChart, Line
 } from 'recharts';
 import ReportModal from './ReportModal';
+import { FileText, X } from 'lucide-react';
 
 export default function DeepDivePanel({ district, city, onReset, recommendedDeployments = [] }: { district: any, city: string, onReset: () => void, recommendedDeployments?: any[] }) {
   const [attribution, setAttribution] = useState<any>(null);
@@ -140,12 +141,13 @@ export default function DeepDivePanel({ district, city, onReset, recommendedDepl
               fontSize: '0.75rem',
               fontWeight: 700,
               display: 'flex',
-              alignItems: 'center',
-              gap: 4,
+              alignItems: 'center', 
+              gap: 6, 
               transition: 'var(--transition-fast)' 
             }}
           >
-            📄 AI Report
+            <FileText size={13} />
+            <span>AI Report</span>
           </button>
           <button 
             onClick={onReset} 
@@ -158,10 +160,14 @@ export default function DeepDivePanel({ district, city, onReset, recommendedDepl
               cursor: 'pointer', 
               fontSize: '0.75rem',
               fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
               transition: 'var(--transition-fast)' 
             }}
           >
-            ✕ Close
+            <X size={13} />
+            <span>Close</span>
           </button>
         </div>
       </div>

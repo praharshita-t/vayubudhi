@@ -23,10 +23,12 @@ const CITY_CENTERS_MAP: Record<string, { name: string; lat: number; lon: number 
 interface EnforcementMapProps {
   plan: RoadRoutePlan | null;
   selectedStop: RouteStop | null;
+  selectedDistrictId?: string | null;
   allStations?: Station[];
   districts?: District[];
   city?: string;
   onSelectStop: (stop: RouteStop) => void;
+  onSelectDistrict?: (district: District) => void;
   isNavigating?: boolean;
   onToggleFullscreen?: () => void;
   isFullscreen?: boolean;
@@ -35,10 +37,12 @@ interface EnforcementMapProps {
 export const EnforcementMap: React.FC<EnforcementMapProps> = ({
   plan,
   selectedStop,
+  selectedDistrictId = null,
   allStations = [],
   districts = [],
   city = 'Delhi',
   onSelectStop,
+  onSelectDistrict,
   isNavigating = false,
   onToggleFullscreen,
   isFullscreen = false,
@@ -105,9 +109,36 @@ export const EnforcementMap: React.FC<EnforcementMapProps> = ({
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      border: 1px solid rgba(255,255,255,0.7);
+      border: 1px solid rgba(255,255,255,0.8);
       box-shadow: 0 0 6px rgba(0,0,0,0.8);
       cursor: pointer;
+    }
+
+    /* District Centroid Label */
+    .district-label-pin {
+      background: transparent !important;
+      border: none !important;
+    }
+    .district-label-inner {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      border-radius: 12px;
+      padding: 2px 6px;
+      font-size: 9px;
+      font-weight: 700;
+      color: #f1f5f9;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .district-label-aqi {
+      font-weight: 900;
+      padding: 0 4px;
+      border-radius: 8px;
+      color: #0f172a;
     }
 
     /* Enforcement Stop Markers */
@@ -228,16 +259,30 @@ export const EnforcementMap: React.FC<EnforcementMapProps> = ({
     const districtsData = ${JSON.stringify(districts)};
     const fullGeo = ${JSON.stringify(fullGeometry)};
     const selectedStopId = ${JSON.stringify(selectedStop ? selectedStop.source_id : null)};
+    const selectedDistrictId = ${JSON.stringify(selectedDistrictId)};
     const isNavigating = ${isNavigating ? 'true' : 'false'};
 
-    // Helper for AQI color mapping
+    // EPA/NAQI Standard Color Scale synchronized with Website
     function getAqiColor(aqi) {
       if (aqi <= 50) return '#22c55e';
       if (aqi <= 100) return '#84cc16';
-      if (aqi <= 200) return '#eab308';
-      if (aqi <= 300) return '#f97316';
-      if (aqi <= 400) return '#ef4444';
+      if (aqi <= 150) return '#eab308';
+      if (aqi <= 200) return '#f59e0b';
+      if (aqi <= 250) return '#f97316';
+      if (aqi <= 300) return '#ef4444';
+      if (aqi <= 400) return '#dc2626';
       return '#b91c1c';
+    }
+
+    function getAqiCategoryName(aqi) {
+      if (aqi <= 50) return 'Good';
+      if (aqi <= 100) return 'Moderate';
+      if (aqi <= 150) return 'USG';
+      if (aqi <= 200) return 'Unhealthy';
+      if (aqi <= 250) return 'Poor';
+      if (aqi <= 300) return 'Very Unhealthy';
+      if (aqi <= 400) return 'Severe';
+      return 'Hazardous';
     }
 
     // Initialize Map with CartoDB Dark Matter tiles
@@ -256,36 +301,80 @@ export const EnforcementMap: React.FC<EnforcementMapProps> = ({
       attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
     }).addTo(map);
 
+    const districtPolys = {};
+
     // 0. Plot Geospatial District Boundaries (Color-Coded AQI Heatmap)
     districtsData.forEach(dist => {
       if (dist.polygon && dist.polygon.length > 0) {
         const latLngs = dist.polygon.map(pt => [pt[1], pt[0]]);
-        const color = getAqiColor(dist.aqi || 100);
+        const aqiVal = dist.aqi || 100;
+        const color = getAqiColor(aqiVal);
+        const isDistSelected = selectedDistrictId === dist.id;
+
         const poly = L.polygon(latLngs, {
-          color: color,
-          weight: 1.2,
-          opacity: 0.65,
+          color: isDistSelected ? '#ffffff' : color,
+          weight: isDistSelected ? 3.0 : 1.5,
+          opacity: isDistSelected ? 0.95 : 0.70,
           fillColor: color,
-          fillOpacity: 0.16,
+          fillOpacity: isDistSelected ? 0.38 : 0.22,
         }).addTo(map);
 
+        districtPolys[dist.id] = poly;
+
         const viVal = Math.round((dist.pblh || 800) * (dist.wind_speed || 2.0));
+        const catName = getAqiCategoryName(aqiVal);
 
         poly.bindPopup(
           '<div class="popup-box">' +
-            '<div class="popup-title">' + dist.name + ' Sector</div>' +
-            '<div class="popup-metric">District NAQI: <strong style="color:' + color + ';">' + (dist.aqi || 100) + '</strong></div>' +
+            '<div class="popup-title">' + dist.name + '</div>' +
+            '<div class="popup-badge" style="background:' + color + '25; color:' + color + '; border-color:' + color + '80;">' + catName.toUpperCase() + ' AQI ' + aqiVal + '</div>' +
             '<div class="popup-metric">PM2.5: <strong>' + (dist.pm25 || 0).toFixed(1) + '</strong> • PM10: <strong>' + (dist.pm10 || 0).toFixed(1) + ' µg/m³</strong></div>' +
             '<div class="popup-metric">NO₂: ' + (dist.no2 || 0).toFixed(0) + ' • SO₂: ' + (dist.so2 || 0).toFixed(0) + ' • CO: ' + (dist.co || 0).toFixed(1) + '</div>' +
-            '<div class="popup-physics">PBLH: ' + (dist.pblh || 800) + 'm • Wind: ' + (dist.wind_speed || 2) + 'm/s • VI: ' + viVal + '</div>' +
+            '<div class="popup-physics">PBLH: ' + (dist.pblh || 800) + 'm • Wind: ' + (dist.wind_speed || 2).toFixed(1) + 'm/s • VI: ' + viVal + '</div>' +
           '</div>'
         );
+
+        poly.on('click', function() {
+          const msg = JSON.stringify({ type: 'SELECT_DISTRICT', districtId: dist.id, districtName: dist.name, aqi: dist.aqi });
+          if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+            window.ReactNativeWebView.postMessage(msg);
+          } else if (window.parent && window.parent.postMessage) {
+            window.parent.postMessage(msg, '*');
+          }
+        });
+
+        // Add small centroid label pin
+        if (dist.centroid && Array.isArray(dist.centroid) && dist.centroid.length >= 2) {
+          const cLon = dist.centroid[0];
+          const cLat = dist.centroid[1];
+          const labelHtml = '<div class="district-label-inner">' +
+            '<span>' + (dist.name.replace(/Zone|District|Revenue/g, '').trim()) + '</span>' +
+            '<span class="district-label-aqi" style="background:' + color + ';">' + aqiVal + '</span>' +
+          '</div>';
+
+          const labelIcon = L.divIcon({
+            className: 'district-label-pin',
+            html: labelHtml,
+            iconSize: [80, 20],
+            iconAnchor: [40, 10],
+          });
+
+          const labelMarker = L.marker([cLat, cLon], { icon: labelIcon }).addTo(map);
+          labelMarker.on('click', function() {
+            poly.openPopup([cLat, cLon]);
+            const msg = JSON.stringify({ type: 'SELECT_DISTRICT', districtId: dist.id, districtName: dist.name, aqi: dist.aqi });
+            if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+              window.ReactNativeWebView.postMessage(msg);
+            } else if (window.parent && window.parent.postMessage) {
+              window.parent.postMessage(msg, '*');
+            }
+          });
+        }
       }
     });
 
     // 1. Plot Background Network Stations (CPCB / TSPCB / PCBA)
     stationsData.forEach(st => {
-      // Check if this station is already in the enforcement corridor stops
       const isCorridorStop = stopsData.some(s => 
         (s.stationName && st.name && s.stationName.toLowerCase() === st.name.toLowerCase()) ||
         (Math.abs(s.lat - st.lat) < 0.001 && Math.abs(s.lon - st.lon) < 0.001)
@@ -410,15 +499,12 @@ export const EnforcementMap: React.FC<EnforcementMapProps> = ({
       });
     });
 
-    // Auto-fit or zoom
+    // Auto-fit bounds
     if (isNavigating && stopsData.length > 0) {
       const focusBounds = L.latLngBounds([[depotData.lat, depotData.lon], [stopsData[0].lat, stopsData[0].lon]]);
       map.fitBounds(focusBounds, { padding: [50, 50], maxZoom: 14 });
     } else if (polyline && fullGeo.length > 1) {
       map.fitBounds(polyline.getBounds(), { padding: [40, 40] });
-    } else if (stopsData.length > 0) {
-      const bounds = L.latLngBounds([[depotData.lat, depotData.lon], ...stopsData.map(s => [s.lat, s.lon])]);
-      map.fitBounds(bounds, { padding: [40, 40] });
     } else if (districtsData.length > 0) {
       const allCoords = [];
       districtsData.forEach(d => {
@@ -429,6 +515,9 @@ export const EnforcementMap: React.FC<EnforcementMapProps> = ({
       } else {
         map.setView([initialLat, initialLon], 12);
       }
+    } else if (stopsData.length > 0) {
+      const bounds = L.latLngBounds([[depotData.lat, depotData.lon], ...stopsData.map(s => [s.lat, s.lon])]);
+      map.fitBounds(bounds, { padding: [40, 40] });
     } else {
       map.setView([initialLat, initialLon], 12);
     }
@@ -458,8 +547,7 @@ export const EnforcementMap: React.FC<EnforcementMapProps> = ({
             map.fitBounds(polyline.getBounds(), { padding: [30, 30] });
           }
         } else if (data.type === 'FOCUS_STOP') {
-          // Hyper Zoom to stop coordinates (Street Level Zoom: 16.5)
-          map.flyTo([data.lat, data.lon], 16.5, { animate: true, duration: 1.0 });
+          map.flyTo([data.lat, data.lon], 15.5, { animate: true, duration: 1.0 });
 
           stopMarkers.forEach(sm => {
             const isMatched = sm.stop.source_id === data.stopId || (Math.abs(sm.stop.lat - data.lat) < 0.001 && Math.abs(sm.stop.lon - data.lon) < 0.001);
@@ -482,6 +570,13 @@ export const EnforcementMap: React.FC<EnforcementMapProps> = ({
               }, 400);
             }
           });
+        } else if (data.type === 'FOCUS_DISTRICT') {
+          map.flyTo([data.lat, data.lon], 13.5, { animate: true, duration: 1.0 });
+          if (districtPolys[data.districtId]) {
+            setTimeout(function() {
+              districtPolys[data.districtId].openPopup([data.lat, data.lon]);
+            }, 300);
+          }
         }
       } catch (e) {}
     }
@@ -502,6 +597,11 @@ export const EnforcementMap: React.FC<EnforcementMapProps> = ({
         if (matched) {
           onSelectStop(matched);
         }
+      } else if (data.type === 'SELECT_DISTRICT' && districts.length > 0) {
+        const matchedDist = districts.find((d) => d.id === data.districtId);
+        if (matchedDist && onSelectDistrict) {
+          onSelectDistrict(matchedDist);
+        }
       }
     } catch (e) {
       console.error('[EnforcementMap] Message parse error:', e);
@@ -516,7 +616,7 @@ export const EnforcementMap: React.FC<EnforcementMapProps> = ({
       window.addEventListener('message', webListener);
       return () => window.removeEventListener('message', webListener);
     }
-  }, [plan]);
+  }, [plan, districts]);
 
   // When selectedStop changes, center map on that exact location
   useEffect(() => {
@@ -534,6 +634,26 @@ export const EnforcementMap: React.FC<EnforcementMapProps> = ({
       }
     }
   }, [selectedStop]);
+
+  // When selectedDistrictId changes, center map on that district
+  useEffect(() => {
+    if (selectedDistrictId && districts.length > 0) {
+      const dist = districts.find((d) => d.id === selectedDistrictId);
+      if (dist && dist.centroid) {
+        const msg = JSON.stringify({
+          type: 'FOCUS_DISTRICT',
+          districtId: dist.id,
+          lat: dist.centroid[1],
+          lon: dist.centroid[0],
+        });
+        if (Platform.OS === 'web' && iframeRef.current?.contentWindow) {
+          iframeRef.current.contentWindow.postMessage(msg, '*');
+        } else if (webViewRef.current) {
+          webViewRef.current.postMessage(msg);
+        }
+      }
+    }
+  }, [selectedDistrictId, districts]);
 
   const fitFullRoute = () => {
     const msg = JSON.stringify({ type: 'FIT_ALL' });
@@ -596,7 +716,7 @@ export const EnforcementMap: React.FC<EnforcementMapProps> = ({
         )}
 
         <TouchableOpacity style={styles.controlBtn} onPress={fitWholeCity} activeOpacity={0.8}>
-          <Text style={styles.controlBtnText}>Whole View</Text>
+          <Text style={styles.controlBtnText}>District Heatmap</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.controlBtn} onPress={fitFullRoute} activeOpacity={0.8}>
@@ -610,24 +730,18 @@ export const EnforcementMap: React.FC<EnforcementMapProps> = ({
         )}
       </View>
 
-      {/* Map Legend Bar */}
+      {/* Map Legend Bar - AQI Severity Bands matching Website */}
       <View style={styles.legendBar}>
-        <View style={styles.legendItem}>
-          <View style={styles.legendDepotDot} />
-          <Text style={styles.legendLabel}>Depot HQ</Text>
+        <View style={styles.legendScale}>
+          <View style={[styles.scaleBlock, { backgroundColor: '#22c55e' }]} />
+          <View style={[styles.scaleBlock, { backgroundColor: '#84cc16' }]} />
+          <View style={[styles.scaleBlock, { backgroundColor: '#eab308' }]} />
+          <View style={[styles.scaleBlock, { backgroundColor: '#f59e0b' }]} />
+          <View style={[styles.scaleBlock, { backgroundColor: '#f97316' }]} />
+          <View style={[styles.scaleBlock, { backgroundColor: '#ef4444' }]} />
+          <View style={[styles.scaleBlock, { backgroundColor: '#dc2626' }]} />
         </View>
-        <View style={styles.legendItem}>
-          <View style={styles.legendP1Dot} />
-          <Text style={styles.legendLabel}>#1 Priority</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={styles.legendStationDot} />
-          <Text style={styles.legendLabel}>Network Nodes</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={styles.legendRouteLine} />
-          <Text style={styles.legendLabel}>Road Route</Text>
-        </View>
+        <Text style={styles.legendLabel}>AQI Heatmap (Good → Hazardous)</Text>
       </View>
     </View>
   );
@@ -699,44 +813,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#1e293b',
     borderRadius: 6,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 5,
-    gap: 10,
+    gap: 8,
   },
-  legendItem: {
+  legendScale: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  legendDepotDot: {
-    width: 10,
-    height: 10,
     borderRadius: 2,
-    backgroundColor: '#0f172a',
-    borderWidth: 1.5,
-    borderColor: '#38bdf8',
+    overflow: 'hidden',
   },
-  legendP1Dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#ef4444',
-    borderWidth: 1,
-    borderColor: '#ffffff',
-  },
-  legendStationDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: '#eab308',
-    borderWidth: 1,
-    borderColor: '#ffffff80',
-  },
-  legendRouteLine: {
-    width: 14,
-    height: 3,
-    backgroundColor: '#38bdf8',
-    borderRadius: 1,
+  scaleBlock: {
+    width: 9,
+    height: 8,
   },
   legendLabel: {
     color: '#94a3b8',

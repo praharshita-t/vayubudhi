@@ -32,10 +32,10 @@ export const NextStopCard: React.FC<NextStopCardProps> = ({
         <View style={styles.indicatorWrap}>
           <View style={[styles.pulseBeacon, isFullInspection ? styles.beaconRed : styles.beaconBlue]} />
           <Text style={styles.badgeCategory}>
-            {isNavigating ? 'ACTIVE EN ROUTE TARGET' : 'NEXT ENFORCEMENT STOP'}
+            {isNavigating ? 'Active en route target' : 'Next enforcement stop'}
           </Text>
         </View>
-        <Text style={styles.routeOrderText}>CORRIDOR LEG #{rank}</Text>
+        <Text style={styles.routeOrderText}>Leg #{rank}</Text>
       </View>
 
       {/* Main Stop Info */}
@@ -151,13 +151,12 @@ const styles = StyleSheet.create({
   },
   badgeCategory: {
     color: '#475569',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '700',
-    letterSpacing: 0.5,
   },
   routeOrderText: {
     color: '#64748b',
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '600',
   },
   mainRow: {
@@ -241,18 +240,18 @@ const styles = StyleSheet.create({
   },
   metricLabel: {
     color: '#64748b',
-    fontSize: 9,
+    fontSize: 11,
     fontWeight: '600',
     marginBottom: 2,
   },
   metricValue: {
     color: '#0f172a',
-    fontSize: 12.5,
+    fontSize: 14,
     fontWeight: '700',
   },
   metricUnit: {
-    color: '#64748b',
-    fontSize: 9,
+    color: '#94a3b8',
+    fontSize: 10,
     fontWeight: '500',
   },
   colorHazard: {
@@ -277,9 +276,8 @@ const styles = StyleSheet.create({
   },
   evidenceBtnText: {
     color: '#334155',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '700',
-    letterSpacing: 0.3,
   },
   startBtn: {
     flex: 1.2,
@@ -291,9 +289,8 @@ const styles = StyleSheet.create({
   },
   startBtnText: {
     color: '#ffffff',
-    fontSize: 11.5,
+    fontSize: 13,
     fontWeight: '700',
-    letterSpacing: 0.4,
   },
   completeBtn: {
     flex: 1.2,
@@ -305,8 +302,7 @@ const styles = StyleSheet.create({
   },
   completeBtnText: {
     color: '#ffffff',
-    fontSize: 11.5,
+    fontSize: 13,
     fontWeight: '700',
-    letterSpacing: 0.4,
   },
 });

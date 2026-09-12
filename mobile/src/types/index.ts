@@ -13,6 +13,7 @@ export interface Station {
   humidity: number;
   pressure: number;
   wind_speed: number;
+  wind_dir?: number;
   pblh: number;
   aqi: number;
   source: 'iot' | 'caaqms' | string;
@@ -47,6 +48,7 @@ export interface RouteStop {
   humidity?: number;
   pressure?: number;
   wind_speed?: number;
+  wind_dir?: number;
   pblh?: number;
   ventilation_index?: number;
   dominantSource?: string;
@@ -111,7 +113,19 @@ export interface District {
   humidity: number;
   pressure: number;
   wind_speed: number;
+  wind_dir?: number;
   pblh: number;
+}
+
+export type DominantSource = 'Traffic' | 'Industrial' | 'Dust';
+
+export interface MCDADistrictRecommendation {
+  district: District;
+  priorityScore: number;
+  dominantSource: DominantSource;
+  reason: string;
+  benefit: string;
+  rank: number;
 }
 
 export interface HardwareReading {
@@ -140,7 +154,7 @@ export interface SensorAlert {
   trigger_reason: string;
   trigger_threshold: number;
   is_acknowledged: boolean;
-  severity: 'WARNING' | 'CRITICAL';
+  severity: 'NORMAL' | 'WARNING' | 'CRITICAL';
 }
 
 export interface AttributionEvidence {

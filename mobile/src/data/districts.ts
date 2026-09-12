@@ -1,4 +1,4 @@
-import type { District, Station } from '../types/index';
+import type { District, Station, MCDADistrictRecommendation, DominantSource } from '../types/index';
 
 const delhiGeoDataRaw = require('./delhiDistrictsGeo.json');
 const hyderabadGeoDataRaw = require('./hyderabadDistrictsGeo.json');
@@ -14,19 +14,24 @@ function ensureArray(data: any): any[] {
 
 export const hyderabadDistrictsRaw: any[] = ensureArray(hyderabadDistrictsRawData);
 
+/**
+ * Standard atmospheric Spatial Inverse Distance Weighting (IDW p=2)
+ * Synchronized with the website atmospheric physics engine.
+ */
 function idwForDistrict(centroid: [number, number], stations: Station[]): Omit<District, 'id' | 'name' | 'polygon' | 'centroid'> {
   if (!centroid || !Array.isArray(centroid) || centroid.length < 2) {
-    return { aqi: 0, pm25: 0, pm10: 0, no2: 0, so2: 0, co: 0, o3: 0, temp: 30, humidity: 50, pressure: 1010, wind_speed: 2, pblh: 800 };
+    return { aqi: 0, pm25: 0, pm10: 0, no2: 0, so2: 0, co: 0, o3: 0, temp: 30, humidity: 50, pressure: 1010, wind_speed: 2, wind_dir: 0, pblh: 800 };
   }
 
   const [cLon, cLat] = centroid;
   let wSum = 0;
   let aqiS = 0, pm25S = 0, pm10S = 0, no2S = 0, so2S = 0, coS = 0, o3S = 0;
   let tempS = 0, humS = 0, pressS = 0, windS = 0, pblhS = 0;
+  let windDirSinS = 0, windDirCosS = 0;
 
   const safeStations = Array.isArray(stations) ? stations : [];
   if (safeStations.length === 0) {
-    return { aqi: 0, pm25: 0, pm10: 0, no2: 0, so2: 0, co: 0, o3: 0, temp: 30, humidity: 50, pressure: 1010, wind_speed: 2, pblh: 800 };
+    return { aqi: 0, pm25: 0, pm10: 0, no2: 0, so2: 0, co: 0, o3: 0, temp: 30, humidity: 50, pressure: 1010, wind_speed: 2, wind_dir: 0, pblh: 800 };
   }
 
   for (const s of safeStations) {
@@ -37,9 +42,10 @@ function idwForDistrict(centroid: [number, number], stations: Station[]): Omit<D
     if (dist < 0.01) {
       return { 
         aqi: s.aqi || 0, pm25: s.pm25 || 0, pm10: s.pm10 || 0, no2: s.no2 || 40, so2: s.so2 || 12, co: s.co || 1.5, o3: s.o3 || 30,
-        temp: s.temp || 30, humidity: s.humidity || 50, pressure: s.pressure || 1010, wind_speed: s.wind_speed || 2, pblh: s.pblh || 800
+        temp: s.temp || 30, humidity: s.humidity || 50, pressure: s.pressure || 1010, wind_speed: s.wind_speed || 2, wind_dir: s.wind_dir || 0, pblh: s.pblh || 800
       };
     }
+    // Standard Inverse Distance Squared Weighting (p=2) for atmospheric spatial fields
     const w = 1 / Math.pow(dist, 2);
     wSum += w;
     aqiS += w * (s.aqi || 0);
@@ -53,24 +59,30 @@ function idwForDistrict(centroid: [number, number], stations: Station[]): Omit<D
     humS += w * (s.humidity || 50);
     pressS += w * (s.pressure || 1010);
     windS += w * (s.wind_speed || 2);
+    const dirRad = (((s as any).wind_dir || 0) * Math.PI) / 180;
+    windDirSinS += w * Math.sin(dirRad);
+    windDirCosS += w * Math.cos(dirRad);
     pblhS += w * (s.pblh || 800);
   }
 
-  const denominator = wSum > 0 ? wSum : 1;
+  if (wSum === 0 || isNaN(wSum)) {
+    return { aqi: 50, pm25: 15, pm10: 30, no2: 25, so2: 10, co: 1.0, o3: 30, temp: 30, humidity: 50, pressure: 1010, wind_speed: 2, wind_dir: 0, pblh: 800 };
+  }
 
   return {
-    aqi: Math.round(aqiS / denominator),
-    pm25: Math.round(pm25S / denominator),
-    pm10: Math.round(pm10S / denominator),
-    no2: Math.round(no2S / denominator),
-    so2: Math.round(so2S / denominator),
-    co: Math.round((coS / denominator) * 10) / 10,
-    o3: Math.round(o3S / denominator),
-    temp: Math.round((tempS / denominator) * 10) / 10,
-    humidity: Math.round(humS / denominator),
-    pressure: Math.round(pressS / denominator),
-    wind_speed: Math.round((windS / denominator) * 10) / 10,
-    pblh: Math.round(pblhS / denominator),
+    aqi: Math.round(aqiS / wSum),
+    pm25: Math.round(pm25S / wSum),
+    pm10: Math.round(pm10S / wSum),
+    no2: Math.round(no2S / wSum),
+    so2: Math.round(so2S / wSum),
+    co: Math.round((coS / wSum) * 10) / 10,
+    o3: Math.round(o3S / wSum),
+    temp: Math.round((tempS / wSum) * 10) / 10,
+    humidity: Math.round(humS / wSum),
+    pressure: Math.round(pressS / wSum),
+    wind_speed: Math.round((windS / wSum) * 10) / 10,
+    wind_dir: Math.round(((Math.atan2(windDirSinS / wSum, windDirCosS / wSum) * 180) / Math.PI + 360) % 360),
+    pblh: Math.round(pblhS / wSum),
   };
 }
 
@@ -161,6 +173,7 @@ export function getSpatialDataAtCoordinate(
           humidity: dist.humidity,
           pressure: dist.pressure,
           wind_speed: dist.wind_speed,
+          wind_dir: dist.wind_dir,
           pblh: dist.pblh,
         };
       }
@@ -201,6 +214,7 @@ export function getSpatialDataAtCoordinate(
         humidity: closestDist.humidity,
         pressure: closestDist.pressure,
         wind_speed: closestDist.wind_speed,
+        wind_dir: closestDist.wind_dir,
         pblh: closestDist.pblh,
       };
     }
@@ -223,7 +237,6 @@ export function getSpatialDataAtCoordinate(
 
 /**
  * Returns the AQI corresponding to the geographic position from the heatmap/spatial data.
- * Returns null if no spatial data is available.
  */
 export function getAQIAtCoordinate(
   lat: number,
@@ -235,3 +248,80 @@ export function getAQIAtCoordinate(
   return data && typeof data.aqi === 'number' ? data.aqi : null;
 }
 
+/**
+ * MCDA Multi-Criteria Decision Analysis Scoring and Ranking
+ * Matches the website's AI priority dispatch and spatial attribution engine.
+ */
+export function scoreDistrictMCDA(dist: District): Omit<MCDADistrictRecommendation, 'rank'> {
+  const pm25 = dist.pm25 || 0;
+  const pm10 = dist.pm10 || 0;
+  const aqi = dist.aqi || 0;
+  const no2 = dist.no2 || 0;
+  const so2 = dist.so2 || 0;
+  const co = dist.co || 0;
+  const windSpeed = dist.wind_speed || 2.0;
+  const humidity = dist.humidity || 50.0;
+  const pblh = dist.pblh || 800.0;
+
+  const pollutantSeverity = Math.min(100, (aqi / 300.0) * 100.0);
+  const trafficScore = Math.min(100, (no2 / 80.0) * 50.0 + (co / 2.0) * 50.0);
+  const industryScore = Math.min(100, (so2 / 40.0) * 50.0 + (pm25 / 60.0) * 50.0);
+  const dustScore = Math.min(100, (pm10 / 100.0) * 100.0);
+
+  const maxSourceScore = Math.max(trafficScore, industryScore, dustScore);
+  let dominantSource: DominantSource = 'Dust';
+  if (maxSourceScore === trafficScore) {
+    dominantSource = 'Traffic';
+  } else if (maxSourceScore === industryScore) {
+    dominantSource = 'Industrial';
+  }
+
+  const stagnationScore = 0.40 * Math.max(0, 100.0 - windSpeed * 10.0) +
+    0.30 * humidity +
+    0.30 * Math.max(0, 100.0 - (pblh / 1000.0) * 100.0);
+
+  const priorityScore = Math.min(99.9, Math.max(10.0, Math.round((
+    0.40 * pollutantSeverity +
+    0.35 * maxSourceScore +
+    0.25 * stagnationScore
+  ) * 10) / 10));
+
+  let reason = '';
+  let benefit = '';
+  if (dominantSource === 'Traffic') {
+    reason = `High vehicular emissions load (NO₂: ${no2.toFixed(0)} µg/m³, CO: ${co.toFixed(1)} mg/m³) combined with atmospheric stagnation in ${dist.name}.`;
+    benefit = `Field inspection team intercepts mobile emission spikes not captured by fixed CAAQMS.`;
+  } else if (dominantSource === 'Industrial') {
+    reason = `Elevated chemical indicators (SO₂: ${so2.toFixed(0)} µg/m³, PM2.5: ${pm25.toFixed(0)} µg/m³) and a shallow mixing layer (PBLH: ${pblh.toFixed(0)} m) in ${dist.name}.`;
+    benefit = `Enforces industrial stack and boiler emission caps under Air Act 1981.`;
+  } else {
+    reason = `Heavy coarse particulate load (PM10: ${pm10.toFixed(0)} µg/m³, AQI: ${aqi}) with low dispersion in ${dist.name}.`;
+    benefit = `Deploys localized anti-smog water mist canons and C&D dust mitigation units.`;
+  }
+
+  return { district: dist, priorityScore, dominantSource, reason, benefit };
+}
+
+/**
+ * Returns all districts ranked by MCDA AI priority score (descending)
+ */
+export function rankDistrictsMCDA(districts: District[]): MCDADistrictRecommendation[] {
+  return districts
+    .map(scoreDistrictMCDA)
+    .sort((a, b) => b.priorityScore - a.priorityScore)
+    .map((rec, i) => ({ ...rec, rank: i + 1 }));
+}
+
+/**
+ * Returns districts ranked by raw AQI severity (highest AQI first)
+ */
+export function getDistrictsRankedBySeverity(districts: District[]): District[] {
+  return [...districts].sort((a, b) => (b.aqi || 0) - (a.aqi || 0));
+}
+
+/**
+ * Returns cleanest districts (lowest AQI first)
+ */
+export function getCleanestDistricts(districts: District[]): District[] {
+  return [...districts].sort((a, b) => (a.aqi || 0) - (b.aqi || 0));
+}

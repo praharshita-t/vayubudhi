@@ -1,7 +1,9 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
-import type { CityDataResponse, RoutePlan, RouteStop, Station, AttributionEvidence } from '../types/index';
+import type { CityDataResponse, RoutePlan, RouteStop, Station, AttributionEvidence, HardwareReading } from '../types/index';
 import { hyderabadDistrictsRaw } from '../data/districts';
+
+export const DEPLOYED_API_URL = 'https://vayubudhi.onrender.com/api';
 
 export function getApiBaseUrl(): string {
   if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -23,13 +25,12 @@ export function getApiBaseUrl(): string {
     }
   } catch (e) {}
 
-  // Active current LAN IP fallback
-  return 'http://172.16.18.5:8000/api';
+  return 'http://192.168.0.109:8000/api';
 }
 
 export const API_BASE_URL = getApiBaseUrl();
 
-async function fetchWithTimeout(url: string, options: any = {}, timeoutMs = 15000): Promise<Response> {
+async function fetchWithTimeout(url: string, options: any = {}, timeoutMs = 8000): Promise<Response> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -43,24 +44,112 @@ async function fetchWithTimeout(url: string, options: any = {}, timeoutMs = 1500
 }
 
 export async function fetchCityData(city: string): Promise<CityDataResponse> {
-  const baseUrl = getApiBaseUrl();
-  try {
-    const res = await fetchWithTimeout(`${baseUrl}/city-data?city=${encodeURIComponent(city)}`, {
-      headers: { 'Accept': 'application/json' },
-    }, 15000);
-    if (!res.ok) {
-      throw new Error(`Failed to fetch city data: ${res.status}`);
+  const dynamicBase = getApiBaseUrl();
+  const candidateBases = [
+    dynamicBase,
+    'http://127.0.0.1:8000/api',
+    'http://10.125.4.205:8000/api',
+    'http://172.27.180.205:8000/api',
+    'http://localhost:8000/api',
+    'http://192.168.0.109:8000/api',
+    DEPLOYED_API_URL,
+  ];
+
+  const uniqueBases = Array.from(new Set(candidateBases));
+
+  for (const base of uniqueBases) {
+    try {
+      const url = `${base}/city-data?city=${encodeURIComponent(city)}`;
+      const res = await fetchWithTimeout(url, { headers: { 'Accept': 'application/json' } }, 5000);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.stations) && data.stations.length > 0) {
+          return data;
+        }
+      }
+    } catch (e) {
+      // try next candidate endpoint
     }
-    const data = await res.json();
-    if (!data || !Array.isArray(data.stations) || data.stations.length === 0) {
-      console.log(`[API] Backend returned 0 stations for ${city}, using local fallback stations.`);
-      return getFallbackCityData(city);
-    }
-    return data;
-  } catch (error) {
-    console.log(`[API] Backend offline for ${city}, using offline station telemetry:`, error);
-    return getFallbackCityData(city);
   }
+
+  console.log(`[API] All backend endpoints unreachable for ${city}, using local fallback stations.`);
+  return getFallbackCityData(city);
+}
+
+export async function fetchLatestHardwareReading(): Promise<HardwareReading | null> {
+  const dynamicBase = getApiBaseUrl();
+  const urlsToTry = [
+    'https://vayubudhi.onrender.com/api/ingest/latest',
+    `${dynamicBase}/ingest/latest`,
+    'http://10.125.4.205:8000/api/ingest/latest',
+    'http://172.27.180.205:8000/api/ingest/latest',
+    'http://192.168.0.109:8000/api/ingest/latest',
+    'http://127.0.0.1:8000/api/ingest/latest',
+    'http://localhost:8000/api/ingest/latest',
+    'http://10.0.2.2:8000/api/ingest/latest',
+  ];
+
+  const uniqueUrls = Array.from(new Set(urlsToTry));
+  const validReadings: HardwareReading[] = [];
+
+  await Promise.all(
+    uniqueUrls.map(async (url) => {
+      try {
+        const cacheBustUrl = `${url}?_t=${Date.now()}`;
+        const res = await fetchWithTimeout(
+          cacheBustUrl,
+          {
+            headers: {
+              'Accept': 'application/json',
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+              'Pragma': 'no-cache',
+            },
+          },
+          2000
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (data && (data.id !== undefined || data.device_id !== undefined || data.pm25 !== undefined)) {
+            const pm25Val = Number(data.pm25 !== undefined ? data.pm25 : (data.pm2_5 || 0));
+            const pm10Val = Number(data.pm10 !== undefined ? data.pm10 : (data.pm_10 || pm25Val * 1.45));
+            const tempVal = Number(data.temperature !== undefined ? data.temperature : (data.temp !== undefined ? data.temp : 28.0));
+            const humVal = Number(data.humidity !== undefined ? data.humidity : 55.0);
+            const pressVal = Number(data.pressure !== undefined ? data.pressure : 1008.0);
+            const vocVal = Number(data.voc_index !== undefined ? data.voc_index : (data.voc || 0));
+            const noxVal = Number(data.nox_index !== undefined ? data.nox_index : (data.nox || 0));
+
+            validReadings.push({
+              id: `RD_LIVE_${data.id || Date.now()}`,
+              station_id: data.device_id || data.station_id || 'ESP32_01',
+              timestamp: data.timestamp || new Date().toISOString(),
+              pm1: data.pm1 !== undefined ? Number(data.pm1) : parseFloat((pm25Val * 0.65).toFixed(1)),
+              pm25: parseFloat(pm25Val.toFixed(1)),
+              pm4: data.pm4 !== undefined ? Number(data.pm4) : parseFloat((pm25Val * 1.22).toFixed(1)),
+              pm10: parseFloat(pm10Val.toFixed(1)),
+              voc_index: Math.round(vocVal),
+              nox_index: Math.round(noxVal),
+              temp: parseFloat(tempVal.toFixed(1)),
+              humidity: Math.round(humVal),
+              pressure: parseFloat(pressVal.toFixed(1)),
+              lat: Number(data.lat || 28.6468),
+              lon: Number(data.lon || 77.3160),
+              location_name: `Live Edge Node (${(data.device_id || data.station_id || 'ESP32').toUpperCase()})`,
+            });
+          }
+        }
+      } catch (e) {}
+    })
+  );
+
+  if (validReadings.length === 0) return null;
+
+  validReadings.sort((a, b) => {
+    const timeA = new Date(a.timestamp).getTime() || 0;
+    const timeB = new Date(b.timestamp).getTime() || 0;
+    return timeB - timeA;
+  });
+
+  return validReadings[0];
 }
 
 export async function optimizeEnforcementRoute(
@@ -68,7 +157,16 @@ export async function optimizeEnforcementRoute(
   depotLon: number,
   stations: Station[]
 ): Promise<RoutePlan> {
-  const baseUrl = getApiBaseUrl();
+  const dynamicBase = getApiBaseUrl();
+  const candidateBases = [
+    dynamicBase,
+    'http://192.168.0.109:8000/api',
+    'http://127.0.0.1:8000/api',
+    'http://10.0.2.2:8000/api',
+    'https://vayubudhi.onrender.com/api',
+  ];
+  const uniqueBases = Array.from(new Set(candidateBases));
+
   const safeStations = Array.isArray(stations) && stations.length > 0 ? stations : [];
   const payload = {
     lat: depotLat,
@@ -81,27 +179,27 @@ export async function optimizeEnforcementRoute(
     })),
   };
 
-  try {
-    const res = await fetchWithTimeout(`${baseUrl}/optimize`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    }, 15000);
+  for (const base of uniqueBases) {
+    try {
+      const res = await fetchWithTimeout(`${base}/optimize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }, 6000);
 
-    if (!res.ok) {
-      throw new Error(`Optimizer returned status ${res.status}`);
+      if (res.ok) {
+        const plan = await res.json();
+        if (plan && Array.isArray(plan.stops) && plan.stops.length > 0) {
+          return plan;
+        }
+      }
+    } catch (error) {
+      // try next
     }
-
-    const plan = await res.json();
-    if (!plan || !Array.isArray(plan.stops) || plan.stops.length === 0) {
-      console.log('[API] Backend optimizer returned 0 stops, computing local CVRPTW plan');
-      return getLocalOptimizedPlan(depotLat, depotLon, safeStations);
-    }
-    return plan;
-  } catch (error) {
-    console.log('[API] Backend optimizer offline, computing local CVRPTW plan:', error);
-    return getLocalOptimizedPlan(depotLat, depotLon, safeStations);
   }
+
+  console.log('[API] Backend optimizer unreachable, computing local CVRPTW plan');
+  return getLocalOptimizedPlan(depotLat, depotLon, safeStations);
 }
 
 export async function fetchAttributionEvidence(

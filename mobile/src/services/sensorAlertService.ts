@@ -1,77 +1,75 @@
 import type { HardwareReading, SensorAlert } from '../types/index';
+import { fetchLatestHardwareReading } from './api';
 
 class SensorAlertService {
   private alerts: SensorAlert[] = [];
   private listeners: Array<(alerts: SensorAlert[]) => void> = [];
 
+  private pollingTimer: any = null;
+
   constructor() {
-    this.seedInitialAlerts();
+    this.alerts = [];
+    this.syncLiveHardwareReading();
+    this.startAutoPolling();
   }
 
-  private seedInitialAlerts() {
-    const now = new Date();
-    
-    // Alert 1: Severe spike (Incense/Combustion breach)
-    const time1 = new Date(now.getTime() - 4 * 60000);
-    this.alerts.push({
-      id: 'ALT_101',
-      station_id: 'ESP32_01',
-      timestamp: time1.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      severity: 'CRITICAL',
-      trigger_threshold: 60.0,
-      trigger_reason: 'PM2.5 exceeded 60 µg/m³ hardware alert threshold',
-      is_acknowledged: false,
-      reading: {
-        id: 'RD_101',
-        station_id: 'ESP32_01',
-        timestamp: time1.toISOString(),
-        pm1: 48.1,
-        pm25: 74.2, // > 60 hardware alarm threshold
-        pm4: 91.6,
-        pm10: 105.3,
-        voc_index: 126,
-        nox_index: 98,
-        temp: 28.4,
-        humidity: 74.4,
-        pressure: 948.8,
-        lat: 28.6468,
-        lon: 77.3160,
-        location_name: 'Anand Vihar Perimeter Node',
-      },
-    });
+  public startAutoPolling(intervalMs: number = 1000) {
+    if (this.pollingTimer) clearInterval(this.pollingTimer);
+    this.pollingTimer = setInterval(() => {
+      this.syncLiveHardwareReading();
+    }, intervalMs);
+  }
 
-    // Alert 2: Industrial dust breach
-    const time2 = new Date(now.getTime() - 18 * 60000);
-    this.alerts.push({
-      id: 'ALT_102',
-      station_id: 'ESP32_02',
-      timestamp: time2.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      severity: 'WARNING',
-      trigger_threshold: 60.0,
-      trigger_reason: 'PM2.5 exceeded 60 µg/m³ hardware alert threshold',
-      is_acknowledged: true,
-      reading: {
-        id: 'RD_102',
-        station_id: 'ESP32_02',
-        timestamp: time2.toISOString(),
-        pm1: 39.5,
-        pm25: 64.8, // > 60 hardware alarm threshold
-        pm4: 82.1,
-        pm10: 118.4,
-        voc_index: 85,
-        nox_index: 42,
-        temp: 31.2,
-        humidity: 58.0,
-        pressure: 1008.2,
-        lat: 28.6837,
-        lon: 77.0254,
-        location_name: 'Mundka Industrial Ward',
-      },
-    });
+  public stopAutoPolling() {
+    if (this.pollingTimer) {
+      clearInterval(this.pollingTimer);
+      this.pollingTimer = null;
+    }
   }
 
   public getAlerts(): SensorAlert[] {
     return [...this.alerts];
+  }
+
+  private latestReading: HardwareReading | null = null;
+
+  public getLatestReading(): HardwareReading | null {
+    return this.latestReading;
+  }
+
+  public async syncLiveHardwareReading(): Promise<SensorAlert | null> {
+    try {
+      const reading = await fetchLatestHardwareReading();
+      if (!reading) return null;
+
+      this.latestReading = reading;
+      const alertId = 'ALT_LIVE_EDGE_NODE';
+      const isBreach = (reading.pm25 || 0) >= 60.0;
+      const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+      const liveAlert: SensorAlert = {
+        id: alertId,
+        station_id: `${(reading.station_id || 'ESP32_01').toUpperCase()} (LIVE)`,
+        timestamp: `${timeStr}`,
+        severity: (reading.pm25 || 0) > 90 ? 'CRITICAL' : ((reading.pm25 || 0) >= 60 ? 'WARNING' : 'NORMAL'),
+        trigger_threshold: 60.0,
+        trigger_reason: isBreach
+          ? `Live PM2.5 threshold breach (${reading.pm25} µg/m³ > 60 µg/m³)`
+          : `Live edge telemetry active (${reading.pm25} µg/m³ PM2.5 • ${reading.temp}°C)`,
+        is_acknowledged: !isBreach,
+        reading,
+      };
+
+      // Always update the live hardware node at index 0 and keep any spike tests
+      this.alerts = [
+        liveAlert,
+        ...this.alerts.filter((a) => a.id !== alertId),
+      ];
+      this.notify();
+      return liveAlert;
+    } catch (e) {
+      return null;
+    }
   }
 
   public acknowledgeAlert(alertId: string) {
@@ -86,12 +84,12 @@ class SensorAlertService {
     const pm25Value = parseFloat((65 + Math.random() * 45).toFixed(1));
     
     const newAlert: SensorAlert = {
-      id: `ALT_${Date.now().toString().slice(-4)}`,
-      station_id: 'ESP32_01',
+      id: `ALT_SPIKE_${Date.now().toString().slice(-4)}`,
+      station_id: 'ESP32_01 (SPIKE TEST)',
       timestamp: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       severity: pm25Value > 90 ? 'CRITICAL' : 'WARNING',
       trigger_threshold: 60.0,
-      trigger_reason: `PM2.5 spike (${pm25Value} µg/m³) exceeded 60 µg/m³ threshold`,
+      trigger_reason: `Simulated PM2.5 spike (${pm25Value} µg/m³) exceeded 60 µg/m³ threshold`,
       is_acknowledged: false,
       reading: {
         id: `RD_${Date.now()}`,

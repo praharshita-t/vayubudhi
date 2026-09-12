@@ -77,7 +77,7 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
   const exposedPop = stop.populationExposed || 120000;
   const score = Math.min(
     99,
-    Math.round(aqi * 0.38 + (exposedPop / 15000))
+    Math.round(aqi * 0.42 + 25)
   );
 
   let aqiCategory = 'Moderate';
@@ -112,7 +112,7 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
     ? `Critical boundary layer stagnation (PBLH ${pblh}m, VI ${vi.toLocaleString()} m²/s) traps ground emissions.`
     : `Restricted atmospheric dispersion (ventilation index ${vi.toLocaleString()} m²/s) limits pollutant clearance.`;
 
-  const executiveSummary = `${stationName} is prioritized as Corridor #${rank} with an MCDA Score of ${score}/100 due to ${aqiCategory.toLowerCase()} air quality (NAQI ${aqi}; PM2.5: ${pm25} µg/m³, PM10: ${pm10} µg/m³) threatening ${exposedPop.toLocaleString()} exposed citizens. ${stagnationText} Multi-criteria source attribution confirms ${dominantSource} as the dominant contributor (${dominantPct}%), warranting priority field intervention.`;
+  const executiveSummary = `${stationName} is prioritized as Corridor #${rank} with an MCDA Score of ${score}/100 due to ${aqiCategory.toLowerCase()} air quality (NAQI ${aqi}; PM2.5: ${pm25} µg/m³, PM10: ${pm10} µg/m³). ${stagnationText} Multi-criteria source attribution confirms ${dominantSource} as the dominant contributor (${dominantPct}%), warranting priority field intervention.`;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -157,9 +157,9 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
             </View>
             <View style={styles.kpiDivider} />
             <View style={styles.kpiBox}>
-              <Text style={styles.kpiLabel}>POPULATION</Text>
-              <Text style={styles.kpiVal}>
-                {exposedPop.toLocaleString()}
+              <Text style={styles.kpiLabel}>DOMINANT</Text>
+              <Text style={[styles.kpiVal, styles.textSky]} numberOfLines={1}>
+                {dominantSource.replace(/Emissions|Traffic|Sources/g, '').trim()}
               </Text>
             </View>
           </View>

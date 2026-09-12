@@ -19,7 +19,7 @@
       }
     },
     "plugins": [
-      "@maplibre/maplibre-react-native"
+      "expo-status-bar"
     ]
   }
 }

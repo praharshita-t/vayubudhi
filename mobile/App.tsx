@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, StatusBar } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, StatusBar, Platform } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { EnforcementScreen } from './src/screens/EnforcementScreen';
 import { NotificationsScreen } from './src/screens/NotificationsScreen';
@@ -47,15 +47,15 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <ErrorBoundary>
-        <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+        <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right', 'bottom']}>
           <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
 
           {/* Operational Header Bar */}
           <View style={styles.header}>
             <View style={styles.brandRow}>
-              {/* VayuBudhi Wind/Flow Brand Icon */}
+              {/* VayuBudhi Brand Icon */}
               <View style={styles.brandIconBox}>
-                <Text style={styles.brandIconSymbol}>༄</Text>
+                <Text style={styles.brandIconSymbol}>VB</Text>
               </View>
               <View>
                 <Text style={styles.headerTitle}>VAYUBUDHI</Text>
@@ -78,16 +78,17 @@ export default function App() {
             )}
           </View>
 
-          {/* Bottom Tab Bar */}
+          {/* Bottom Tab Bar (Raised with generous tap target) */}
           <View style={styles.tabBar}>
             <TouchableOpacity
               style={[styles.tab, activeTab === 'enforcement' && styles.tabActive]}
               onPress={() => setActiveTab('enforcement')}
               activeOpacity={0.7}
+              hitSlop={{ top: 12, bottom: 16, left: 16, right: 16 }}
             >
               <View style={[styles.tabIndicator, activeTab === 'enforcement' && styles.tabIndicatorActive]} />
               <Text style={[styles.tabLabel, activeTab === 'enforcement' && styles.tabLabelActive]}>
-                Enforcement Patrol
+                Dispatch
               </Text>
             </TouchableOpacity>
 
@@ -95,10 +96,11 @@ export default function App() {
               style={[styles.tab, activeTab === 'telemetry' && styles.tabActive]}
               onPress={() => setActiveTab('telemetry')}
               activeOpacity={0.7}
+              hitSlop={{ top: 12, bottom: 16, left: 16, right: 16 }}
             >
               <View style={[styles.tabIndicator, activeTab === 'telemetry' && styles.tabIndicatorActive]} />
               <Text style={[styles.tabLabel, activeTab === 'telemetry' && styles.tabLabelActive]}>
-                Sensor Telemetry
+                Alerts
               </Text>
             </TouchableOpacity>
           </View>
@@ -191,20 +193,28 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderTopWidth: 1,
     borderTopColor: '#e2e8f0',
-    paddingBottom: 4,
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 16 : 10,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 8,
   },
   tab: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 12,
-    gap: 4,
+    paddingVertical: 8,
+    gap: 5,
+    borderRadius: 8,
+    marginHorizontal: 6,
   },
   tabActive: {
     backgroundColor: '#f0f9ff',
   },
   tabIndicator: {
-    width: 20,
-    height: 3,
+    width: 24,
+    height: 3.5,
     borderRadius: 2,
     backgroundColor: 'transparent',
   },
@@ -213,7 +223,7 @@ const styles = StyleSheet.create({
   },
   tabLabel: {
     color: '#64748b',
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     letterSpacing: 0.2,
   },

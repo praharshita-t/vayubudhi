@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -11,13 +11,31 @@ import {
 } from 'react-native';
 import { fetchCityData, optimizeEnforcementRoute } from '../services/api';
 import { buildRoadEnforcementPlan } from '../services/routingService';
-import { computeDistricts, getAQIAtCoordinate, getSpatialDataAtCoordinate } from '../data/districts';
-import type { District, RoadRoutePlan, RouteStop, Station } from '../types/index';
+import {
+  computeDistricts,
+  getAQIAtCoordinate,
+  getSpatialDataAtCoordinate,
+  rankDistrictsMCDA,
+  getDistrictsRankedBySeverity,
+} from '../data/districts';
+import type { District, RoadRoutePlan, RouteStop, Station, MCDADistrictRecommendation, HardwareReading } from '../types/index';
 import { EnforcementMap } from '../components/EnforcementMap';
 import { NextStopCard } from '../components/NextStopCard';
 import { RecommendationCard } from '../components/RecommendationCard';
 import { EvidenceModal } from '../components/EvidenceModal';
 import { RouteOverviewModal } from '../components/RouteOverviewModal';
+import { sensorAlertService } from '../services/sensorAlertService';
+
+export function getAqiCategory(aqi: number): { label: string; color: string; bg: string } {
+  if (aqi <= 50) return { label: 'Good', color: '#22c55e', bg: '#ecfdf5' };
+  if (aqi <= 100) return { label: 'Moderate', color: '#84cc16', bg: '#f7fee7' };
+  if (aqi <= 150) return { label: 'USG', color: '#eab308', bg: '#fefce8' };
+  if (aqi <= 200) return { label: 'Unhealthy', color: '#f59e0b', bg: '#fffbeb' };
+  if (aqi <= 250) return { label: 'Poor', color: '#f97316', bg: '#fff7ed' };
+  if (aqi <= 300) return { label: 'Very Unhealthy', color: '#ef4444', bg: '#fef2f2' };
+  if (aqi <= 400) return { label: 'Severe', color: '#dc2626', bg: '#fef2f2' };
+  return { label: 'Hazardous', color: '#b91c1c', bg: '#fef2f2' };
+}
 
 const CORE_CITIES = ['Delhi', 'Hyderabad', 'Bengaluru'];
 const OTHER_CITIES = [
@@ -48,10 +66,68 @@ const CITY_DEPOTS: Record<string, { name: string; lat: number; lon: number }> = 
   Chandigarh: { name: 'Municipal Corporation HQ (Sector 17)', lat: 30.7333, lon: 76.7794 },
 };
 
+function districtToRouteStop(d: District, rank: number, city: string): RouteStop {
+  const aqi = d.aqi || 220;
+  const pm25 = d.pm25 || 85;
+  const pm10 = d.pm10 || 160;
+  const no2 = d.no2 || 55;
+  const so2 = d.so2 || 18;
+  const co = d.co || 1.8;
+  const o3 = d.o3 || 32;
+  const wind = d.wind_speed || 2.2;
+  const pblh = d.pblh || 750;
+  const vi = Math.round(pblh * wind);
+
+  let dominantSource = 'Fugitive Dust';
+  let legalBasis = 'Air (P&CP) Act 1981 §31A';
+  if (so2 > 25 || (pm25 > 100 && so2 > 15)) {
+    dominantSource = 'Industrial Emissions';
+    legalBasis = 'EP Act 1986 §15 / Industrial Stack Mandate';
+  } else if (no2 > 60 || co > 2.0) {
+    dominantSource = 'Vehicular Traffic';
+    legalBasis = 'Motor Vehicles Act §190(2) / GRAP Stage IV';
+  }
+
+  return {
+    source_id: `DIST_${d.id}`,
+    lat: d.centroid ? d.centroid[1] : 28.6139,
+    lon: d.centroid ? d.centroid[0] : 77.2090,
+    eta: '10 min',
+    action: aqi >= 250 ? 'FULL_INSPECTION' : 'VERIFY_FIRST',
+    roi: Math.round(aqi * 1.2),
+    stationName: `${d.name} Sector`,
+    severity: aqi,
+    aqi,
+    pm25,
+    pm10,
+    no2,
+    so2,
+    co,
+    o3,
+    temp: d.temp,
+    humidity: d.humidity,
+    pressure: d.pressure,
+    wind_speed: wind,
+    wind_dir: d.wind_dir,
+    pblh,
+    ventilation_index: vi,
+    dominantSource,
+    sourceConfidence: 0.92,
+    populationExposed: 145000 + (rank * 25000) % 60000,
+    legalBasis,
+    evidenceRationale: `District spatial load (AQI ${aqi}) with ${dominantSource.toLowerCase()} indicator dominance.`,
+    priorityRank: rank,
+    distanceFromPrev: '3.8 km',
+    durationFromPrev: '12 min',
+    isCompleted: false,
+  };
+}
+
 export const EnforcementScreen: React.FC = () => {
   const [selectedCity, setSelectedCity] = useState<string>('Delhi');
   const [stations, setStations] = useState<Station[]>([]);
   const [districts, setDistricts] = useState<District[]>([]);
+  const [selectedDistrict, setSelectedDistrict] = useState<District | null>(null);
   const [routePlan, setRoutePlan] = useState<RoadRoutePlan | null>(null);
   const [selectedStop, setSelectedStop] = useState<RouteStop | null>(null);
   const [cityAqi, setCityAqi] = useState<number>(202);
@@ -59,6 +135,8 @@ export const EnforcementScreen: React.FC = () => {
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [isNavigating, setIsNavigating] = useState<boolean>(false);
   const [navStopIndex, setNavStopIndex] = useState<number>(0);
+
+  const [liveHardwareReading, setLiveHardwareReading] = useState<HardwareReading | null>(null);
 
   // Modals
   const [evidenceStop, setEvidenceStop] = useState<RouteStop | null>(null);
@@ -69,13 +147,28 @@ export const EnforcementScreen: React.FC = () => {
   const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
+    setLiveHardwareReading(sensorAlertService.getLatestReading());
+    const unsub = sensorAlertService.subscribe(() => {
+      setLiveHardwareReading(sensorAlertService.getLatestReading());
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
     loadCityEnforcement(selectedCity);
+    const interval = setInterval(() => {
+      loadCityEnforcement(selectedCity, true); // background refresh without resetting scroll/loading spinner
+    }, 30000);
+    return () => clearInterval(interval);
   }, [selectedCity]);
 
-  const loadCityEnforcement = async (city: string) => {
-    setLoading(true);
-    setIsNavigating(false);
-    setNavStopIndex(0);
+  const loadCityEnforcement = async (city: string, isBackground = false) => {
+    if (!isBackground) {
+      setLoading(true);
+      setIsNavigating(false);
+      setNavStopIndex(0);
+      setSelectedDistrict(null);
+    }
     try {
       // 1. Fetch live city stations
       const cityData = await fetchCityData(city);
@@ -235,8 +328,41 @@ export const EnforcementScreen: React.FC = () => {
     });
   };
 
+  // Ranked districts calculations (matching website leaderboard and MCDA engine)
+  const rankedDistricts = useMemo(() => {
+    return getDistrictsRankedBySeverity(districts);
+  }, [districts]);
+
+  const mcdaRankings = useMemo(() => {
+    return rankDistrictsMCDA(districts);
+  }, [districts]);
+
+  const cleanestDistrict = useMemo(() => {
+    if (rankedDistricts.length === 0) return null;
+    return rankedDistricts[rankedDistricts.length - 1];
+  }, [rankedDistricts]);
+
+  const worstDistrict = useMemo(() => {
+    if (rankedDistricts.length === 0) return null;
+    return rankedDistricts[0];
+  }, [rankedDistricts]);
+
   const handleSelectStop = (stop: RouteStop) => {
     setSelectedStop(stop);
+  };
+
+  const handleSelectDistrict = (district: District) => {
+    setSelectedDistrict(district);
+    const rank = rankedDistricts.findIndex((d) => d.id === district.id) + 1 || 1;
+    const syntheticStop = districtToRouteStop(district, rank, selectedCity);
+    setSelectedStop(syntheticStop);
+  };
+
+  const handleInspectDistrict = (district: District) => {
+    handleSelectDistrict(district);
+    const rank = rankedDistricts.findIndex((d) => d.id === district.id) + 1 || 1;
+    const stop = districtToRouteStop(district, rank, selectedCity);
+    setEvidenceStop(stop);
   };
 
   const handleStartRoute = (stop: RouteStop) => {
@@ -263,142 +389,187 @@ export const EnforcementScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      {/* Top Municipal Header Bar */}
-      <View style={styles.topHeader}>
-        {/* City Filter: Core Cities + More Dropdown */}
-        <View style={styles.citySelectorRow}>
-          {CORE_CITIES.map((city) => {
-            const isActive = selectedCity === city;
-            return (
-              <TouchableOpacity
-                key={city}
-                style={[styles.cityPill, isActive && styles.cityPillActive]}
-                onPress={() => {
-                  setSelectedCity(city);
-                  setShowCityDropdown(false);
-                }}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.cityPillText, isActive && styles.cityPillTextActive]}>
-                  {city}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+      {/* Main Full-Page Scroll View */}
+      <ScrollView
+        ref={scrollRef}
+        style={styles.mainScrollView}
+        contentContainerStyle={styles.mainScrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              loadCityEnforcement(selectedCity);
+            }}
+            tintColor="#0284c7"
+          />
+        }
+      >
+        {/* Top Header Card */}
+        <View style={styles.topHeader}>
+          {/* City Filter: Core Cities + More Dropdown */}
+          <View style={styles.citySelectorRow}>
+            {CORE_CITIES.map((city) => {
+              const isActive = selectedCity === city;
+              return (
+                <TouchableOpacity
+                  key={city}
+                  style={[styles.cityPill, isActive && styles.cityPillActive]}
+                  onPress={() => {
+                    setSelectedCity(city);
+                    setShowCityDropdown(false);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.cityPillText, isActive && styles.cityPillTextActive]}>
+                    {city}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
 
-          {/* More Cities Dropdown Trigger */}
-          <TouchableOpacity
-            style={[
-              styles.cityPill,
-              styles.dropdownTriggerPill,
-              OTHER_CITIES.includes(selectedCity) && styles.cityPillActive,
-            ]}
-            onPress={() => setShowCityDropdown(true)}
-            activeOpacity={0.8}
-          >
-            <Text
+            {/* More Cities Dropdown Trigger */}
+            <TouchableOpacity
               style={[
-                styles.cityPillText,
-                OTHER_CITIES.includes(selectedCity) && styles.cityPillTextActive,
+                styles.cityPill,
+                styles.dropdownTriggerPill,
+                OTHER_CITIES.includes(selectedCity) && styles.cityPillActive,
               ]}
-              numberOfLines={1}
+              onPress={() => setShowCityDropdown(true)}
+              activeOpacity={0.8}
             >
-              {OTHER_CITIES.includes(selectedCity) ? selectedCity : 'More'} ▾
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Corridor Status Bar */}
-        <View style={styles.statusBar}>
-          <View style={styles.statusLeft}>
-            <View style={[styles.aqiDot, cityAqi > 250 ? styles.aqiDotHazard : styles.aqiDotWarn]} />
-            <Text style={styles.statusAqiText}>CITY AQI {cityAqi}</Text>
-            <Text style={styles.statusDivider}>•</Text>
-            <Text style={styles.statusRouteText}>
-              {routePlan?.stops.length || 0} OPTIMIZED STOPS
-            </Text>
+              <Text
+                style={[
+                  styles.cityPillText,
+                  OTHER_CITIES.includes(selectedCity) && styles.cityPillTextActive,
+                ]}
+                numberOfLines={1}
+              >
+                {OTHER_CITIES.includes(selectedCity) ? selectedCity : 'More'}
+              </Text>
+            </TouchableOpacity>
           </View>
 
-          <TouchableOpacity
-            style={styles.overviewBtn}
-            onPress={() => setShowOverviewModal(true)}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.overviewBtnText}>ROUTE OVERVIEW</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Main Content Area */}
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#38bdf8" />
-          <Text style={styles.loadingTitle}>Computing Road Enforcement Corridor...</Text>
-          <Text style={styles.loadingSub}>Querying OR-Tools CVRPTW & OSRM road geometry</Text>
-        </View>
-      ) : (
-        <View style={styles.body}>
-          {/* Real Road Geographic Map Component */}
-          <View style={styles.mapWrapper}>
-            <EnforcementMap
-              plan={routePlan}
-              selectedStop={activeFocusStop}
-              allStations={stations}
-              districts={districts}
-              city={selectedCity}
-              onSelectStop={handleSelectStop}
-              isNavigating={isNavigating}
-              onToggleFullscreen={() => setShowFullMapModal(true)}
-              isFullscreen={false}
-            />
-          </View>
-
-          {/* Focused Priority Card */}
-          {activeFocusStop && (
-            <NextStopCard
-              stop={activeFocusStop}
-              onViewEvidence={(st) => setEvidenceStop(st)}
-              onStartRoute={handleStartRoute}
-              isNavigating={isNavigating}
-              onAdvanceStop={handleAdvanceStop}
-            />
-          )}
-
-          {/* Ranked Stops List */}
-          <ScrollView
-            ref={scrollRef}
-            style={styles.scrollList}
-            contentContainerStyle={styles.scrollListContent}
-            showsVerticalScrollIndicator={false}
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={() => {
-                  setRefreshing(true);
-                  loadCityEnforcement(selectedCity);
-                }}
-                tintColor="#38bdf8"
-              />
-            }
-          >
-            <View style={styles.listHeadingRow}>
-              <Text style={styles.listHeading}>DISPATCH TARGETS ({routePlan?.stops.length || 0})</Text>
-              <Text style={styles.listSubheading}>Ranked by AI Severity & Exposure</Text>
+          {/* Corridor & Heatmap Status Bar */}
+          <View style={styles.statusBar}>
+            <View style={styles.statusLeft}>
+              <View style={[styles.aqiDot, cityAqi > 250 ? styles.aqiDotHazard : styles.aqiDotWarn]} />
+              <Text style={styles.statusAqiText}>CITY AQI {cityAqi}</Text>
+              <Text style={styles.statusDivider}>|</Text>
+              <Text style={styles.statusRouteText}>
+                {districts.length} DISTRICTS | {routePlan?.stops.length || 0} TARGETS
+              </Text>
             </View>
 
-            {(routePlan?.stops || []).map((stop, idx) => (
-              <RecommendationCard
-                key={stop.source_id || idx}
-                stop={stop}
-                index={idx}
-                isSelected={activeFocusStop?.source_id === stop.source_id}
-                onSelect={handleSelectStop}
-                onViewEvidence={(st) => setEvidenceStop(st)}
-              />
-            ))}
-          </ScrollView>
+            <TouchableOpacity
+              style={styles.overviewBtn}
+              onPress={() => setShowOverviewModal(true)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.overviewBtnText}>CORRIDOR ROUTE</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Cleanest vs Worst District Summary */}
+          {worstDistrict && cleanestDistrict && (
+            <View style={styles.leaderboardPillRow}>
+              <View style={styles.leaderboardPillItem}>
+                <Text style={styles.leaderboardPillLabel}>MAX SEVERE:</Text>
+                <Text style={styles.leaderboardPillVal} numberOfLines={1}>
+                  {worstDistrict.name.replace(/Zone|District|Revenue/g, '').trim()} ({worstDistrict.aqi})
+                </Text>
+              </View>
+              <View style={styles.leaderboardPillDivider} />
+              <View style={styles.leaderboardPillItem}>
+                <Text style={styles.leaderboardPillLabel}>MIN RISK:</Text>
+                <Text style={styles.leaderboardPillVal} numberOfLines={1}>
+                  {cleanestDistrict.name.replace(/Zone|District|Revenue/g, '').trim()} ({cleanestDistrict.aqi})
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* Live Edge Node Alert Banner — only shows on breach */}
+          {liveHardwareReading && liveHardwareReading.pm25 >= 60 && (
+            <View style={styles.hardwareLiveBannerAlert}>
+              <View style={styles.alertPulseDot} />
+              <Text style={styles.hardwareAlertText} numberOfLines={1}>
+                {(liveHardwareReading.station_id || 'ESP32').toUpperCase()}: PM2.5 {liveHardwareReading.pm25} µg/m³ — threshold exceeded
+              </Text>
+            </View>
+          )}
+          {liveHardwareReading && liveHardwareReading.pm25 < 60 && (
+            <View style={styles.hardwareLiveBanner}>
+              <View style={styles.livePulseDot} />
+              <Text style={styles.hardwareLiveText} numberOfLines={1}>
+                Hardware sensor normal — PM2.5 {liveHardwareReading.pm25} µg/m³
+              </Text>
+            </View>
+          )}
+
         </View>
-      )}
+
+        {/* Loading State */}
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#0284c7" />
+            <Text style={styles.loadingTitle}>Loading patrol data...</Text>
+            <Text style={styles.loadingSub}>Fetching air quality data and computing routes</Text>
+          </View>
+        ) : (
+          <View style={styles.contentSection}>
+            {/* Map Container */}
+            <View style={styles.mapWrapper}>
+              <EnforcementMap
+                plan={routePlan}
+                selectedStop={activeFocusStop}
+                selectedDistrictId={selectedDistrict?.id || null}
+                allStations={stations}
+                districts={districts}
+                city={selectedCity}
+                onSelectStop={handleSelectStop}
+                onSelectDistrict={handleSelectDistrict}
+                isNavigating={isNavigating}
+                onToggleFullscreen={() => setShowFullMapModal(true)}
+                isFullscreen={false}
+              />
+            </View>
+
+            {/* Focused Priority Target / District Card */}
+            {activeFocusStop && (
+              <NextStopCard
+                stop={activeFocusStop}
+                onViewEvidence={(st) => setEvidenceStop(st)}
+                onStartRoute={handleStartRoute}
+                isNavigating={isNavigating}
+                onAdvanceStop={handleAdvanceStop}
+              />
+            )}
+
+            {/* List Heading */}
+            <View style={styles.listHeadingRow}>
+              <Text style={styles.listHeading}>
+                Dispatch targets ({routePlan?.stops.length || 0})
+              </Text>
+            </View>
+
+            {/* Dispatch Targets List */}
+            <View style={styles.cardsContainer}>
+              {(routePlan?.stops || []).map((stop, idx) => (
+                <RecommendationCard
+                  key={stop.source_id || idx}
+                  stop={stop}
+                  index={idx}
+                  isSelected={activeFocusStop?.source_id === stop.source_id}
+                  onSelect={handleSelectStop}
+                  onViewEvidence={(st) => setEvidenceStop(st)}
+                />
+              ))}
+            </View>
+          </View>
+        )}
+      </ScrollView>
 
       {/* Fullscreen Whole Map View Modal */}
       <Modal
@@ -411,9 +582,9 @@ export const EnforcementScreen: React.FC = () => {
           {/* Top Header */}
           <View style={styles.fullMapHeader}>
             <View style={styles.fullMapHeaderLeft}>
-              <Text style={styles.fullMapHeaderTitle}>{selectedCity.toUpperCase()} • FULL MAP VIEW</Text>
+              <Text style={styles.fullMapHeaderTitle}>{selectedCity.toUpperCase()} - FULL HEATMAP VIEW</Text>
               <Text style={styles.fullMapHeaderSubtitle}>
-                {routePlan?.stops.length || 0} stops • City AQI {cityAqi} • Dynamic Heatmaps
+                {districts.length} Districts | {routePlan?.stops.length || 0} Targets | City AQI {cityAqi}
               </Text>
             </View>
             <TouchableOpacity
@@ -421,7 +592,7 @@ export const EnforcementScreen: React.FC = () => {
               onPress={() => setShowFullMapModal(false)}
               activeOpacity={0.8}
             >
-              <Text style={styles.fullMapCloseBtnText}>✕ Close</Text>
+              <Text style={styles.fullMapCloseBtnText}>Close</Text>
             </TouchableOpacity>
           </View>
 
@@ -430,10 +601,12 @@ export const EnforcementScreen: React.FC = () => {
             <EnforcementMap
               plan={routePlan}
               selectedStop={activeFocusStop}
+              selectedDistrictId={selectedDistrict?.id || null}
               allStations={stations}
               districts={districts}
               city={selectedCity}
               onSelectStop={handleSelectStop}
+              onSelectDistrict={handleSelectDistrict}
               isNavigating={isNavigating}
               onToggleFullscreen={() => setShowFullMapModal(false)}
               isFullscreen={true}
@@ -451,7 +624,7 @@ export const EnforcementScreen: React.FC = () => {
                 const isSelected = activeFocusStop?.source_id === stop.source_id;
                 const isP1 = idx === 0;
                 const aqiVal = stop.severity || stop.aqi || 100;
-                const aqiColor = aqiVal > 250 ? '#ef4444' : aqiVal > 150 ? '#f59e0b' : '#10b981';
+                const category = getAqiCategory(aqiVal);
                 return (
                   <TouchableOpacity
                     key={stop.source_id || idx}
@@ -477,7 +650,7 @@ export const EnforcementScreen: React.FC = () => {
                         {stop.stationName || `Target #${idx + 1}`}
                       </Text>
                       <Text style={styles.fullMapStopMeta}>
-                        AQI <Text style={{ color: aqiColor, fontWeight: '800' }}>{aqiVal}</Text> • {stop.dominantSource || 'Vehicular'}
+                        AQI <Text style={{ color: category.color, fontWeight: '800' }}>{aqiVal}</Text> | {stop.dominantSource || 'Vehicular'}
                       </Text>
                     </View>
                   </TouchableOpacity>
@@ -518,18 +691,18 @@ export const EnforcementScreen: React.FC = () => {
         >
           <View style={styles.dropdownModal}>
             <View style={styles.dropdownHeader}>
-              <Text style={styles.dropdownHeaderTitle}>Select City / State</Text>
+              <Text style={styles.dropdownHeaderTitle}>Select City / Municipal Zone</Text>
               <TouchableOpacity
                 style={styles.dropdownCloseBtn}
                 onPress={() => setShowCityDropdown(false)}
               >
-                <Text style={styles.dropdownCloseText}>✕</Text>
+                <Text style={styles.dropdownCloseText}>Close</Text>
               </TouchableOpacity>
             </View>
 
             <ScrollView style={styles.dropdownList} showsVerticalScrollIndicator={false}>
-              <Text style={styles.dropdownCategory}>CORE ENFORCEMENT</Text>
-              {CORE_CITIES.map((city) => (
+              <Text style={styles.dropdownCategory}>CORE JURISDICTIONS</Text>
+              {CORE_CITIES.map((city: string) => (
                 <TouchableOpacity
                   key={city}
                   style={[styles.dropdownItem, selectedCity === city && styles.dropdownItemActive]}
@@ -542,12 +715,12 @@ export const EnforcementScreen: React.FC = () => {
                   <Text style={[styles.dropdownItemText, selectedCity === city && styles.dropdownItemTextActive]}>
                     {city}
                   </Text>
-                  {selectedCity === city && <Text style={styles.dropdownCheck}>✓</Text>}
+                  {selectedCity === city && <Text style={styles.dropdownCheck}>Selected</Text>}
                 </TouchableOpacity>
               ))}
 
-              <Text style={styles.dropdownCategory}>ADDITIONAL CITIES</Text>
-              {OTHER_CITIES.map((city) => (
+              <Text style={styles.dropdownCategory}>METROPOLITAN REGIONS</Text>
+              {OTHER_CITIES.map((city: string) => (
                 <TouchableOpacity
                   key={city}
                   style={[styles.dropdownItem, selectedCity === city && styles.dropdownItemActive]}
@@ -560,7 +733,7 @@ export const EnforcementScreen: React.FC = () => {
                   <Text style={[styles.dropdownItemText, selectedCity === city && styles.dropdownItemTextActive]}>
                     {city}
                   </Text>
-                  {selectedCity === city && <Text style={styles.dropdownCheck}>✓</Text>}
+                  {selectedCity === city && <Text style={styles.dropdownCheck}>Selected</Text>}
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -576,13 +749,19 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8fafc',
   },
+  mainScrollView: {
+    flex: 1,
+  },
+  mainScrollContent: {
+    paddingBottom: 40,
+  },
   topHeader: {
     backgroundColor: '#ffffff',
     borderBottomWidth: 1,
     borderColor: '#e2e8f0',
     paddingHorizontal: 16,
     paddingTop: 10,
-    paddingBottom: 10,
+    paddingBottom: 12,
     shadowColor: '#0f172a',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.03,
@@ -621,6 +800,336 @@ const styles = StyleSheet.create({
   cityPillTextActive: {
     color: '#ffffff',
     fontWeight: '700',
+  },
+  statusBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginBottom: 6,
+  },
+  statusLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  aqiDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+  },
+  aqiDotHazard: {
+    backgroundColor: '#ef4444',
+  },
+  aqiDotWarn: {
+    backgroundColor: '#f59e0b',
+  },
+  statusAqiText: {
+    color: '#0f172a',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  statusDivider: {
+    color: '#cbd5e1',
+    fontSize: 11,
+  },
+  statusRouteText: {
+    color: '#64748b',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  overviewBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    backgroundColor: '#f0f9ff',
+    borderWidth: 1,
+    borderColor: '#bae6fd',
+    borderRadius: 4,
+  },
+  overviewBtnText: {
+    color: '#0284c7',
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  leaderboardPillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  leaderboardPillItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  leaderboardPillLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#475569',
+  },
+  leaderboardPillVal: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#0f172a',
+    flex: 1,
+  },
+  leaderboardPillDivider: {
+    width: 1,
+    height: 12,
+    backgroundColor: '#cbd5e1',
+    marginHorizontal: 6,
+  },
+  hardwareLiveBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    marginBottom: 8,
+    gap: 6,
+  },
+  livePulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10b981',
+  },
+  hardwareLiveText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#065f46',
+    flex: 1,
+  },
+  hardwareLiveBannerAlert: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: '#fecaca',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    marginBottom: 8,
+    gap: 6,
+  },
+  alertPulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#dc2626',
+  },
+  hardwareAlertText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#991b1b',
+    flex: 1,
+  },
+  viewSwitcher: {
+    flexDirection: 'row',
+    backgroundColor: '#e2e8f0',
+    borderRadius: 6,
+    padding: 2,
+    gap: 2,
+  },
+  switcherBtn: {
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  switcherBtnActive: {
+    backgroundColor: '#ffffff',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  switcherBtnText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748b',
+    letterSpacing: 0.2,
+  },
+  switcherBtnTextActive: {
+    color: '#0284c7',
+    fontWeight: '800',
+  },
+  contentSection: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+  },
+  mapWrapper: {
+    height: 250,
+    borderRadius: 10,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#070b13',
+    marginBottom: 12,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  listHeadingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    marginBottom: 10,
+    marginTop: 4,
+  },
+  listHeading: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  listSubheading: {
+    fontSize: 9.5,
+    color: '#64748b',
+    fontWeight: '600',
+  },
+  cardsContainer: {
+    gap: 2,
+  },
+  loadingContainer: {
+    paddingVertical: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    gap: 10,
+  },
+  loadingTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0f172a',
+  },
+  loadingSub: {
+    fontSize: 11,
+    color: '#64748b',
+    textAlign: 'center',
+  },
+  fullMapContainer: {
+    flex: 1,
+    backgroundColor: '#070b13',
+  },
+  fullMapHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#0f172a',
+    borderBottomWidth: 1,
+    borderBottomColor: '#1e293b',
+  },
+  fullMapHeaderLeft: {
+    flex: 1,
+  },
+  fullMapHeaderTitle: {
+    color: '#38bdf8',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  fullMapHeaderSubtitle: {
+    color: '#94a3b8',
+    fontSize: 10,
+    marginTop: 2,
+  },
+  fullMapCloseBtn: {
+    backgroundColor: '#1e293b',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  fullMapCloseBtnText: {
+    color: '#f1f5f9',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  fullMapBody: {
+    flex: 1,
+  },
+  fullMapBottomBar: {
+    backgroundColor: '#0f172a',
+    borderTopWidth: 1,
+    borderTopColor: '#1e293b',
+    paddingVertical: 8,
+  },
+  fullMapStopsScroll: {
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  fullMapStopPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    minWidth: 140,
+    maxWidth: 180,
+    gap: 6,
+  },
+  fullMapStopPillSelected: {
+    borderColor: '#38bdf8',
+    backgroundColor: '#0369a130',
+  },
+  fullMapStopPillP1: {
+    borderLeftWidth: 3,
+    borderLeftColor: '#ef4444',
+  },
+  fullMapRankBadge: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#334155',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fullMapRankBadgeP1: {
+    backgroundColor: '#ef4444',
+  },
+  fullMapRankText: {
+    color: '#ffffff',
+    fontSize: 9,
+    fontWeight: '800',
+  },
+  fullMapStopName: {
+    color: '#e2e8f0',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  fullMapStopNameSelected: {
+    color: '#38bdf8',
+  },
+  fullMapStopMeta: {
+    color: '#94a3b8',
+    fontSize: 9,
+    marginTop: 1,
   },
   dropdownBackdrop: {
     flex: 1,
@@ -665,7 +1174,7 @@ const styles = StyleSheet.create({
   },
   dropdownCloseText: {
     color: '#94a3b8',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
   },
   dropdownList: {
@@ -703,220 +1212,7 @@ const styles = StyleSheet.create({
   },
   dropdownCheck: {
     color: '#38bdf8',
-    fontSize: 13,
     fontWeight: '800',
-  },
-  statusBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 2,
-  },
-  statusLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  aqiDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  aqiDotHazard: {
-    backgroundColor: '#dc2626',
-  },
-  aqiDotWarn: {
-    backgroundColor: '#d97706',
-  },
-  statusAqiText: {
-    color: '#0f172a',
     fontSize: 11,
-    fontWeight: '700',
-  },
-  statusDivider: {
-    color: '#cbd5e1',
-    fontSize: 10,
-  },
-  statusRouteText: {
-    color: '#0284c7',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  overviewBtn: {
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    paddingHorizontal: 9,
-    paddingVertical: 4.5,
-    borderRadius: 5,
-  },
-  overviewBtnText: {
-    color: '#334155',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#f8fafc',
-  },
-  loadingTitle: {
-    color: '#0f172a',
-    fontSize: 14,
-    fontWeight: '700',
-    marginTop: 14,
-  },
-  loadingSub: {
-    color: '#64748b',
-    fontSize: 11.5,
-    marginTop: 4,
-  },
-  body: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-  },
-  mapWrapper: {
-    height: '42%',
-    minHeight: 220,
-    backgroundColor: '#070b13',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
-  },
-  scrollList: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-  },
-  scrollListContent: {
-    padding: 12,
-    paddingBottom: 24,
-  },
-  listHeadingRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-    paddingHorizontal: 2,
-  },
-  listHeading: {
-    color: '#334155',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  listSubheading: {
-    color: '#64748b',
-    fontSize: 10,
-    fontWeight: '500',
-  },
-  fullMapContainer: {
-    flex: 1,
-    backgroundColor: '#070b13',
-  },
-  fullMapHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 48,
-    paddingBottom: 12,
-    backgroundColor: '#0f172a',
-    borderBottomWidth: 1,
-    borderBottomColor: '#1e293b',
-  },
-  fullMapHeaderLeft: {
-    flex: 1,
-  },
-  fullMapHeaderTitle: {
-    color: '#38bdf8',
-    fontSize: 13,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
-  fullMapHeaderSubtitle: {
-    color: '#94a3b8',
-    fontSize: 10.5,
-    marginTop: 2,
-  },
-  fullMapCloseBtn: {
-    backgroundColor: '#1e293b',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#334155',
-  },
-  fullMapCloseBtnText: {
-    color: '#f1f5f9',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  fullMapBody: {
-    flex: 1,
-    backgroundColor: '#070b13',
-  },
-  fullMapBottomBar: {
-    backgroundColor: '#0b1329f2',
-    borderTopWidth: 1,
-    borderTopColor: '#1e293b',
-    paddingVertical: 10,
-  },
-  fullMapStopsScroll: {
-    paddingHorizontal: 12,
-    gap: 8,
-  },
-  fullMapStopPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#0f172a',
-    borderWidth: 1,
-    borderColor: '#1e293b',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    width: 220,
-    gap: 8,
-  },
-  fullMapStopPillSelected: {
-    borderColor: '#38bdf8',
-    backgroundColor: '#0c223d',
-  },
-  fullMapStopPillP1: {
-    borderLeftWidth: 3,
-    borderLeftColor: '#ef4444',
-  },
-  fullMapRankBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#1e293b',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  fullMapRankBadgeP1: {
-    backgroundColor: '#ef4444',
-  },
-  fullMapRankText: {
-    color: '#ffffff',
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  fullMapStopName: {
-    color: '#f8fafc',
-    fontSize: 11.5,
-    fontWeight: '700',
-  },
-  fullMapStopNameSelected: {
-    color: '#38bdf8',
-  },
-  fullMapStopMeta: {
-    color: '#94a3b8',
-    fontSize: 9.5,
-    marginTop: 2,
   },
 });
-
-export default EnforcementScreen;
-

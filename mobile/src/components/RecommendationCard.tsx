@@ -10,6 +10,14 @@ interface RecommendationCardProps {
   onViewEvidence: (stop: RouteStop) => void;
 }
 
+function getAqiBorderColor(aqi: number): string {
+  if (aqi >= 300) return '#991b1b';   // dark red — hazardous
+  if (aqi >= 250) return '#dc2626';   // red — severe
+  if (aqi >= 200) return '#ea580c';   // deep orange — very poor
+  if (aqi >= 150) return '#f59e0b';   // amber — unhealthy
+  return '#eab308';                    // yellow — moderate
+}
+
 export const RecommendationCard: React.FC<RecommendationCardProps> = ({
   stop,
   index,
@@ -23,27 +31,24 @@ export const RecommendationCard: React.FC<RecommendationCardProps> = ({
   const aqi = stop.severity ?? stop.aqi ?? 100;
   const pm25 = stop.pm25 !== undefined ? stop.pm25.toFixed(1) : '35.0';
   const eta = stop.durationFromPrev || stop.eta || '15 min';
-  const score = Math.min(99, Math.round(aqi * 0.38 + (stop.populationExposed ? stop.populationExposed / 15000 : 20)));
+  const distance = stop.distanceFromPrev || '4.2 km';
+  const borderColor = getAqiBorderColor(aqi);
 
   return (
     <TouchableOpacity
       style={[
         styles.card,
+        { borderLeftWidth: 4, borderLeftColor: borderColor },
         isSelected && styles.cardSelected,
-        isP1 && styles.cardP1Border,
       ]}
       onPress={() => onSelect(stop)}
       activeOpacity={0.8}
     >
-      {/* Top Header Row */}
+      {/* Top Row: Priority + Action */}
       <View style={styles.topRow}>
-        <View style={styles.priorityGroup}>
-          <Text style={[styles.priorityLabel, isP1 ? styles.priorityLabelP1 : styles.priorityLabelSub]}>
-            PRIORITY {rank < 10 ? `0${rank}` : rank}
-          </Text>
-          {isP1 && <View style={styles.leadBadge}><Text style={styles.leadBadgeText}>PRIMARY TARGET</Text></View>}
-        </View>
-
+        <Text style={[styles.priorityLabel, isP1 ? styles.priorityLabelP1 : styles.priorityLabelSub]}>
+          #{rank < 10 ? `0${rank}` : rank}
+        </Text>
         <View style={[styles.actionBadge, isFullInspection ? styles.actionBadgeRed : styles.actionBadgeBlue]}>
           <Text style={[styles.actionText, isFullInspection ? styles.actionTextRed : styles.actionTextBlue]}>
             {isFullInspection ? 'FULL INSPECTION' : 'VERIFY FIRST'}
@@ -51,36 +56,39 @@ export const RecommendationCard: React.FC<RecommendationCardProps> = ({
         </View>
       </View>
 
-      {/* Location Name */}
+      {/* Location + Source (source is now the subtitle, not a footer) */}
       <Text style={styles.locationTitle} numberOfLines={1}>
         {stop.stationName || `Target Zone #${rank}`}
       </Text>
+      <Text style={styles.sourceSubtitle} numberOfLines={1}>
+        {stop.dominantSource || 'Vehicular Traffic'}
+      </Text>
 
-      {/* Structured Metrics Table */}
-      <View style={styles.metricsGrid}>
-        <View style={styles.metricCell}>
-          <Text style={styles.metricKey}>Priority Score</Text>
-          <Text style={styles.metricValBold}>{score}</Text>
+      {/* Key Metrics — horizontal row */}
+      <View style={styles.metricsRow}>
+        <View style={styles.metricItem}>
+          <Text style={styles.metricLabel}>AQI</Text>
+          <Text style={[styles.metricValue, { color: borderColor }]}>{aqi}</Text>
         </View>
-        <View style={styles.metricCell}>
-          <Text style={styles.metricKey}>AQI Severity</Text>
-          <Text style={[styles.metricValBold, aqi > 300 ? styles.textDanger : styles.textWarn]}>{aqi}</Text>
+        <View style={styles.metricDivider} />
+        <View style={styles.metricItem}>
+          <Text style={styles.metricLabel}>PM2.5</Text>
+          <Text style={styles.metricValue}>{pm25} <Text style={styles.metricUnit}>µg/m³</Text></Text>
         </View>
-        <View style={styles.metricCell}>
-          <Text style={styles.metricKey}>PM2.5 Level</Text>
-          <Text style={styles.metricVal}>{pm25} µg/m³</Text>
+        <View style={styles.metricDivider} />
+        <View style={styles.metricItem}>
+          <Text style={styles.metricLabel}>ETA</Text>
+          <Text style={styles.metricValue}>{eta}</Text>
         </View>
-        <View style={styles.metricCell}>
-          <Text style={styles.metricKey}>Leg ETA</Text>
-          <Text style={styles.metricVal}>{eta} ({stop.distanceFromPrev || '4.2 km'})</Text>
+        <View style={styles.metricDivider} />
+        <View style={styles.metricItem}>
+          <Text style={styles.metricLabel}>Distance</Text>
+          <Text style={styles.metricValue}>{distance}</Text>
         </View>
       </View>
 
-      {/* Bottom Action Footer */}
+      {/* Evidence Button */}
       <View style={styles.footerRow}>
-        <Text style={styles.sourceApportionText} numberOfLines={1}>
-          Source: <Text style={styles.sourceHighlight}>{stop.dominantSource || 'Vehicular'}</Text>
-        </Text>
         <TouchableOpacity
           style={styles.evidenceButton}
           onPress={(e) => {
@@ -89,7 +97,7 @@ export const RecommendationCard: React.FC<RecommendationCardProps> = ({
           }}
           activeOpacity={0.7}
         >
-          <Text style={styles.evidenceButtonText}>Evidence</Text>
+          <Text style={styles.evidenceButtonText}>View Evidence</Text>
         </TouchableOpacity>
       </View>
     </TouchableOpacity>
@@ -99,40 +107,30 @@ export const RecommendationCard: React.FC<RecommendationCardProps> = ({
 const styles = StyleSheet.create({
   card: {
     backgroundColor: '#ffffff',
-    borderRadius: 8,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    padding: 12,
-    marginBottom: 8,
+    padding: 14,
+    marginBottom: 10,
     shadowColor: '#0f172a',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 2,
-    elevation: 1,
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
   },
   cardSelected: {
     borderColor: '#0284c7',
     backgroundColor: '#f0f9ff',
   },
-  cardP1Border: {
-    borderLeftWidth: 3.5,
-    borderLeftColor: '#dc2626',
-  },
   topRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
-  },
-  priorityGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+    marginBottom: 6,
   },
   priorityLabel: {
-    fontSize: 10,
+    fontSize: 13,
     fontWeight: '800',
-    letterSpacing: 0.5,
   },
   priorityLabelP1: {
     color: '#dc2626',
@@ -140,21 +138,10 @@ const styles = StyleSheet.create({
   priorityLabelSub: {
     color: '#0284c7',
   },
-  leadBadge: {
-    backgroundColor: '#fef2f2',
-    paddingHorizontal: 5,
-    paddingVertical: 1.5,
-    borderRadius: 3,
-  },
-  leadBadgeText: {
-    color: '#dc2626',
-    fontSize: 8.5,
-    fontWeight: '700',
-  },
   actionBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
     borderWidth: 1,
   },
   actionBadgeRed: {
@@ -166,7 +153,7 @@ const styles = StyleSheet.create({
     borderColor: '#bae6fd',
   },
   actionText: {
-    fontSize: 8.5,
+    fontSize: 10,
     fontWeight: '700',
     letterSpacing: 0.3,
   },
@@ -178,71 +165,68 @@ const styles = StyleSheet.create({
   },
   locationTitle: {
     color: '#0f172a',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
-    marginBottom: 8,
+    marginBottom: 2,
   },
-  metricsGrid: {
+  sourceSubtitle: {
+    color: '#64748b',
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 10,
+  },
+  metricsRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'center',
     backgroundColor: '#f8fafc',
-    borderRadius: 6,
-    padding: 8,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    marginBottom: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    marginBottom: 10,
   },
-  metricCell: {
-    width: '50%',
-    paddingVertical: 2,
+  metricItem: {
+    flex: 1,
+    alignItems: 'center',
   },
-  metricKey: {
+  metricDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#e2e8f0',
+  },
+  metricLabel: {
     color: '#64748b',
-    fontSize: 9,
-    fontWeight: '600',
-  },
-  metricVal: {
-    color: '#334155',
     fontSize: 11,
     fontWeight: '600',
+    marginBottom: 2,
   },
-  metricValBold: {
+  metricValue: {
     color: '#0f172a',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
   },
-  textDanger: {
-    color: '#dc2626',
-  },
-  textWarn: {
-    color: '#d97706',
+  metricUnit: {
+    color: '#94a3b8',
+    fontSize: 10,
+    fontWeight: '500',
   },
   footerRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     alignItems: 'center',
-  },
-  sourceApportionText: {
-    color: '#64748b',
-    fontSize: 10,
-    flex: 1,
-    marginRight: 6,
-  },
-  sourceHighlight: {
-    color: '#334155',
-    fontWeight: '600',
   },
   evidenceButton: {
     backgroundColor: '#f8fafc',
     borderWidth: 1,
     borderColor: '#cbd5e1',
-    paddingHorizontal: 8,
-    paddingVertical: 3.5,
-    borderRadius: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 6,
   },
   evidenceButtonText: {
     color: '#334155',
-    fontSize: 9.5,
+    fontSize: 12,
     fontWeight: '700',
   },
 });

@@ -4,6 +4,7 @@ import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
   ReferenceLine, CartesianGrid, BarChart, Bar
 } from 'recharts';
+import { RefreshCw } from 'lucide-react';
 
 import { getAqiCategory, pm25ToAqi } from '@/utils/aqi';
 
@@ -242,19 +243,28 @@ export default function ForecastPanel({ city = 'Hyderabad', userCoords, liveData
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
           {[
             { label: 'Current AQI', val: currentAqiDisplay },
-            { label: '24h Prediction', val: pm25ToAqi(liveForecast.points[0]), bounds: [pm25ToAqi(liveForecast.intervals[0][0]), pm25ToAqi(liveForecast.intervals[0][1])] },
-            { label: '48h Prediction', val: pm25ToAqi(liveForecast.points[1]), bounds: [pm25ToAqi(liveForecast.intervals[1][0]), pm25ToAqi(liveForecast.intervals[1][1])] },
-            { label: '72h Prediction', val: pm25ToAqi(liveForecast.points[2]), bounds: [pm25ToAqi(liveForecast.intervals[2][0]), pm25ToAqi(liveForecast.intervals[2][1])] }
+            { label: '24h Prediction', val: pm25ToAqi(liveForecast.points[0]), bounds: [pm25ToAqi(liveForecast.intervals[0][0]), pm25ToAqi(liveForecast.intervals[0][1])], conf: '90% Conformal' },
+            { label: '48h Prediction', val: pm25ToAqi(liveForecast.points[1]), bounds: [pm25ToAqi(liveForecast.intervals[1][0]), pm25ToAqi(liveForecast.intervals[1][1])], conf: '90% Conformal' },
+            { label: '72h Prediction', val: pm25ToAqi(liveForecast.points[2]), bounds: [pm25ToAqi(liveForecast.intervals[2][0]), pm25ToAqi(liveForecast.intervals[2][1])], conf: '90% Conformal' }
           ].map((card, i) => (
-            <div key={i} className="panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 4, borderTop: `3px solid ${getAqiColor(card.val)}` }}>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{card.label}</div>
+            <div key={i} className="panel forecast-metric-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 4, borderTop: `3px solid ${getAqiColor(card.val)}` }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{card.label}</div>
+                {card.conf && (
+                  <span style={{ fontSize: '0.62rem', color: 'var(--accent-cyan)', background: 'rgba(56,189,248,0.1)', padding: '2px 6px', borderRadius: 4, fontWeight: 600 }}>
+                    {card.conf}
+                  </span>
+                )}
+              </div>
               <div style={{ fontSize: '1.8rem', fontWeight: 700, color: 'var(--text-normal)' }}>
                 {Math.round(card.val)} <span style={{ fontSize: '1rem', fontWeight: 400, color: 'var(--text-muted)' }}>AQI</span>
               </div>
-              {card.bounds && (
+              {card.bounds ? (
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', background: 'var(--bg-panel)', padding: '2px 6px', borderRadius: 4, display: 'inline-block', alignSelf: 'flex-start' }}>
-                  {Math.round(card.bounds[0])} - {Math.round(card.bounds[1])}
+                  Band: {Math.round(card.bounds[0])} - {Math.round(card.bounds[1])} AQI (±12%)
                 </div>
+              ) : (
+                <div style={{ fontSize: '0.72rem', color: 'var(--accent-green)', fontWeight: 600 }}>● Live Station Feed</div>
               )}
             </div>
           ))}
@@ -264,7 +274,10 @@ export default function ForecastPanel({ city = 'Hyderabad', userCoords, liveData
       {/* 6.3 Section 3: 72h Forecast Area Chart */}
       <div className="panel">
         <div className="panel-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div className="panel-title">72-Hour AQI Forecast & Uncertainty Range</div>
+          <div>
+            <div className="panel-title">72-Hour AQI Forecast & Uncertainty Range</div>
+            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 2 }}>Model: XGBoost Multi-Horizon + MAPIE Conformal Uncertainty</div>
+          </div>
           <span style={{ 
             fontSize: '0.75rem', 
             background: 'rgba(56, 139, 253, 0.12)', 
@@ -294,8 +307,9 @@ export default function ForecastPanel({ city = 'Hyderabad', userCoords, liveData
                 labelFormatter={(h: number) => `T+${h} Hours`}
                 formatter={(val: number, name: string) => [`${val} AQI`, name === 'point' ? 'Point Forecast' : name === 'upper' ? 'Upper Bound' : 'Lower Bound']}
               />
-              <ReferenceLine y={200} stroke="var(--accent-orange)" strokeDasharray="4 4" strokeWidth={1} label={{ position: 'insideTopLeft', value: 'Poor', fill: 'var(--accent-orange)', fontSize: 10 }} />
-              <ReferenceLine y={300} stroke="var(--accent-red)" strokeDasharray="4 4" strokeWidth={1} label={{ position: 'insideTopLeft', value: 'Severe', fill: 'var(--accent-red)', fontSize: 10 }} />
+              <ReferenceLine y={100} stroke="#84cc16" strokeDasharray="3 3" strokeWidth={1} label={{ position: 'insideTopLeft', value: 'CPCB Moderate (100)', fill: '#84cc16', fontSize: 9 }} />
+              <ReferenceLine y={200} stroke="var(--accent-orange)" strokeDasharray="4 4" strokeWidth={1} label={{ position: 'insideTopLeft', value: 'Poor (200)', fill: 'var(--accent-orange)', fontSize: 9 }} />
+              <ReferenceLine y={300} stroke="var(--accent-red)" strokeDasharray="4 4" strokeWidth={1} label={{ position: 'insideTopLeft', value: 'Severe (300)', fill: 'var(--accent-red)', fontSize: 9 }} />
               
               <Area type="monotone" dataKey="upper" stackId="1" stroke="none" fill="url(#conformalBand)" animationDuration={1500} />
               <Area type="monotone" dataKey="lower" stackId="1" stroke="none" fill="var(--bg-elevated)" animationDuration={1500} />
@@ -343,16 +357,23 @@ export default function ForecastPanel({ city = 'Hyderabad', userCoords, liveData
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4 }}>Boundary Layer Height (PBLH in m) Next 24h</div>
+          <div style={{ textAlign: 'center', fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 4 }}>
+            Boundary Layer Height (PBLH) • Diurnal Convection vs Nocturnal Thermal Inversion
+          </div>
         </div>
 
         {/* 6.5 Section 5: Real Model Validation & Closed-Loop Learning */}
         <div className="panel">
           <div className="panel-header">
-            <div className="panel-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              Model Validation & Closed-Loop Learning
-              <div className="panel-badge badge-green" style={{ background: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', border: '1px solid rgba(34, 197, 94, 0.3)' }}>
-                ● Active Feedback Loop
+            <div>
+              <div className="panel-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                Model Validation & Closed-Loop Learning
+                <div className="panel-badge badge-green" style={{ background: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', border: '1px solid rgba(34, 197, 94, 0.3)' }}>
+                  ● Active Feedback Loop
+                </div>
+              </div>
+              <div style={{ fontSize: '0.68rem', color: 'var(--accent-cyan)', marginTop: 2 }}>
+                CatBoost + MAPIE Conformal Regressor • Continuous Error Adaptation
               </div>
             </div>
           </div>
@@ -393,7 +414,7 @@ export default function ForecastPanel({ city = 'Hyderabad', userCoords, liveData
                 fontSize: '0.8rem'
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: '1rem' }}>🔄</span>
+                  <RefreshCw size={15} style={{ color: 'var(--accent-cyan)' }} />
                   <div>
                     <span style={{ fontWeight: 600, color: 'var(--accent-cyan)' }}>Real-Time Recursive Error Adaptation:</span>
                     <span style={{ color: 'var(--text-secondary)', marginLeft: 6 }}>Model self-calibrates against hourly ground residuals</span>

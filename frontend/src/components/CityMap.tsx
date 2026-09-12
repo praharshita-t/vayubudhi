@@ -18,6 +18,7 @@ import DeckGL from '@deck.gl/react';
 import Map from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { ColumnLayer, PolygonLayer, ScatterplotLayer, TextLayer, BitmapLayer } from '@deck.gl/layers';
+import { ArrowUp } from 'lucide-react';
 
 const CITY_CENTERS: Record<string, {longitude: number, latitude: number, zoom: number}> = {
   'Delhi': { longitude: 77.17, latitude: 28.62, zoom: 11 },
@@ -697,7 +698,7 @@ export default function CityMap({
           data: [monitoringLocation],
           pickable: false,
           getPosition: (d: any) => [d.lon, d.lat],
-          getText: (d: any) => `📡 Deploy Sensor: ${d.name || ''}`,
+          getText: (d: any) => `Deploy Sensor: ${d.name || ''}`,
           getSize: 12,
           getColor: [59, 130, 246, 255],
           getTextAnchor: 'middle' as const,
@@ -771,6 +772,41 @@ export default function CityMap({
       );
     }
 
+    // Hovered station glowing aura layers
+    const hoverLayers: any[] = [];
+    if (hoveredStation) {
+      const aqiCol = aqiToColor(hoveredStation.aqi, 255);
+      hoverLayers.push(
+        new ScatterplotLayer({
+          id: 'hovered-station-glow-outer',
+          data: [hoveredStation],
+          pickable: false,
+          opacity: 0.5,
+          stroked: false,
+          filled: true,
+          radiusMinPixels: 18,
+          radiusMaxPixels: 42,
+          getPosition: (d: Station) => [d.lon, d.lat],
+          getFillColor: [aqiCol[0], aqiCol[1], aqiCol[2], 130],
+          getRadius: 800,
+        }),
+        new ScatterplotLayer({
+          id: 'hovered-station-ring',
+          data: [hoveredStation],
+          pickable: false,
+          opacity: 0.95,
+          stroked: true,
+          filled: false,
+          radiusMinPixels: 10,
+          radiusMaxPixels: 22,
+          lineWidthMinPixels: 3,
+          getPosition: (d: Station) => [d.lon, d.lat],
+          getLineColor: [255, 255, 255, 240],
+          getRadius: 450,
+        })
+      );
+    }
+
     // Wind animation layers
     const windLayers: any[] = [];
     if (showWind) {
@@ -779,11 +815,11 @@ export default function CityMap({
     }
 
     if (dynamicDistricts.length > 0) {
-      return [satelliteLayer, districtLayer, stationGlowLayer, stationDotLayer, deployedGlowLayer, deployedDotLayer, deployedLabelLayer, alertLabelLayer, ...alertLayers, ...monitoringLayers, ...recommendedLayers, ...windLayers];
+      return [satelliteLayer, districtLayer, stationGlowLayer, stationDotLayer, deployedGlowLayer, deployedDotLayer, deployedLabelLayer, alertLabelLayer, ...alertLayers, ...monitoringLayers, ...recommendedLayers, ...hoverLayers, ...windLayers];
     } else {
-      return [satelliteLayer, columnLayer, stationGlowLayer, stationDotLayer, deployedGlowLayer, deployedDotLayer, deployedLabelLayer, alertLabelLayer, ...alertLayers, ...monitoringLayers, ...recommendedLayers, ...windLayers];
+      return [satelliteLayer, columnLayer, stationGlowLayer, stationDotLayer, deployedGlowLayer, deployedDotLayer, deployedLabelLayer, alertLabelLayer, ...alertLayers, ...monitoringLayers, ...recommendedLayers, ...hoverLayers, ...windLayers];
     }
-  }, [alertStation, stations, deployedSensors, recommendedPins, hexGrid, city, hoveredDistrict, dynamicDistricts, showSatellite, monitoringLocation, selectedDistrictId, showWind, windArrowLayers, windParticleLayer]);
+  }, [alertStation, stations, deployedSensors, recommendedPins, hexGrid, city, hoveredDistrict, hoveredStation, dynamicDistricts, showSatellite, monitoringLocation, selectedDistrictId, showWind, windArrowLayers, windParticleLayer]);
 
   const onViewStateChange = useCallback(({ viewState: vs }: any) => {
     setViewState(vs);
@@ -885,7 +921,7 @@ export default function CityMap({
             background: showWind ? 'rgba(200,220,255,0.1)' : 'var(--bg-secondary)'
           }}
         >
-          🌬️ Wind Flow: <span className="chip-value" style={{ color: showWind ? 'rgba(200,220,255,0.95)' : 'inherit' }}>{showWind ? 'ON' : 'OFF'}</span>
+          Wind Flow: <span className="chip-value" style={{ color: showWind ? 'rgba(200,220,255,0.95)' : 'inherit' }}>{showWind ? 'ON' : 'OFF'}</span>
         </button>
         <div className="map-stat-chip">
           Stations Online: <span className="chip-value">{stations.filter((s: Station) => s.status !== 'offline').length + deployedSensors.length}</span>
@@ -957,10 +993,13 @@ export default function CityMap({
               <div style={{
                 transform: `rotate(${(windSummary.direction + 180) % 360}deg)`,
                 transition: 'transform 1s ease',
-                fontSize: '1.1rem',
-                lineHeight: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
                 color: 'rgba(200,220,255,0.9)',
-              }}>↑</div>
+              }}>
+                <ArrowUp size={16} />
+              </div>
             </div>
             <div>
               <div style={{ fontSize: '0.85rem', fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'rgba(200,220,255,0.9)' }}>
@@ -975,13 +1014,44 @@ export default function CityMap({
       )}
 
       {/* Map Legend for Station Dots */}
-      <div className="map-legend" style={{ left: 'auto', right: 12, bottom: 12, gap: '12px' }}>
-        <div className="legend-item"><div className="legend-dot" style={{ background: '#ef4444' }} />Traffic (NO₂)</div>
-        <div className="legend-item"><div className="legend-dot" style={{ background: '#a855f7' }} />Industry (SO₂)</div>
-        <div className="legend-item"><div className="legend-dot" style={{ background: '#eab308' }} />Dust (PM10)</div>
-        <div className="legend-item"><div className="legend-dot" style={{ background: 'var(--accent-cyan)', boxShadow: '0 0 6px var(--accent-cyan)' }} />Deployed Sensor</div>
+      <div style={{
+        position: 'absolute',
+        right: 16,
+        bottom: 16,
+        zIndex: 10,
+        display: 'flex',
+        alignItems: 'center',
+        gap: '14px',
+        padding: '8px 16px',
+        background: 'rgba(13, 17, 23, 0.9)',
+        backdropFilter: 'blur(12px)',
+        border: '1px solid rgba(255, 255, 255, 0.12)',
+        borderRadius: '24px',
+        fontSize: '0.72rem',
+        color: 'var(--text-secondary)',
+        boxShadow: '0 8px 24px rgba(0,0,0,0.5)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444' }} />
+          <span>Traffic (NO₂)</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#a855f7' }} />
+          <span>Industry (SO₂)</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#eab308' }} />
+          <span>Dust (PM₁₀)</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent-cyan)', boxShadow: '0 0 6px var(--accent-cyan)' }} />
+          <span style={{ color: 'var(--accent-cyan)', fontWeight: 600 }}>IoT Node</span>
+        </div>
         {recommendedPins.length > 0 && (
-          <div className="legend-item"><div className="legend-dot" style={{ background: '#fbbf24', boxShadow: '0 0 6px #fbbf24' }} />Recommended Site</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#fbbf24', boxShadow: '0 0 6px #fbbf24' }} />
+            <span style={{ color: '#fbbf24', fontWeight: 600 }}>Recommended Site</span>
+          </div>
         )}
       </div>
 

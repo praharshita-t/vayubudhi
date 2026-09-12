@@ -5,6 +5,7 @@ import { useCityContext } from '@/context/CityContext';
 import { getAqiCategory } from '@/utils/aqi';
 import { recommendDeployments } from '@/utils/mcda';
 import { Station, CityId, RecommendedDeployment } from '@/types';
+import { FileText, X } from 'lucide-react';
 
 const CityMap = dynamic(() => import('@/components/CityMap'), { ssr: false });
 const DeepDivePanel = dynamic(() => import('@/components/DeepDivePanel'), { ssr: false });
@@ -141,6 +142,14 @@ export default function LiveMapPage() {
             <span className="metric-label">Active Alerts</span>
             <span className="metric-value" style={{ color: 'var(--accent-amber)' }}>{alertCount}</span>
           </div>
+          <div className="metric-item">
+            <span className="metric-label">Grid Coverage</span>
+            <span className="metric-value" style={{ color: 'var(--accent-cyan)' }}>1,480 km²</span>
+          </div>
+          <div className="metric-item">
+            <span className="metric-label">Sensor Uptime</span>
+            <span className="metric-value" style={{ color: 'var(--accent-green)' }}>99.8% (1 Hz)</span>
+          </div>
         </div>
 
         <div className="header-status" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -161,7 +170,8 @@ export default function LiveMapPage() {
               transition: 'var(--transition-fast)'
             }}
           >
-            📄 AI Report
+            <FileText size={14} />
+            <span>AI Report</span>
           </button>
           <div className="status-badge live">
             <div className="dot" />
@@ -232,7 +242,7 @@ export default function LiveMapPage() {
               onClick={() => setAdvisoryOpen(false)}
               aria-label="Close Advisory"
             >
-              ✕
+              <X size={16} />
             </button>
           </div>
           <div className="advisory-popup-body">

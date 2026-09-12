@@ -1,5 +1,6 @@
 'use client';
 import React, { useState, useEffect, useRef } from 'react';
+import { ShieldCheck, MapPin, TrendingUp } from 'lucide-react';
 
 export const languageLabels: Record<string, string> = {
   en: 'English',
@@ -178,8 +179,8 @@ export default function AdvisoryPanel({
         
         {/* Header with Title, Live Badge & Multilingual Switcher */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: '1rem' }}>🗣️</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            <ShieldCheck size={18} style={{ color: 'var(--accent-purple)' }} />
             <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--text-primary)' }}>
               Citizen Health Advisory
             </div>
@@ -216,8 +217,8 @@ export default function AdvisoryPanel({
           fontSize: '0.74rem'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ color: isDistrictMode ? 'var(--accent-blue)' : 'var(--accent-purple)' }}>
-              {isDistrictMode ? '📍' : '📈'}
+            <span style={{ color: isDistrictMode ? 'var(--accent-blue)' : 'var(--accent-purple)', display: 'inline-flex', alignItems: 'center' }}>
+              {isDistrictMode ? <MapPin size={13} /> : <TrendingUp size={13} />}
             </span>
             <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
               {isDistrictMode ? `Active: ${targetDistrictName}` : `${city} 24-Hour City Outlook`}

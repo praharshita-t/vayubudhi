@@ -1,6 +1,6 @@
 # VayuBudhi — Final Comprehensive Audit Report
 
-> **Sources combined**: Code-level audit of every file in the repo, [`gap_analysis1.md`](file:///c:/Users/Sai%20Koushik/Desktop/ET_Hackathon/vayubudhi/gap_analysis1.md), [`VayuBudhi2.0_plan.md`](file:///c:/Users/Sai%20Koushik/Desktop/ET_Hackathon/vayubudhi/VayuBudhi2.0_plan.md), [`product_readiness_assessment.md`](file:///c:/Users/Sai%20Koushik/Desktop/ET_Hackathon/vayubudhi/product_readiness_assessment.md), and teammate-reported issues.
+> **Sources combined**: Code-level audit of every file in the repo, [`01_phase1_initial_gap_analysis.md`](./01_phase1_initial_gap_analysis.md), [`05_vayubudhi_2.0_enterprise_plan.md`](./05_vayubudhi_2.0_enterprise_plan.md), [`04_product_readiness_funding_assessment.md`](./04_product_readiness_funding_assessment.md), and teammate-reported issues.
 >
 > **Focus**: Hyderabad-first, no-mercy, every file audited.
 

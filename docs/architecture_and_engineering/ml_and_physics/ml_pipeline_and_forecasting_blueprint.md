@@ -7,7 +7,7 @@
 
 ## 1. Audit Review: Current ML & Forecasting Limitations
 
-Following a rigorous audit of the existing repository files (`VayuBudhi2.0_plan.md`, `gap_analysis1.md`, `ml_model/src/train_models.py`, `fetch_pblh.py`, and `dataset.csv`), the following critical deficiencies were identified in the current machine learning pipeline:
+Following a rigorous audit of the existing repository files ([`05_vayubudhi_2.0_enterprise_plan.md`](../../audits_and_assessments/05_vayubudhi_2.0_enterprise_plan.md), [`01_phase1_initial_gap_analysis.md`](../../audits_and_assessments/01_phase1_initial_gap_analysis.md), `ml_model/src/train_models.py`, `fetch_pblh.py`, and `dataset.csv`), the following critical deficiencies were identified in the current machine learning pipeline:
 
 | Component | Current State | Audit Finding / Fatal Flaw | Proposed Upgrade |
 |---|---|---|---|

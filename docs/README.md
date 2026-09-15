@@ -10,6 +10,7 @@ This directory houses all engineering blueprints, machine learning architectures
 
 | Document | Description | Key Modules Covered |
 | :--- | :--- | :--- |
+| [**Detailed System Architecture & Diagram**](file:///d:/Puru_VNR/3rd%20Year/Hackathons%20&%20Competitions/Vayubudhi/vayubudhi/docs/system_architecture.md) | Complete end-to-end Mermaid architecture diagram mapping sensors, telemetry, physics engine, ML forecasters, OR-Tools optimizer, and frontend. | End-to-end Platform |
 | [**System Architecture & Comprehensive Analysis**](file:///d:/Puru_VNR/3rd%20Year/Hackathons%20&%20Competitions/Vayubudhi/vayubudhi/docs/vayubudhi_comprehensive_analysis.md) | High-level technical analysis covering IoT hardware, geospatial telemetry engine, ML forecasting, and dispatch optimization. | End-to-end Platform |
 | [**ML Architecture & Blueprint**](file:///d:/Puru_VNR/3rd%20Year/Hackathons%20&%20Competitions/Vayubudhi/vayubudhi/docs/finalized_ml_architecture.md) | Blueprint for data sources (Open-Meteo, CPCB CAAQMS, OpenAQ), model stack (XGBoost, Random Forest), and dashboard structure. | `ml_model/`, `backend/app/routers/` |
 | [**ML Pipeline, Forecasting & PBLH Blueprint**](file:///d:/Puru_VNR/3rd%20Year/Hackathons%20&%20Competitions/Vayubudhi/vayubudhi/docs/ml_pipeline_and_aqi_forecasting_plan.md) | 33 Hyderabad districts dataset strategy, Planetary Boundary Layer Height (PBLH), Ventilation Index ($VI$), and MAPIE conformal calibration. | `ml_model/`, `backend/app/physics_engine.py` |

@@ -32,14 +32,65 @@ VayuBudhi is built around 5 core modules designed to turn raw pollution signals 
 
 ## 🏗️ System Architecture
 
-VayuBudhi leverages a modern, async stack orchestrated by a LangGraph multi-agent pipeline:
+VayuBudhi bridges physical IoT hardware with satellite atmospheric modeling, physics-informed machine learning, operations research dispatching, and generative AI advisories.
 
-* **Hardware Layer:** ESP32 + Nova SDS011 (PM) + BME280 (Temp/Humidity) + OLED Display.
-* **Data Ingestion:** OpenAQ (CAAQMS), Open-Meteo (ERA5 winds/PBLH), NASA FIRMS (Thermal), TomTom (Traffic), OpenStreetMap.
-* **AI/ML Engine:** XGBoost (Forecaster), Random Forest (Fingerprint), MAPIE (Uncertainty).
-* **Optimization:** Google OR-Tools (CVRPTW), Cost-Benefit ROI Calculator.
-* **Agentic Coordinator:** LangGraph (Coordinator $\to$ Attribution, Enforcement, and Advisory Agents).
-* **Frontend:** Next.js + React + Mapbox GL JS + deck.gl (3D geospatial visualization).
+```mermaid
+flowchart TB
+    subgraph SENSORS ["📡 1. IoT & Edge Network"]
+        ESP32["ESP32 DevKit V1"]
+        SDS011["Nova SDS011 (PM2.5 / PM10)"]
+        BME280["BME280 (Temp/Humidity/Press)"]
+        OLED["SSD1306 OLED (Local Telemetry)"]
+        SDS011 & BME280 --> ESP32 --> OLED
+    end
+
+    subgraph TELEMETRY ["🛰️ 2. Environmental & Spatial Feeds"]
+        OPENMETEO["Open-Meteo API (Hourly PM & Winds)"]
+        ERA5["ERA5 Reanalysis (PBLH Layer Height)"]
+        SENTINEL["Sentinel-5P Cache (NO2 Satellite Plumes)"]
+        TOMTOM["TomTom API (Live Traffic Congestion)"]
+        FIRMS["NASA FIRMS (Thermal Hotspots)"]
+    end
+
+    subgraph BACKEND ["⚡ 3. FastAPI Backend & Physics Engine"]
+        API["FastAPI Orchestrator (/api/*)"]
+        PHYSICS["Atmospheric Physics Engine\n- Ventilation Index (VI = PBLH × Wind)\n- Gaussian Dispersion Plumes"]
+        DB[(SQLite / PostgreSQL DB)]
+        API <--> PHYSICS
+        API <--> DB
+    end
+
+    subgraph ML ["🧠 4. AI/ML & Conformal Uncertainty"]
+        XGB["XGBoost Multi-Horizon (24h/48h/72h)"]
+        RF["Random Forest Source Attribution"]
+        MAPIE["MAPIE 90% Conformal Prediction Bounds"]
+        XGB & RF <--> MAPIE
+    end
+
+    subgraph OPTIMIZER ["🎯 5. OR-Tools Fleet Optimizer & LLM"]
+        OR_TOOLS["Google OR-Tools (CVRPTW Solver)"]
+        FLEET["Heterogeneous Fleet (Vans, Drones, Bikes)"]
+        GEMINI["Google Gemini 2.0 Flash (Multilingual Advisories)"]
+        OR_TOOLS --> FLEET
+    end
+
+    subgraph FRONTEND ["🖥️ 6. Next.js 14 Geospatial Command Dashboard"]
+        MAP["deck.gl + Mapbox 3D Engine (Wind Particles + NO2)"]
+        PANELS["Forecast, Deep Dive, Enforcement & Advisory Panels"]
+        REPORT["Automated Executive AI PDF Generator"]
+    end
+
+    ESP32 -- "HTTP Telemetry" --> API
+    OPENMETEO & SENTINEL --> API
+    ERA5 --> PHYSICS
+    TOMTOM & FIRMS --> API
+    API <--> ML
+    ML -- "Calibrated Uncertainty" --> OR_TOOLS
+    API --> GEMINI
+    API <--> FRONTEND
+```
+
+> 📖 *For the complete technical breakdown and data schema specifications, see [System Architecture Specification](docs/system_architecture.md).*
 
 ---
 
@@ -109,6 +160,7 @@ Create a `.env` file in both the `backend` and `frontend` directories and add yo
 
 All detailed system design specifications, physics formulas, and ML architectures have been organized in the [`docs/`](file:///d:/Puru_VNR/3rd%20Year/Hackathons%20&%20Competitions/Vayubudhi/vayubudhi/docs/README.md) directory:
 
+* [**Detailed System Architecture & Diagram**](file:///d:/Puru_VNR/3rd%20Year/Hackathons%20&%20Competitions/Vayubudhi/vayubudhi/docs/system_architecture.md)
 * [**System Architecture & Analysis**](file:///d:/Puru_VNR/3rd%20Year/Hackathons%20&%20Competitions/Vayubudhi/vayubudhi/docs/vayubudhi_comprehensive_analysis.md)
 * [**ML Architecture & Data Blueprint**](file:///d:/Puru_VNR/3rd%20Year/Hackathons%20&%20Competitions/Vayubudhi/vayubudhi/docs/finalized_ml_architecture.md)
 * [**Forecasting & Atmospheric Physics (PBLH)**](file:///d:/Puru_VNR/3rd%20Year/Hackathons%20&%20Competitions/Vayubudhi/vayubudhi/docs/ml_pipeline_and_aqi_forecasting_plan.md)
@@ -121,4 +173,4 @@ All detailed system design specifications, physics formulas, and ML architecture
 Since VayuBudhi is a tightly scoped project developed under a strict 1.5-week sprint timeline, please ensure any pull requests adhere directly to the core 5 modules outlined above. No scope creep.
 
 ## 📄 License
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](file:///d:/Puru_VNR/3rd%20Year/Hackathons%20&%20Competitions/Vayubudhi/vayubudhi/LICENSE) file for details.

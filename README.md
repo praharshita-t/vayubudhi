@@ -105,6 +105,18 @@ Create a `.env` file in both the `backend` and `frontend` directories and add yo
 
 ---
 
+## 📖 Documentation
+
+All detailed system design specifications, physics formulas, and ML architectures have been organized in the [`docs/`](file:///d:/Puru_VNR/3rd%20Year/Hackathons%20&%20Competitions/Vayubudhi/vayubudhi/docs/README.md) directory:
+
+* [**System Architecture & Analysis**](file:///d:/Puru_VNR/3rd%20Year/Hackathons%20&%20Competitions/Vayubudhi/vayubudhi/docs/vayubudhi_comprehensive_analysis.md)
+* [**ML Architecture & Data Blueprint**](file:///d:/Puru_VNR/3rd%20Year/Hackathons%20&%20Competitions/Vayubudhi/vayubudhi/docs/finalized_ml_architecture.md)
+* [**Forecasting & Atmospheric Physics (PBLH)**](file:///d:/Puru_VNR/3rd%20Year/Hackathons%20&%20Competitions/Vayubudhi/vayubudhi/docs/ml_pipeline_and_aqi_forecasting_plan.md)
+* [**Forecaster & Deep Dive Guide**](file:///d:/Puru_VNR/3rd%20Year/Hackathons%20&%20Competitions/Vayubudhi/vayubudhi/docs/aqi_forecaster_and_deepdive_guide.md)
+* [**ML Evaluation Report (PDF)**](file:///d:/Puru_VNR/3rd%20Year/Hackathons%20&%20Competitions/Vayubudhi/vayubudhi/docs/vayu_budhi_ml_predictions_report.pdf)
+
+---
+
 ## 🤝 Contributing
 Since VayuBudhi is a tightly scoped project developed under a strict 1.5-week sprint timeline, please ensure any pull requests adhere directly to the core 5 modules outlined above. No scope creep.
 

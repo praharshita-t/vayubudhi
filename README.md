@@ -1,8 +1,28 @@
 # 🏆 VayuBudhi (वायुबुद्धि)
 
-> **The Calibrated Decision Layer for Urban Air Quality**
+> **The Calibrated Decision Layer for Urban Air Quality**  
+> 🥉 **National 3rd Position** — **The Economic Times AI Hackathon 2.0** (T-Hub, Hyderabad) | Cash Prize: **₹2,00,000**
 
-VayuBudhi is an intelligent, mathematically optimal decision layer built on top of urban air quality monitoring networks. Instead of just forecasting AQI or detecting pollution hotspots, VayuBudhi solves the harder operational problem: **Given a city's actual limited resources (inspectors, drones, and enforcement vans), what is the mathematically optimal way to deploy them?**
+<div align="center">
+  <img src="docs/assets/et_ai_hackathon_winners.png" alt="Economic Times AI Hackathon 2.0 Winners - Team Kassak Squad" width="680" />
+</div>
+
+---
+
+### 🎖️ National Recognition — The Economic Times AI Hackathon 2.0
+
+**VayuBudhi** was conceptualized, built, and defended as part of **The Economic Times AI Hackathon 2.0**, a premier national-level hackathon focused on developing innovative Artificial Intelligence-based solutions to mission-critical real-world challenges.
+
+* **Team:** **Kassak Squad**
+* **Team Members (3rd Year B.Tech Students):**
+  * **Praharshita Tata**
+  * **Purusharth Mishra**
+  * **Sai Koushik Pallapolu**
+  * **Veerabhadra Yerram**
+* **National Standing:** Progressed across nationwide competitive rounds and selected into the **Top 30 teams** from approximately **10,000 teams** that registered from across India.
+* **Grand Finale:** During the Finale Round held at **T-Hub, Hyderabad** on **25th August 2026**, the team finished **3rd Position** nationwide, winning a cash prize of **₹2,00,000 (Rs. 2 Lakhs)**.
+
+During the hackathon, the team designed and built **VayuBudhi** — an intelligent, mathematically optimal decision layer built on top of urban air quality monitoring networks. Instead of just forecasting AQI or detecting pollution hotspots, VayuBudhi solves the harder operational problem: **Given a city's actual limited resources (inspectors, drones, and enforcement vans), what is the mathematically optimal way to deploy them?**
 
 Crucially, the system quantifies its own uncertainty through conformal prediction, ensuring that valuable physical resources are never wasted on shaky evidence.
 

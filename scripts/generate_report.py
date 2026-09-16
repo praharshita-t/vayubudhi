@@ -226,6 +226,7 @@ def build_pdf(output_path):
     pdf.output(output_path)
 
 if __name__ == "__main__":
-    out_file = "vayu_budhi_ml_predictions_report.pdf"
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    out_file = os.path.join(base_dir, "docs", "vayu_budhi_ml_predictions_report.pdf")
     build_pdf(out_file)
     print(f"Report successfully generated at: {os.path.abspath(out_file)}")

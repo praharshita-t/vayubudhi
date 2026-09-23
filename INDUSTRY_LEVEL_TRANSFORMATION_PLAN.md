@@ -1,147 +1,365 @@
-# VayuBudhi Enterprise Transformation Plan
+# VayuBudhi 2.0: Complete Industry-Grade Platform Transformation Plan
 
-This master plan details the sequential transformation of VayuBudhi from a prototype into an enterprise-grade municipal air quality decision and enforcement platform. The document details each phase and every step required for full production readiness.
-
----
-
-## Phase Zero: Truth Reset and Scientific Provenance
-
-The objective of this phase is to eliminate all synthetic calculations, arbitrary multipliers, and ungrounded estimates from the codebase, ensuring that every value displayed or served is physically authentic, measured by verified hardware, or explicitly labeled as a scientific model.
-
-### Step: Elimination of Synthetic Station Multipliers and Advection Shortcuts
-The codebase must not modify observed station telemetry using hardcoded modulo multipliers or artificial spatial gradients. All physical monitoring stations must report their true measured pollutant concentrations directly from analyzers without artificial micro-scaling factors or synthetic advection inflation.
-
-### Step: Dual Standard Air Quality Index Calculation Engine
-Implement an official, mathematically rigorous air quality calculation engine supporting both the Indian National Air Quality Index standards published by the Central Pollution Control Board and the United States Environmental Protection Agency standards. The engine must compute sub-indices using precise piecewise linear interpolation across official breakpoint tables.
-
-### Step: Unit Normalization and Particulate Criteria Enforcement
-Automate telemetry unit normalization to resolve scale mismatches, specifically converting carbon monoxide concentrations between micrograms per cubic meter and milligrams per cubic meter. Enforce the statutory rule requiring at least one particulate measurement (either fine particulate matter or respirable suspended particulate matter) before an overall air quality index score can be calculated, preventing single trace gas measurements from generating misleadingly clean scores.
-
-### Step: Exact Physical Station Coordinates and Unmonitored Ward Styling
-Map monitoring stations exclusively to their genuine global positioning coordinates instead of assigning them to arbitrary administrative centroids. Municipal wards that do not contain an active physical monitoring center must be styled with neutral slate-gray shading on spatial visualizations, and must display clear hover cards directing users to the nearest active regional reference center with measured distance.
-
-### Step: Hexagonal Grid Ground-Level Particulate Interpolation
-Eliminate inverted calculations where particulate matter concentrations were derived backwards from index numbers. Grid cell concentrations must be computed using physically valid inverse distance weighting from surrounding physical monitoring stations or directly sampled from atmospheric chemical transport model layers.
-
-### Step: Elimination of Arbitrary Gaseous Index Formulas
-Remove hardcoded mathematical shortcuts that estimate volatile organic compounds or nitrogen oxides from unrelated particulate matter values. When physical gaseous sensors are unavailable or offline, the system must report unmonitored status rather than synthesizing surrogate values.
-
-### Step: Explicit Data Provenance and Instrument Metadata Flagging
-Every telemetry object returned by backend services must include unambiguous provenance metadata indicating whether the figure originates from a certified government reference analyzer, a calibrated municipal sensor node, or a regional atmospheric background simulation.
-
-### Step: Scientific Plume Dispersion Parameterization and Physics Inversion Realism
-Update atmospheric transport modules to base dispersion calculations on validated Pasquill-Gifford atmospheric stability classes rather than arbitrary exponential cones. Document physics-informed neural network inversion clearly as an advanced research capability while maintaining analytical Gaussian dispersion as the operational baseline.
+> **Document Status**: Official Master Architecture & Engineering Roadmap  
+> **Active Branch**: `feature/startup-scale-roadmap`  
+> **Reference Document**: Based on the comprehensive system audit in `reference_implementation_plan.md`  
+> **Target Standard**: Multi-Tenant Municipal Enterprise SaaS & CPCB Type Approval  
 
 ---
 
-## Phase One: Real Time Ingestion and Storage Engine
+## 1. Executive Summary & Core Platform Vision
 
-The objective of this phase is to build an autonomous, highly available ingestion and storage infrastructure capable of operating continuously without telemetry loss or manual intervention.
+VayuBudhi is an environmental **decision and closed-loop enforcement intelligence platform**. While incumbent commercial solutions (IQAir, BreezoMeter, Plume Labs) operate as passive consumer air quality monitors, VayuBudhi is engineered specifically for municipal corporations and pollution control authorities (GHMC, TSPCB, DPCC, BBMP). It solves an operational optimization problem:
 
-### Step: Continuous Background Ingestion Scheduler Lifecycle
-Integrate an asynchronous background scheduler into the core application server startup lifecycle. The scheduler must trigger telemetry synchronization tasks on automated recurring intervals without blocking incoming application programming interface requests or relying on manual invocation.
+> *"Given a municipal authority's limited fleet of enforcement vans, field inspectors, and surveillance drones, where should they be dispatched right now, with what statistical certainty, and what is the measurable public health ROI of intervening?"*
 
-### Step: Primary Central Pollution Control Board Data Ingestion Worker
-Deploy a specialized ingestion worker that interfaces with the national open government data portal to extract telemetry from continuous ambient air quality monitoring stations across the country. The worker must handle network pagination, sanitize missing telemetry strings, parse local date formats, and store time-stamped observations in the database.
-
-### Step: Secondary Global Sensor Network Mirror and Fallback Ingestion Worker
-Deploy a secondary ingestion pipeline connecting to global open air quality data platforms. This worker acts as an automatic fallback and cross-validation mechanism, querying active measurement coordinates and mirroring telemetry whenever the primary government endpoint experiences downtime.
-
-### Step: Enterprise Time Series Hypertable Database Architecture
-Transition the primary storage tier from a single-file relational database to an enterprise time-series database with automated partitioning. The schema must partition observations by regular time intervals, enforce unique constraints per station timestamp pair, and leverage column compression for historical observations to maintain rapid analytical queries across millions of rows.
-
-### Step: Resilient Asynchronous Network Pooling and Upstream Circuit Breakers
-Replace standard blocking synchronous network requests with an asynchronous connection pool featuring persistent keep-alive sockets and automated backoff retry logic. Implement circuit breaker patterns that detect upstream service degradations and immediately serve cached data flagged with freshness badges rather than hanging client requests.
-
-### Step: Modular Backend Architecture Decomposition
-Refactor monolithic routing files into clean, decoupled service layers. The architecture must separate raw station data access, meteorological simulations, vehicular corridor congestion processing, and request routing into dedicated, independently testable modules.
+To evolve from a hackathon prototype into a multi-tenant, high-concurrency, industry-grade platform, VayuBudhi must execute an end-to-end transformation across:
+1. **Data Pipeline Reliability**: 24/7 unattended ingestion from official CPCB CAAQMS and OpenAQ v3 feeds with multi-tier failovers.
+2. **High-Concurrency Multi-User Architecture**: Distributed Redis 7 caching, connection-pooled TimescaleDB hypertables, asynchronous worker decoupling, and sliding-window rate limiting.
+3. **Machine Learning & Physics Refinement**: Hourly temporal models on 457k continuous rows, mathematically guaranteed MAPIE conformal prediction intervals, physics-grounded multi-signal receptor modeling, and real Pasquill-Gifford dispersion.
+4. **Closed-Loop Enforcement Moat**: Field inspector outcome verification loop that generates proprietary ground-truth training data for source attribution and avoided-exposure ROI.
 
 ---
 
-## Phase Two: Platform Foundation and Enterprise Security
+## 2. Competitive Analysis: Feature Comparison Matrix
 
-The objective of this phase is to establish enterprise-grade cloud deployment, containerization, automated testing, continuous integration, and role-based access security.
+The table below benchmarks VayuBudhi against leading global commercial air quality platforms:
 
-### Step: Multi-Stage Production Containerization
-Author production container specifications for both backend and frontend environments using multi-stage builds. Ensure minimal runtime image footprints, execution under non-privileged system users, and orchestrate services through unified composition manifests that link application servers, time-series databases, and memory caching layers.
+| Capability / Feature | VayuBudhi (Target) | VayuBudhi (Today) | IQAir | BreezoMeter (Google) | Clarity Movement | OpenAQ | Plume Labs |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Real-time AQI Map** | ✅ Measured Stations | ⚠️ Hybrid / Modelled | ✅ Measured | ✅ Modelled | ✅ Own Fleet | ✅ Open Data | ✅ Hybrid |
+| **Multi-City Indian Coverage** | ✅ 20+ Cities | ⚠️ 18 Cities | ✅ Global | ✅ Global | ⚠️ Sparse | ✅ Global | ✅ Global |
+| **Dual AQI Standards (IN / US)** | ✅ Dynamic Switcher | 🟢 Built (`aqi_standards.py`) | ❌ Single | ❌ Single | ❌ Single | ⚠️ Raw Only | ❌ Plume AQI |
+| **72h ML Forecasting** | ✅ Hourly Continuous | ⚠️ Daily Granular | ✅ | ✅ Deep Learning | ❌ | ❌ | ✅ |
+| **Conformal Prediction Intervals** | ✅ True MAPIE (90%) | ⚠️ Threshold Shortcut | ❌ None | ❌ None | ❌ None | ❌ None | ❌ None |
+| **Source Attribution** | ✅ Multi-Signal Receptor | ⚠️ Heuristic Rules | ❌ None | ⚠️ Fire / Dust | ❌ None | ❌ None | ❌ None |
+| **SHAP Driver Explainability** | ✅ Dynamic TreeSHAP | 🟢 Implemented | ❌ None | ❌ None | ❌ None | ❌ None | ❌ None |
+| **Physics Plume Dispersion** | ✅ Pasquill-Gifford | ⚠️ Mock Plume | ❌ None | ⚠️ Regional | ❌ None | ❌ None | ❌ None |
+| **Enforcement VRP Routing** | ✅ OR-Tools + Exposure | ⚠️ Synthetic Inputs | ❌ None | ❌ None | ❌ None | ❌ None | ❌ None |
+| **Avoided Exposure ROI** | ✅ WorldPop Grid | ⚠️ Synthetic Multiplier | ❌ None | ❌ None | ❌ None | ❌ None | ❌ None |
+| **Multilingual LLM Advisories** | ✅ Cached Gemini Flash | ⚠️ Monolithic Template | ✅ | ❌ None | ❌ None | ❌ None | ⚠️ |
+| **IoT Hardware Fleet Integration** | ✅ SPS30 + SGP41 + Cellular | ⚠️ Bench SDS011 | ✅ Own HW | ❌ None | ✅ Own HW | ❌ None | ✅ Flow |
+| **High-Concurrency Caching** | ✅ Multi-Tier Redis 7 | ❌ In-Memory Dict | ✅ Redis | ✅ Cloud CDN | ✅ | ✅ | ✅ |
+| **Production Time-Series DB** | ✅ TimescaleDB Hypertables | ⚠️ SQLite WAL | ✅ | ✅ BigQuery | ✅ Timescale | ✅ PostgreSQL | ✅ |
+| **24/7 Automated Pipeline** | ✅ Async Scheduler | ⚠️ Lifespan Loop | ✅ 99.9% | ✅ 99.9% | ✅ 99.9% | ✅ 99.5% | ✅ 99.9% |
+| **Security & RBAC (JWT)** | ✅ 4-Tier Role Auth | ❌ Unauthenticated | ✅ Enterprise | ✅ Enterprise | ✅ Enterprise | ⚠️ API Key | ✅ Consumer |
+| **CI/CD & Containerization** | ✅ Docker + GH Actions | ❌ Local Scripts | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Regulatory Certification** | ✅ CPCB IS 5182 Target | ❌ Uncertified | ✅ Certified | ⚠️ Indicative | ✅ MCERTS/EPA | ❌ Data Only | ⚠️ Indicative |
 
-### Step: Automated Continuous Integration and Quality Pipeline
-Establish a continuous integration workflow that triggers on every code proposal. The workflow must enforce code formatting standards, execute static type checkers, run the automated test suite, and scan for accidental credential inclusions before any branch can be merged.
-
-### Step: Enterprise Token Authentication and Role Based Access Control
-Implement an asymmetric cryptographic token authentication system with four distinct administrative access levels. The roles must restrict system capabilities appropriately between platform administrators, municipal environmental officers, field enforcement inspectors, and general public viewers, while replacing permissive cross-origin policies with explicit tenant domain allowlists.
-
-### Step: Data Sovereignty, Resident Cloud Infrastructure, and Statutory Privacy Compliance
-Deploy production cloud instances exclusively within domestic data centers to comply with national digital personal data protection mandates and municipal data residency regulations. Establish automated database snapshot schedules and strict telemetry retention policies.
-
----
-
-## Phase Three: Machine Learning Credibility and Receptor Modeling
-
-The objective of this phase is to transition predictive and source attribution models to scientifically validated methodologies trained on continuous empirical time-series data.
-
-### Step: High Density Temporal Hourly Model Training on Historical Continuous Data
-Transition model training from small daily aggregated datasets to high-density hourly historical continuous air quality telemetry. Feature engineering must capture diurnal atmospheric boundary layer collapse, cyclical time dynamics, humidity interactions, and rolling pollutant ratios, evaluated strictly using blocked chronological time-series cross-validation.
-
-### Step: Conformal Prediction Inference with Validated Statistical Coverage
-Integrate true inductive conformal prediction algorithms into the inference pipeline, replacing arbitrary threshold approximations. The service must produce statistically guaranteed prediction sets at user-specified significance levels, allowing decision-makers to distinguish between high-confidence single-source attribution and ambiguous multi-source events.
-
-### Step: Multi-Signal Source Fingerprinting and Weak Supervision Receptor Modeling
-Replace hand-tuned threshold heuristics with physics-grounded weak supervision that incorporates multiple external empirical signals. The attribution engine must correlate measured fine-to-coarse particulate ratios with real-time vehicular traffic congestion indices, industrial land-use boundaries from open geographic databases, satellite thermal anomaly fire pixels, and local wind direction sectors.
-
-### Step: Analytical Atmospheric Dispersion and Stability Parameterization
-Implement analytical Gaussian plume dispersion modeling governed by meteorological wind fields and Pasquill-Gifford atmospheric turbulence categories. The model must calculate downwind concentration footprints and estimate virtual emission rates based on observed receptor concentrations.
-
-### Step: Enforcement Fleet Route Optimization Grounded in Real Population Exposure Grids
-Upgrade vehicle routing problem solvers to evaluate stops using actual high-resolution population density grids. The objective function must maximize avoided human exposure per hour of patrol effort while adhering to vehicle capacities, shift durations, and operational battery ranges.
+> **VayuBudhi's Core Moat**: No competitor combines **conformal prediction intervals + physics-informed source attribution + OR-Tools enforcement vehicle routing + closed-loop field outcome verification**. Incumbents sell passive dashboards; VayuBudhi sells municipal enforcement optimization.
 
 ---
 
-## Phase Four: Hardware Fleet and Empirical Sensor Calibration
+## 3. High-Concurrency & Multi-User Architecture
 
-The objective of this phase is to design, manufacture, and empirically calibrate an industrial-grade environmental monitoring node capable of surviving outdoor municipal deployment.
+To handle thousands of concurrent citizens querying ambient AQI while municipal officers monitor patrol routes and hundreds of IoT nodes transmit telemetry, the platform must transition from local in-memory dictionaries to an enterprise distributed architecture.
 
-### Step: Industrial Real Time Operating System Firmware Architecture
-Rewrite sensor node firmware using a real-time operating system that divides operations into dedicated tasks for sensor acquisition, edge aerosol hygroscopic correction, encrypted cellular transmission, and intelligent battery power management. The firmware must maintain a non-volatile flash queue to prevent data loss during cellular connectivity lapses.
+```
+[ Client Layer: Web Dashboard | Mobile Inspector App | Public Embed Widgets ]
+                              │
+                              ▼
+    [ Reverse Proxy & Load Balancer: Nginx / Cloudflare CDN ]
+                              │
+                              ▼
+             [ API Gateway: FastAPI Cluster (ASGI / Uvicorn) ]
+            ┌─────────────────┼─────────────────┐
+            │                 │                 │
+            ▼                 ▼                 ▼
+   [ Rate Limiter ]    [ JWT Auth (RS256) ] [ Circuit Breakers ]
+   (Redis Sliding Win) (RBAC: 4 Roles)     (Tenacity / Respx)
+            │                 │                 │
+            └─────────────────┼─────────────────┘
+                              │
+    ┌─────────────────────────┴─────────────────────────┐
+    │                                                   │
+    ▼                                                   ▼
+[ L1 Cache: Redis 7 Cluster ]            [ L2 Storage: TimescaleDB / Postgres 16 ]
+• Latest station readings (30s TTL)      • Partitioned observations (7d chunks)
+• City rollup aggregates (15m TTL)       • Raw unmanipulated API payloads
+• Multilingual advisories (3h TTL)       • Keyed forecasts & conformal bounds
+• Session tokens & rate limit counters   • Enforcement routes & field outcomes
+    │                                                   │
+    └─────────────────────────┬─────────────────────────┘
+                              │
+                              ▼
+        [ Asynchronous Worker Tier: APScheduler / Celery ]
+        • Worker 1: CPCB CAAQMS ingestion (every 15 min)
+        • Worker 2: OpenAQ v3 mirror & fallback (every 60 min)
+        • Worker 3: TomTom traffic congestion pull (every 5 min)
+        • Worker 4: Weekly ML retraining & drift evaluation
+```
 
-### Step: Enterprise Bill of Materials and Sensor Hardware Upgrade
-Upgrade the hardware bill of materials to certified laser optical particulate monitors equipped with automated mechanical self-cleaning fans, metal-oxide gas sensors sensitive to volatile organic compounds and nitrogen oxides, hardware cryptography coprocessors, global cellular connectivity, maximum power point tracking solar charging, and weatherproof ultraviolet-stabilized enclosures.
+### Detailed Concurrency & Caching Specifications
 
-### Step: Long Term Government Reference Co-Location Study and Empirical Calibration
-Deploy a pilot fleet of hardware nodes alongside a certified government continuous ambient air quality reference station for a minimum of one month. Derive per-node empirical regression parameters, including slope, intercept, and correlation coefficients, establishing sensor accuracy relative to regulatory instruments.
+1. **Redis Multi-Tier Cache Layer**:
+   - **Endpoint Caching**: `/api/city-data` cached with a 15-minute TTL keyed by `city_name` and `aqi_standard`. Prevents database pounding when hundreds of users open the dashboard.
+   - **Latest Station Telemetry**: Hot key `latest:station:{id}` refreshed on every ingestion cycle. Reads complete in sub-millisecond time.
+   - **LLM Advisory Caching**: Cache generated health advisories in Redis under `advisory:{city}:{aqi_bucket}:{language}` with a 3-hour TTL. Protects against Gemini rate limits and cuts token costs by 95%.
+   - **Cache Invalidation**: Explicit invalidation trigger whenever a scheduled ingestion worker writes fresh telemetry to TimescaleDB.
 
-### Step: Edge and Cloud Relative Humidity Aerosol Growth Correction
-Implement hygroscopic aerosol growth correction equations both on the physical sensor microcontroller and within cloud ingestion workers. The correction must normalize optical particle measurements based on ambient relative humidity to prevent liquid water droplet condensation from falsely inflating particulate matter readings during fog and monsoon periods.
+2. **Database Scalability & Connection Pooling**:
+   - **TimescaleDB Hypertables**: Partition `station_observations` and `sensor_readings` by `timestamp` in 7-day chunks with automated zstd compression on data older than 7 days (achieving 90% storage reduction).
+   - **Connection Pooling**: SQLAlchemy async engine with `pool_size=20`, `max_overflow=40`, `pool_pre_ping=True`, and `pool_recycle=300`. Prevents thread starvation and PostgreSQL connection exhaustion under high traffic.
+   - **Read/Write Splitting**: Route heavy analytical map aggregation queries to PostgreSQL read replicas while ingestion workers write to the primary instance.
+
+3. **Rate Limiting & Traffic Management**:
+   - **Sliding-Window Rate Limiter**: Redis-backed rate limiting per IP and API key:
+     - Public citizens: 120 requests/minute.
+     - Municipal officers: 1,000 requests/minute.
+     - IoT Hardware Ingestion: 10,000 requests/minute with device token authentication.
+   - **Circuit Breakers**: Wrap external network calls (Open-Meteo, TomTom, NASA FIRMS) in circuit breakers. If an upstream fails 3 consecutive times, fail fast and serve cached data flagged with `is_stale: true` rather than blocking the event loop.
+
+4. **Async Non-Blocking Architecture**:
+   - Replace blocking synchronous `requests.get` with shared `httpx.AsyncClient` connection pools across all backend services.
+   - Complete decoupling of telemetry ingestion from the API request path. Endpoints only read from Redis and TimescaleDB; they never wait for external government APIs to respond.
 
 ---
 
-## Phase Five: First Municipal Pilot Deployment and Enforcement Feedback Loop
+## 4. Machine Learning & Scientific Physics Refinement
 
-The objective of this phase is to deploy the complete platform within an active municipal jurisdiction, closing the loop between automated artificial intelligence detection, officer dispatch, and verified on-site enforcement.
+To move beyond prototype heuristics, the modeling pipeline must be upgraded to rigorous, publishable atmospheric science standards:
 
-### Step: Pilot Deployment in High Density Industrial and Commercial Zones
-Install an initial operational network of calibrated hardware nodes across critical industrial corridors, major traffic intersections, and vulnerable residential zones in the pilot city, establishing real-time spatial coverage where regulatory monitors are sparse.
+### 4.1 Temporal Hourly Forecasting on Continuous Historical Data
+- **Problem**: Models currently train on daily aggregated data (2,178 rows) with shuffled splits, which causes data leakage and obscures diurnal atmospheric cycles.
+- **Solution**:
+  - Train CatBoost and XGBoost models on the 457,000-row continuous hourly CAAQMS dataset.
+  - Implement **blocked / chronological time-series cross-validation** (e.g. train on months 1–9, validate on months 10–12) to evaluate real forward-looking generalization.
+  - Engineer physics-informed lag features: diurnal boundary layer convective collapse (PBLH $\times$ Wind Speed = Ventilation Index), 1h/3h/6h/24h concentration deltas, barometric pressure ratios, and relative humidity aerosol interaction terms.
 
-### Step: Municipal Command Console and Dispatch Management Surface
-Deliver a dedicated municipal operational dashboard providing city officers with live three-dimensional spatial heatmaps, automated hotspot alerts, optimized multi-vehicle patrol routes, and operational health status indicators for the entire monitoring fleet.
+### 4.2 True Inductive Conformal Prediction (MAPIE)
+- **Problem**: Current serving code uses an ad-hoc probability threshold shortcut (`probs > 0.10`) that provides zero statistical coverage guarantees.
+- **Solution**:
+  - Integrate `MapieClassifier(method="lac", cv="prefit")` for source attribution and `MapieRegressor(method="plus", cv="prefit")` for 24h/48h/72h forecasting.
+  - Compute non-conformity scores on a dedicated calibration dataset.
+  - Guarantee an exact 90% empirical coverage rate ($\alpha = 0.10$).
+  - When the prediction set contains multiple sources (e.g. `["vehicular", "biomass"]`), the system formally signals operational uncertainty, dispatching an aerial drone for reconnaissance instead of issuing an automated legal fine.
 
-### Step: Closed Loop Field Inspection Outcome Logging and Verification Loop
-Equip field enforcement inspectors with a mobile interface allowing them to navigate directly to artificial-intelligence-flagged hotspot locations, confirm the actual ground source, record actions taken, and upload time-stamped photographic evidence. This outcome stream generates a proprietary ground-truth dataset that continuously refines attribution accuracy.
+### 4.3 Multi-Signal Receptor Modeling (Replacing Heuristics)
+- **Problem**: Current labeling uses arbitrary rules (`if pm25/pm10 > 0.8: "vehicular"`).
+- **Solution**: Implement multi-signal physics-grounded weak supervision:
+  - **Vehicular**: High TomTom congestion index ($> 0.6$) + elevated $\text{NO}_2/\text{PM}_{2.5}$ ratio during morning (08:00–10:30) and evening (17:30–20:30) traffic peaks.
+  - **Industrial**: Elevated $\text{SO}_2$ concentrations + geographic downwind alignment with OpenStreetMap industrial zone polygons.
+  - **Biomass / Open Waste**: High fine particulate ratio ($\text{PM}_{2.5}/\text{PM}_{10} > 0.75$) + NASA FIRMS MODIS/VIIRS thermal fire pixels within 15 km upwind + night/early morning hours.
+  - **Dust / Construction**: Low fine particulate ratio ($\text{PM}_{2.5}/\text{PM}_{10} < 0.35$) + high ambient wind speed ($> 5\,\text{m/s}$) + daytime working hours.
 
-### Step: Automated Statutory Compliance and Violation Dossier Generation
-Develop an automated reporting engine that synthesizes sensor calibration records, local meteorological parameters, conformal artificial intelligence source attribution probabilities, and relevant statutory pollution control provisions into legally admissible audit reports formatted for administrative action.
+### 4.4 Analytical Pasquill-Gifford Plume Dispersion
+- **Problem**: `physics_engine.py` currently uses an arbitrary exponential cone labeled `_mock`.
+- **Solution**: Implement analytical steady-state Gaussian plume dispersion:
+  $$C(x, y, z) = \frac{Q}{2\pi u \sigma_y \sigma_z} \exp\left(-\frac{y^2}{2\sigma_y^2}\right) \left[ \exp\left(-\frac{(z - H)^2}{2\sigma_z^2}\right) + \exp\left(-\frac{(z + H)^2}{2\sigma_z^2}\right) \right]$$
+  where dispersion coefficients $\sigma_y(x)$ and $\sigma_z(x)$ are dynamically parameterized from Briggs formulas based on Pasquill-Gifford atmospheric stability classes (A through F) derived from solar radiation, wind speed, and nocturnal cloud cover.
 
 ---
 
-## Phase Six: Multi Tenant Productisation and Regulatory Certification
+## 5. Detailed Step-by-Step Implementation Roadmap
 
-The objective of this phase is to scale the platform into a repeatable, multi-tenant enterprise solution and secure official regulatory certification.
+The transformation is structured across 8 gated engineering phases:
 
-### Step: Official Government Environmental Sensor Regulatory Certification
-Submit formal co-location evaluation datasets and hardware performance dossiers to national pollution control authorities and standardization bodies to obtain official type approval, certifying that node measurements satisfy regulatory requirements for indicative air quality monitoring.
+```
+[ Phase 1: Pipeline Reliability & Ground Truth ]
+                       │
+                       ▼
+[ Phase 2: Production Time-Series Database ]
+                       │
+                       ▼
+[ Phase 3: Cloud Infrastructure & Security ]
+                       │
+                       ▼
+[ Phase 4: Machine Learning Refinement & MLOps ]
+                       │
+                       ▼
+[ Phase 5: Automated Testing, CI/CD & Observability ]
+                       │
+                       ▼
+[ Phase 6: Hardware 2.0 Fleet & Calibration ]
+                       │
+                       ▼
+[ Phase 7: Municipal Pilot & Decision Loop (GHMC) ]
+                       │
+                       ▼
+[ Phase 8: Multi-Tenant Scale & Regulatory Certification ]
+```
 
-### Step: Multi Tenant Software as a Service Architecture and Self Serve Onboarding
-Implement tenant-level data isolation across the entire infrastructure, enabling new municipal corporations, smart city concessionaires, and state pollution control boards to be provisioned autonomously with custom geographic boundaries, fleet profiles, and alert thresholds.
+---
 
-### Step: Commercial Hyperlocal Air Quality Data Licensing Application Programming Interface
-Construct a high-performance commercial application programming interface gateway equipped with cryptographic key management, usage metering, and streaming feeds. This gateway enables municipal data to be licensed securely to real estate platforms, health tech services, logistics fleets, and corporate sustainability reporting applications.
+### Phase 1: Pipeline Reliability & Ground-Truth Provenance
+> **Primary Goal**: Eliminate all synthetic multipliers, de-fake all calculations, and establish 24/7 unattended ingestion.
+
+- **Step 1.1: Complete Truth Reset in Routing Code**
+  - Delete `micro_factor = 1.20 if (i % 3 == 0)...` and `spatial_mult` from `live.py`.
+  - Replace line 343 in `live.py` (`pm25 = round(cell_aqi * 0.4)`) with Inverse Distance Weighting from monitored physical stations.
+  - Remove arbitrary formulas from `report.py` (`voc = pm25 * 1.8...` and `nox = no2 / 20.0`); return unmonitored status (`--`) when sensors are absent.
+- **Step 1.2: Standardize Dual AQI Engine**
+  - Ensure all endpoints query `backend/app/aqi_standards.py` for both India NAQI (CPCB 2014) and US EPA (40 CFR Part 58).
+  - Enforce CPCB particulate requirement rule and automatic CO normalization ($>5.0 \rightarrow / 1000$).
+- **Step 1.3: Asynchronous Ingestion Scheduler Lifecycle**
+  - Hook `backend/app/ingestion/scheduler.py` into FastAPI's `lifespan` handler in `backend/app/main.py`.
+  - Ingestion worker queries `data.gov.in` every 15 minutes and OpenAQ v3 every 60 minutes in an independent non-blocking background thread.
+- **Step 1.4: Explicit Provenance Metadata**
+  - Every API response must tag readings with `provenance: "measured_cpcb" | "calibrated_iot" | "modelled_cams"`, `observed_at`, and `data_age_seconds`.
+
+---
+
+### Phase 2: Production Time-Series Database Architecture
+> **Primary Goal**: Transition from single-writer SQLite to an enterprise TimescaleDB hypertable tier.
+
+- **Step 2.1: TimescaleDB Cloud Provisioning**
+  - Deploy PostgreSQL 16 with the TimescaleDB extension on managed cloud instances (Cloud SQL or AWS RDS).
+  - Execute `backend/app/scripts/setup_timescaledb.sql` to establish `station_observations` and `sensor_readings` hypertables partitioned into 7-day intervals.
+- **Step 2.2: Compression & Retention Policies**
+  - Enable native TimescaleDB chunk compression on observations older than 7 days using zstd compression.
+  - Establish a 1-year retention policy for raw high-frequency telemetry and a continuous aggregate policy for hourly/daily rollups.
+- **Step 2.3: Connection Pooling & Async Engine**
+  - Configure SQLAlchemy async engine with connection pooling (`pool_size=20`, `max_overflow=40`) in `backend/app/database.py`.
+  - Maintain SQLite WAL mode fallback for zero-dependency local developer setups.
+- **Step 2.4: Alembic Migration Pipeline**
+  - Initialize Alembic version-controlled schema migrations for all future model adjustments.
+
+---
+
+### Phase 3: Cloud Infrastructure, Multi-Tenancy & Enterprise Security
+> **Primary Goal**: Secure the platform, implement multi-tenant role access, and deploy multi-tier Redis caching.
+
+- **Step 3.1: Multi-Stage Production Containerization**
+  - Author `backend/Dockerfile` (multi-stage Python 3.11-slim, non-root user).
+  - Author `frontend/Dockerfile` (Next.js standalone production output).
+  - Create `docker-compose.yml` orchestrating API, Ingestion Worker, TimescaleDB, and Redis.
+- **Step 3.2: Distributed Redis 7 Caching Layer**
+  - Deploy managed Redis (Memorystore / ElastiCache).
+  - Cache `/api/city-data` (15-min TTL) and LLM health advisories (3-hour TTL).
+  - Implement Redis-backed sliding-window rate limiting.
+- **Step 3.3: JWT Authentication & 4-Tier RBAC**
+  - Implement RS256 asymmetric JWT verification supporting four distinct user roles:
+    - `super_admin`: Full infrastructure control, OTA firmware updates, global telemetry.
+    - `city_officer`: Municipal dispatch approval, threshold configuration, legal report generation.
+    - `field_inspector`: Mobile route view, photo evidence upload, outcome logging.
+    - `public_viewer`: Read-only city ambient AQI map.
+- **Step 3.4: Security Hardening & Data Sovereignty**
+  - Replace `allow_origins=["*"]` with verified tenant domain allowlists.
+  - Deploy exclusively in Indian cloud data centers (AWS Mumbai `ap-south-1` or GCP Mumbai `asia-south1`) to satisfy MeitY and DPDP Act 2023 regulations.
+
+---
+
+### Phase 4: Machine Learning Refinement & MLOps Hardening
+> **Primary Goal**: Replace prototype models with continuous hourly training, true conformal MAPIE sets, and weak-supervision receptor modeling.
+
+- **Step 4.1: Hourly Temporal Training Pipeline**
+  - Ingest the 457k-row continuous hourly CAAQMS dataset.
+  - Train CatBoost and XGBoost models on true 24h, 48h, and 72h targets using blocked chronological cross-validation.
+- **Step 4.2: End-to-End MAPIE Conformal Prediction Serving**
+  - Wrap classification and regression models in MAPIE estimators.
+  - Serve mathematically guaranteed 90% confidence prediction sets in `ml_service.py`.
+- **Step 4.3: Multi-Signal Receptor Modeling (Attribution v2)**
+  - Integrate dynamic feature inputs: TomTom traffic congestion, OSM industrial land-use polygons, and NASA FIRMS active fire pixels.
+  - Correlate with wind direction sectors to replace heuristic attribution rules.
+- **Step 4.4: MLOps Registry & Evaluation Gates**
+  - Deploy MLflow model registry tracking artifact hashes, hyperparameters, and evaluation metrics.
+  - Establish automated deployment gates: block candidate models if RMSE or 90% coverage regresses.
+
+---
+
+### Phase 5: Automated Testing, CI/CD & Observability
+> **Primary Goal**: Achieve >80% automated test coverage, continuous integration, and real-time APM monitoring.
+
+- **Step 5.1: Comprehensive Pytest Suite**
+  - Unit tests for all AQI formulas, Pasquill-Gifford dispersion functions, and feature engineering.
+  - Contract integration tests for all 22 FastAPI endpoints using `respx` mocked external APIs.
+- **Step 5.2: Frontend E2E & Type Safety**
+  - Playwright end-to-end smoke tests covering the 5 main user pages.
+  - Enforce zero TypeScript errors (`tsc --noEmit`) and strict ESLint compliance.
+- **Step 5.3: Automated CI Pipeline (GitHub Actions)**
+  - Setup `.github/workflows/ci.yml` running linting, type checks, unit tests, and Gitleaks secret scanning on every pull request.
+- **Step 5.4: Observability & Alerting**
+  - Sentry integration for real-time error tracking (backend + frontend).
+  - Prometheus metrics (`/metrics`) tracking API latency, cache hit ratios, and model inference duration.
+  - Grafana dashboard with alert escalation policies for stale ingestion ticks (>60 min).
+
+---
+
+### Phase 6: Hardware 2.0 Fleet Architecture & Field Calibration
+> **Primary Goal**: Build and deploy 10 industrial-grade IoT nodes and publish an empirical calibration curve.
+
+- **Step 6.1: Enterprise Hardware Bill of Materials (~$105/node)**
+  - Sensirion SPS30 (laser optical particulate monitor with built-in auto-cleaning fan, MCERTS-certified).
+  - Sensirion SGP41 (metal-oxide VOC and $\text{NO}_x$ indexes).
+  - ESP32-S3-WROOM-1 (hardware crypto coprocessor for TLS 1.2).
+  - SIMCom SIM7000G (cellular NB-IoT / LTE Cat-M1 + GNSS).
+  - TI BQ25185 MPPT solar charger + 3500mAh 18650 Li-ion battery + 6V/2W solar panel.
+  - IP65 UV-stabilized ABS enclosure with breathable PTFE vent membrane.
+- **Step 6.2: Industrial FreeRTOS Firmware**
+  - Dedicated tasks for sensor sampling, edge $\kappa$-Köhler Relative Humidity compensation, encrypted MQTT/TLS telemetry, and power management.
+  - Non-volatile SPIFFS flash queue buffering up to 2,000 readings during cellular downtime.
+- **Step 6.3: 30-Day CAAQMS Reference Co-Location Study**
+  - Co-locate 3–5 pilot nodes alongside a reference government analyzer in Hyderabad (e.g. Sanjeevaiah Park) for 30 consecutive days.
+  - Publish empirical calibration curves: target $R^2 \ge 0.85$, slope $0.80$–$1.20$, bias $< \pm 5\,\mu\text{g/m}^3$.
+
+---
+
+### Phase 7: Municipal Pilot Deployment & Closed-Loop Enforcement Loop
+> **Primary Goal**: Deploy 25–50 nodes in Hyderabad (GHMC), operationalize dispatch routing, and log 200+ verified field outcomes.
+
+- **Step 7.1: Hyderabad Municipal Pilot Deployment**
+  - Deploy 25–50 calibrated nodes across priority zones: Jeedimetla industrial corridor and Charminar commercial area.
+- **Step 7.2: Municipal Command Console & Dispatch Surface**
+  - Interactive Deck.gl 3D map featuring real-time station vectors, hotspot clusters, and OR-Tools optimized patrol routes.
+  - Generate automated, CPCB-compliant violation PDF dossiers containing calibration records, AI conformal confidence, and Air Act (1981) Section 21 citations.
+- **Step 7.3: Field Inspector Outcome Verification Loop (The Proprietary Moat)**
+  - Field inspectors log findings on-site: *Source Confirmed (Biomass / Industrial / Vehicular)*, *False Alarm*, or *Action Taken*, uploading geo-tagged photo evidence.
+  - Accumulate 200+ verified ground-truth records to retrain and fine-tune attribution models.
+
+---
+
+### Phase 8: Multi-Tenant Scale & Regulatory Certification
+> **Primary Goal**: Scale the platform across 3–5 cities and achieve official regulatory type approval.
+
+- **Step 8.1: Official Regulatory Certification (CPCB Type Approval)**
+  - Submit 90-day co-location data for official CPCB Type Approval under Indian Standard IS 5182.
+- **Step 8.2: Multi-Tenant SaaS Architecture**
+  - Multi-tenant organization isolation at database schema level.
+  - Automated city onboarding via OpenStreetMap municipal ward boundary imports.
+- **Step 8.3: Commercial Data Licensing APIs**
+  - High-availability REST and WebSocket API gateway with cryptographic keys and metered quotas for smart city integrators, real estate platforms, and health tech providers.
+
+---
+
+## 6. Immediate Action Checklist (Sprint 1)
+
+Execute these high-priority engineering tasks immediately:
+
+- [ ] **Task 1: Fix Hex Grid Inverted PM2.5 (`backend/app/routers/live.py`)**
+  - Replace line 343 (`pm25 = round(cell_aqi * 0.4)`) with Inverse Distance Weighting from monitored physical stations.
+- [ ] **Task 2: Clean Up Report Formulas (`backend/app/routers/report.py`)**
+  - Remove arbitrary formulas (`pm25 * 1.8 + so2 * 1.2` for VOC and `no2 / 20.0` for NOx); mark as `--` when physical sensors are absent.
+- [ ] **Task 3: Attach Background Scheduler to FastAPI Lifespan (`backend/app/main.py`)**
+  - Wire `scheduler.py` into startup lifecycle so CPCB and OpenAQ sync automatically every 15 minutes.
+- [ ] **Task 4: Run Initial Database Seed**
+  - Run `python -m app.ingestion.cpcb_worker` to populate `vayubudhi.db` with active CPCB stations for Hyderabad, Delhi, and Bengaluru.
+- [ ] **Task 5: Wire True MAPIE Conformal Sets into Attribution (`backend/app/ml_service.py`)**
+  - Replace the probability threshold shortcut (`probs > 0.10`) with genuine `MapieClassifier.predict()` sets.
+- [ ] **Task 6: Set Up Local Redis Caching (`backend/app/redis_client.py`)**
+  - Implement Redis connection with fallback to in-memory cache when Redis is offline.
+
+---
+
+## 7. Master Verification Suite
+
+Run these commands in terminal to verify platform integrity at each milestone:
+
+```bash
+# 1. Verify Dual-Standard AQI Calculations
+python -m pytest backend/app/test_aqi_standards.py -v
+
+# 2. Verify FastAPI Route Contracts
+python -m pytest backend/app/test_endpoints.py -v
+
+# 3. Test Live CPCB Ingestion Feed
+python -c "from app.ingestion.cpcb_worker import fetch_cpcb_records; print('CPCB records fetched:', len(fetch_cpcb_records(limit=10)))"
+
+# 4. Test Live OpenAQ v3 Mirror Feed
+python -c "from app.ingestion.openaq_worker import fetch_openaq_locations; print('OpenAQ locations fetched:', len(fetch_openaq_locations(limit=10)))"
+
+# 5. Verify Zero Legacy Fabrication Shortcuts
+git grep -E "micro_factor|i % 3" backend/ ml_model/
+
+# 6. Verify Frontend TypeScript Compilation
+cd frontend && npx tsc --noEmit
+```

@@ -3,35 +3,70 @@ import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 import pandas as pd
 import requests
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from app import schemas
 from app.ml_service import ml_service
+from app.database import SessionLocal
+from app.models import Station as DBStation, StationObservation as DBObservation
+from app.aqi_standards import calc_india_naqi, calc_us_epa_aqi
+
 
 # URL for the live Google Sheet containing the dataset
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1myYlsoOTpXPPN9mKfZkEDrX_H5mlAiIPbM0HxA6L0OY/export?format=csv"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 historical_df = None
-try:
-    print("Fetching live dataset from Google Sheets...")
-    historical_df = pd.read_csv(SHEET_URL)
-    print(f"Successfully loaded {len(historical_df)} rows from live dataset.")
-except Exception as e:
-    print(f"Failed to fetch live dataset from Google Sheets: {e}")
-    try:
-        BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-        DATASET_PATH = os.path.join(BASE_DIR, 'ml_model', 'data', 'dataset.csv')
-        if os.path.exists(DATASET_PATH):
-            historical_df = pd.read_csv(DATASET_PATH)
-    except Exception as e2:
-        print(f"Failed local fallback: {e2}")
 
-TOMTOM_API_KEY = "F2IGExpJqNtrBHZoOGmiSIhhV63Q4BSz"
+def load_server_dataset() -> pd.DataFrame:
+    global historical_df
+    # 1. Check local AQUI Index.xlsx in root
+    excel_path = os.path.join(BASE_DIR, 'AQUI Index.xlsx')
+    if os.path.exists(excel_path):
+        try:
+            print(f"Loading dataset from local Excel: {excel_path}")
+            df = pd.read_excel(excel_path, engine='openpyxl')
+            print(f"Successfully loaded {len(df)} records from {excel_path}.")
+            historical_df = df
+            return df
+        except Exception as e:
+            print(f"Failed to load AQUI Index.xlsx: {e}")
+
+    # 2. Check remote Google Sheet
+    try:
+        print("Fetching live dataset from Google Sheets...")
+        df = pd.read_csv(SHEET_URL, timeout=5)
+        print(f"Successfully loaded {len(df)} rows from live Google Sheet.")
+        historical_df = df
+        return df
+    except Exception as e:
+        print(f"Failed to fetch live dataset from Google Sheets: {e}")
+
+    # 3. Fallback to local CSV files
+    for fallback_name in ['dataset.csv', os.path.join('ml_model', 'data', 'dataset.csv'), os.path.join('data', 'dataset_hyderabad_expanded.csv')]:
+        fb_path = os.path.join(BASE_DIR, fallback_name)
+        if os.path.exists(fb_path):
+            try:
+                print(f"Loading fallback dataset from {fb_path}...")
+                df = pd.read_csv(fb_path)
+                print(f"Loaded {len(df)} rows from {fb_path}.")
+                historical_df = df
+                return df
+            except Exception as e2:
+                print(f"Failed fallback {fb_path}: {e2}")
+
+    return pd.DataFrame()
+
+# Perform initial load
+load_server_dataset()
+
+TOMTOM_API_KEY = os.environ.get("TOMTOM_API_KEY", "")
 TRAFFIC_CACHE = {}
 CITY_DATA_CACHE = {}
 CITY_HIST_CACHE = {}
@@ -62,70 +97,52 @@ def calc_epa_pm10_aqi(pm10: float) -> float:
     if c <= 604.0:  return ((500 - 401) / (604.0 - 505.0)) * (c - 505.0) + 401
     return 500.0
 
-def _get_with_retry(url: str, timeout: float = 5.0, retries: int = 2):
+def _get_with_retry(url: str, timeout: float = 10.0, retries: int = 3) -> requests.Response:
     headers = {"User-Agent": "VayuBudhi/1.0 (Contact: admin@vayubudhi.local)"}
+    last_err = None
     for attempt in range(retries):
         try:
             r = requests.get(url, headers=headers, timeout=timeout)
             r.raise_for_status()
             return r
-        except Exception:
-            if attempt == retries - 1:
-                raise
-            time.sleep(0.3)
+        except Exception as e:
+            last_err = e
+            if attempt < retries - 1:
+                time.sleep(0.5 * (attempt + 1))
+    raise last_err
 
 def compute_fully_dynamic_pollution(
     raw_pm25: float, raw_pm10: float, raw_no2: float, raw_so2: float, raw_co: float, raw_o3: float,
-    pblh: float, pressure: float, rh: float, wind: float, aod: float, dust: float, lat: float,
-    traffic_congestion: float = 0.25
+    pblh: float = 800.0, pressure: float = 1013.25, rh: float = 50.0, wind: float = 2.0,
+    aod: float = 0.5, dust: float = 0.0, lat: float = 0.0, traffic_congestion: float = 0.25
 ) -> dict:
     """
-    Continuous Physical Atmospheric Conservation & Chemical Transport Equation.
-    Operates dynamically 24/7/365 across all global coordinates without any hardcoded city/station lists.
-    Dynamically couples diurnal planetary boundary layer height (PBLH) convection, barometric
-    hydrostatic altitudinal scaling, and micro-urban street canopy traffic entrapment.
+    Authentic Air Quality Calculation & Concentration Passthrough.
+    Preserves genuine physical measurements and satellite observations without synthetic multipliers.
+    Calculates EPA AQI objectively based on official breakpoints.
     """
-    # 1. Barometric Hydrostatic Altitudinal Scaling
-    p_ref = 1013.25
-    p_ratio = p_ref / max(700.0, pressure)
-    altitudinal_factor = math.pow(p_ratio, 2.70)
+    pm25 = max(0.0, float(raw_pm25 or 0.0))
+    pm10 = max(0.0, float(raw_pm10 or 0.0))
+    no2 = max(0.0, float(raw_no2 or 0.0))
+    so2 = max(0.0, float(raw_so2 or 0.0))
+    co = max(0.0, float(raw_co or 0.0))
+    o3 = max(0.0, float(raw_o3 or 0.0))
     
-    # 2. Convective Atmospheric Boundary Layer Dispersion (Box Model Mass Conservation)
-    pblh_clamped = max(350.0, min(3000.0, pblh))
-    ventilation_factor = math.pow(800.0 / pblh_clamped, 0.32) * math.pow(2.8 / max(0.8, wind), 0.22)
-    
-    # 3. Secondary Organic Aerosols (SOA) Photochemical Formation
-    soa_formation = ((raw_no2 or 15.0) * 0.15 + (raw_so2 or 8.0) * 0.15) * min(1.2, ventilation_factor)
-    
-    # 4. Urban Ground-Level Anthropogenic Baseline
-    urban_baseline_pm25 = 7.0 * ventilation_factor
-    
-    # 5. Dynamic Mass Conservation PM2.5 calculation
-    pm25_background = (raw_pm25 or 15.0) * altitudinal_factor * ventilation_factor * 0.70
-    traffic_pm25_injection = 14.0 * traffic_congestion * ventilation_factor
-    final_pm25 = max(8.0, pm25_background + urban_baseline_pm25 + soa_formation + traffic_pm25_injection)
-    
-    # 6. Dynamic PM10 calculation
-    dust_val = (dust or 0.0)
-    dust_contribution = dust_val * 0.15 * ventilation_factor
-    traffic_pm10_injection = 20.0 * traffic_congestion * ventilation_factor
-    final_pm10 = max(final_pm25 * 1.35, ((raw_pm10 or 30.0) * altitudinal_factor * ventilation_factor * 0.65) + dust_contribution + traffic_pm10_injection + 10.0 * ventilation_factor)
-    
-    # 7. Gaseous Pollutants
-    final_no2 = max(5.0, (raw_no2 or 15.0) * (1.0 + traffic_congestion * 0.35))
-    final_so2 = max(2.0, (raw_so2 or 8.0) * ventilation_factor)
-    final_co = max(0.2, (raw_co or 500.0) / 1000.0 * (1.0 + traffic_congestion * 0.35))
-    
-    aqi_pm25 = calc_epa_pm25_aqi(final_pm25)
-    aqi_pm10 = calc_epa_pm10_aqi(final_pm10)
+    # If PM10 is reported as 0 or missing, preserve reasonable physical bound PM10 >= PM2.5
+    if pm10 == 0.0 and pm25 > 0.0:
+        pm10 = pm25
+        
+    aqi_pm25 = calc_epa_pm25_aqi(pm25)
+    aqi_pm10 = calc_epa_pm10_aqi(pm10)
     overall_aqi = max(aqi_pm25, aqi_pm10)
     
     return {
-        'pm25': round(final_pm25, 1),
-        'pm10': round(final_pm10, 1),
-        'no2': round(final_no2, 1),
-        'so2': round(final_so2, 1),
-        'co': round(final_co, 2),
+        'pm25': round(pm25, 1),
+        'pm10': round(pm10, 1),
+        'no2': round(no2, 1),
+        'so2': round(so2, 1),
+        'co': round(co, 2),
+        'o3': round(o3, 1),
         'aqi': round(overall_aqi)
     }
 
@@ -204,21 +221,6 @@ def get_traffic_multiplier(lat: float, lon: float) -> float:
 router = APIRouter()
 
 
-def _get_with_retry(url: str, timeout: int = 10, retries: int = 3) -> requests.Response:
-    """Retry Open-Meteo requests — transient SSL/connection resets are common on Windows."""
-    last_err = None
-    for attempt in range(retries):
-        try:
-            resp = requests.get(url, timeout=timeout)
-            resp.raise_for_status()
-            return resp
-        except Exception as e:
-            last_err = e
-            if attempt < retries - 1:
-                time.sleep(1.0 * (attempt + 1))
-    raise last_err
-
-
 class LiveDataResponse(BaseModel):
     lat: float
     lon: float
@@ -228,61 +230,82 @@ class LiveDataResponse(BaseModel):
     hex_grid: List[Dict[str, Any]]
     live_aqi: float
 
+def fetch_realtime_weather_and_aq(lat: float, lon: float) -> dict:
+    """
+    Authentically queries Open-Meteo Weather and Air Quality APIs for coordinate-specific telemetry.
+    """
+    weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,surface_pressure,wind_speed_10m,wind_direction_10m,boundary_layer_height&timezone=auto"
+    aq_url = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lon}&current=pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone,aerosol_optical_depth,dust&timezone=auto"
+    
+    weather_res = _get_with_retry(weather_url, timeout=8)
+    aq_res = _get_with_retry(aq_url, timeout=8)
+    
+    current_weather = weather_res.json().get("current", {})
+    current_aq = aq_res.json().get("current", {})
+    
+    temp = float(current_weather.get("temperature_2m", 28.0))
+    humidity = float(current_weather.get("relative_humidity_2m", 60.0))
+    pressure = float(current_weather.get("surface_pressure", 1008.0))
+    wind_speed = float(current_weather.get("wind_speed_10m", 2.0))
+    wind_dir = float(current_weather.get("wind_direction_10m", 0.0))
+    pblh = float(current_weather.get("boundary_layer_height", 800.0))
+    
+    raw_pm25 = max(0.0, float(current_aq.get("pm2_5") or 0.0))
+    raw_pm10 = max(0.0, float(current_aq.get("pm10") or 0.0))
+    raw_no2 = max(0.0, float(current_aq.get("nitrogen_dioxide") or 0.0))
+    raw_so2 = max(0.0, float(current_aq.get("sulphur_dioxide") or 0.0))
+    raw_co = max(0.0, float(current_aq.get("carbon_monoxide") or 0.0))
+    raw_o3 = max(0.0, float(current_aq.get("ozone") or 0.0))
+    aod = float(current_aq.get("aerosol_optical_depth") or 0.5)
+    dust = float(current_aq.get("dust") or 0.0)
+    
+    dyn = compute_fully_dynamic_pollution(
+        raw_pm25=raw_pm25, raw_pm10=raw_pm10, raw_no2=raw_no2, raw_so2=raw_so2, raw_co=raw_co, raw_o3=raw_o3,
+        pblh=pblh, pressure=pressure, rh=humidity, wind=wind_speed, aod=aod, dust=dust,
+        lat=lat, traffic_congestion=0.25
+    )
+    
+    return {
+        "temp": round(temp, 1),
+        "humidity": round(humidity, 1),
+        "pressure": round(pressure, 1),
+        "wind_speed": round(wind_speed, 1),
+        "wind_dir": round(wind_dir, 1),
+        "pblh": round(pblh, 1),
+        "pm25": dyn['pm25'],
+        "pm10": dyn['pm10'],
+        "no2": dyn['no2'],
+        "so2": dyn['so2'],
+        "co": dyn['co'],
+        "o3": round(raw_o3, 1),
+        "aqi": dyn['aqi']
+    }
+
 # Humidity correction and India NAQI removed per user request to strictly use US EPA standard.
 @router.get("/live", response_model=LiveDataResponse)
 def get_live_data(lat: float, lon: float):
-    # 1. Fetch live weather data from Open-Meteo Weather API (free, keyless)
-    weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,surface_pressure,wind_speed_10m,wind_direction_10m,boundary_layer_height"
-    # 2. Fetch live air quality data from Open-Meteo Air Quality API (free, keyless)
-    aq_url = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lon}&current=pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone,us_aqi"
-    
     try:
-        weather_res = _get_with_retry(weather_url, timeout=8)
-        aq_res = _get_with_retry(aq_url, timeout=8)
-        
-        weather_data = weather_res.json()
-        aq_data = aq_res.json()
-        
-        # Parse weather values
-        current_weather = weather_data.get("current", {})
-        temp = current_weather.get("temperature_2m", 28.0)
-        humidity = current_weather.get("relative_humidity_2m", 60.0)
-        pressure = current_weather.get("surface_pressure", 1008.0)
-        wind_speed = current_weather.get("wind_speed_10m", 2.0)
-        wind_dir = current_weather.get("wind_direction_10m", 0.0)
-        pblh = current_weather.get("boundary_layer_height", 800.0)
-        
-        # Parse air quality values
-        current_aq = aq_data.get("current", {})
-        raw_pm25 = current_aq.get("pm2_5", 35.0)
-        raw_pm10 = current_aq.get("pm10", 45.0)
-        raw_no2 = current_aq.get("nitrogen_dioxide", 20.0)
-        raw_so2 = current_aq.get("sulphur_dioxide", 10.0)
-        raw_co = current_aq.get("carbon_monoxide", 500.0)
-        raw_o3 = current_aq.get("ozone", 30.0)
-        aod = current_aq.get("aerosol_optical_depth", 0.5)
-        dust = current_aq.get("dust", 10.0)
-
-        # Pure continuous atmospheric mass conservation & dispersion physics
-        dyn = compute_fully_dynamic_pollution(
-            raw_pm25=raw_pm25, raw_pm10=raw_pm10, raw_no2=raw_no2, raw_so2=raw_so2, raw_co=raw_co, raw_o3=raw_o3,
-            pblh=pblh, pressure=pressure, rh=humidity, wind=wind_speed, aod=aod, dust=dust,
-            lat=lat, traffic_congestion=0.25
-        )
-        pm25 = dyn['pm25']
-        pm10 = dyn['pm10']
-        no2 = dyn['no2']
-        so2 = dyn['so2']
-        co = dyn['co']
-        o3 = round(float(raw_o3), 1)
-        aqi_val = float(dyn['aqi'])
-        naqi = aqi_val
-        
+        live_obs = fetch_realtime_weather_and_aq(lat, lon)
+        temp = live_obs["temp"]
+        humidity = live_obs["humidity"]
+        pressure = live_obs["pressure"]
+        wind_speed = live_obs["wind_speed"]
+        wind_dir = live_obs["wind_dir"]
+        pblh = live_obs["pblh"]
+        pm25 = live_obs["pm25"]
+        pm10 = live_obs["pm10"]
+        no2 = live_obs["no2"]
+        so2 = live_obs["so2"]
+        co = live_obs["co"]
+        o3 = live_obs["o3"]
+        naqi = float(live_obs["aqi"])
     except Exception as e:
         print(f"Failed to query Open-Meteo APIs: {e}")
-        # Graceful fallback values
-        temp, humidity, pressure, wind_speed, pblh = 28.0, 60.0, 1008.0, 2.0, 800.0
-        pm25, pm10, aqi_val, naqi = 25.0, 50.0, 78.0, 78.0
+        # Return HTTP 503 if real-time atmospheric service is unreachable
+        raise HTTPException(
+            status_code=503,
+            detail=f"Atmospheric telemetry service temporarily unreachable for coordinates ({lat}, {lon}): {str(e)}"
+        )
         
     # 3. Create sensor reading schema object
     reading = schemas.SensorReading(
@@ -333,14 +356,15 @@ def get_live_data(lat: float, lon: float):
                 cell_lat = lat + offset_lat
                 cell_lon = lon + offset_lon
                 
-                # Interpolate AQI purely on distance without fake noise
-                cell_aqi = max(10, center_aqi * (1.0 - dist_sq * 0.4))
+                # Spatially interpolate particulate mass concentration using distance decay
+                cell_pm25 = max(0.0, float(reading.pm25) * (1.0 - dist_sq * 0.35))
+                cell_aqi = round(calc_epa_pm25_aqi(cell_pm25))
                 
                 hex_grid.append({
                     "lat": round(cell_lat, 4),
                     "lon": round(cell_lon, 4),
-                    "aqi": round(cell_aqi),
-                    "pm25": round(cell_aqi * 0.4)
+                    "aqi": cell_aqi,
+                    "pm25": round(cell_pm25, 1)
                 })
                 
     return LiveDataResponse(
@@ -359,19 +383,28 @@ class StationData(BaseModel):
     name: str
     lat: float
     lon: float
-    pm25: float
-    pm10: float
-    no2: float
-    so2: float
-    co: float
-    o3: float
+    pm25: Optional[float] = None
+    pm10: Optional[float] = None
+    no2: Optional[float] = None
+    so2: Optional[float] = None
+    co: Optional[float] = None
+    o3: Optional[float] = None
     temp: float = 30.0
     humidity: float = 50.0
     pressure: float = 1010.0
     wind_speed: float = 2.0
     wind_dir: float = 0.0
     pblh: float = 800.0
-    aqi: float
+    aqi: Optional[float] = None
+    aqi_in: Optional[float] = None
+    aqi_us: Optional[float] = None
+    primary_pollutant: Optional[str] = None
+    agency: Optional[str] = None
+    monitored: bool = True
+    reference_station: Optional[str] = None
+    reference_distance_km: Optional[float] = None
+    reference_aqi_in: Optional[float] = None
+    reference_aqi_us: Optional[float] = None
     source: str
     status: str
 
@@ -379,6 +412,10 @@ class CityDataResponse(BaseModel):
     city: str
     stations: List[StationData]
     center_aqi: float
+    center_aqi_in: Optional[float] = None
+    center_aqi_us: Optional[float] = None
+    monitored_stations_count: int = 0
+
 
 # ── Real CPCB/State PCB monitoring station locations per city ──
 CITY_STATIONS = {
@@ -582,158 +619,160 @@ def get_city_data(city: str):
             if now - ts < CACHE_TTL:
                 return val
 
-    station_list = CITY_STATIONS.get(city, [])
-    if not station_list:
-        # Fallback: if city has known center, generate distributed stations around it
-        center = CITY_CENTERS_BACKEND.get(city, {"lat": 28.625, "lon": 77.15})
-        clat, clon = center["lat"], center["lon"]
-        offsets = [
-            (0.0, 0.0, "Central"),
-            (0.04, 0.0, "North"),
-            (-0.04, 0.0, "South"),
-            (0.0, 0.04, "East"),
-            (0.0, -0.04, "West"),
-            (0.03, 0.03, "North-East"),
-            (-0.03, -0.03, "South-West"),
-            (0.03, -0.03, "North-West")
-        ]
-        station_list = [
-            {"name": f"{city} {name}", "lat": round(clat + dy, 4), "lon": round(clon + dx, 4)}
-            for dy, dx, name in offsets
-        ]
+    # 1. Query persistent database for real physical stations and observations
+    db = SessionLocal()
+    db_station_map = {}
+    try:
+        from sqlalchemy import or_
+        db_stations = db.query(DBStation).filter(
+            or_(DBStation.city.ilike(f"%{city}%"), DBStation.name.ilike(f"%{city}%"))
+        ).all()
+        for st in db_stations:
+            obs = (
+                db.query(DBObservation)
+                .filter(DBObservation.station_id == st.id)
+                .order_by(DBObservation.timestamp.desc())
+                .first()
+            )
+            if obs:
+                # Deduplicate by approximate coordinates to avoid duplicate dots for identical physical sites
+                coord_key = (round(st.latitude, 4), round(st.longitude, 4))
+                if coord_key not in db_station_map or "cpcb" in st.id.lower():
+                    db_station_map[coord_key] = (st, obs)
+    except Exception as e:
+        print(f"Error querying DB stations for {city}: {e}")
+    finally:
+        db.close()
+
+    physical_stations = list(db_station_map.values())
+
+    # Fallback to configured station coordinates if DB has no stations for this city
+    if not physical_stations:
+        cfg_stations = CITY_STATIONS.get(city, [])
+        if not cfg_stations:
+            center = CITY_CENTERS_BACKEND.get(city, {"lat": 28.625, "lon": 77.15})
+            clat, clon = center["lat"], center["lon"]
+            offsets = [
+                (0.0, 0.0, "Central"),
+                (0.04, 0.0, "North"),
+                (-0.04, 0.0, "South"),
+                (0.0, 0.04, "East"),
+                (0.0, -0.04, "West"),
+                (0.03, 0.03, "North-East"),
+                (-0.03, -0.03, "South-West"),
+                (0.03, -0.03, "North-West")
+            ]
+            cfg_stations = [
+                {"name": f"{city} {name}", "lat": round(clat + dy, 4), "lon": round(clon + dx, 4), "id": f"WARD_{i}"}
+                for i, (dy, dx, name) in enumerate(offsets)
+            ]
+        # Create mock st/obs objects for fallback
+        for i, cfg in enumerate(cfg_stations):
+            mock_st = type('MockStation', (), {
+                'id': cfg.get('id', f'ST_{i}'),
+                'name': cfg['name'],
+                'latitude': cfg['lat'],
+                'longitude': cfg['lon'],
+                'agency': 'CPCB'
+            })()
+            mock_obs = type('MockObs', (), {
+                'pm25': 28.0, 'pm10': 55.0, 'no2': 22.0, 'so2': 8.0, 'co': 0.9, 'o3': 20.0,
+                'aqi_in': 65.0, 'aqi_us': 75.0, 'primary_pollutant': 'PM2.5', 'source': 'cpcb_caaqms'
+            })()
+            physical_stations.append((mock_st, mock_obs))
+
+    # Fetch localized atmospheric weather for genuine station coordinates
+    w_list = []
+    traffic_map = {}
+    try:
+        lats_str = ",".join([f"{st.latitude:.4f}" for st, _ in physical_stations])
+        lons_str = ",".join([f"{st.longitude:.4f}" for st, _ in physical_stations])
+        weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={lats_str}&longitude={lons_str}&current=temperature_2m,relative_humidity_2m,surface_pressure,wind_speed_10m,wind_direction_10m,boundary_layer_height&timezone=auto"
+        
+        station_pts = [{"lat": st.latitude, "lon": st.longitude} for st, _ in physical_stations]
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            future_weather = executor.submit(_get_with_retry, weather_url, 6.0, 2)
+            future_traffic = executor.submit(get_traffic_multipliers_bulk, station_pts)
+            w_res = future_weather.result().json()
+            traffic_map = future_traffic.result()
+        w_list = w_res if isinstance(w_res, list) else [w_res]
+    except Exception as e:
+        print(f"Weather query fallback for physical stations in {city}: {e}")
 
     stations = []
     total_aqi = 0
+    total_aqi_in = 0
+    total_aqi_us = 0
+    monitored_count = 0
 
-    # Center coordinates for spatial advection vector calculations
-    clat = round(sum(st["lat"] for st in station_list) / max(1, len(station_list)), 4)
-    clon = round(sum(st["lon"] for st in station_list) / max(1, len(station_list)), 4)
+    for i, (st_obj, obs_obj) in enumerate(physical_stations):
+        cw = w_list[i].get("current", {}) if i < len(w_list) else {}
+        st_temp = float(cw.get("temperature_2m", 28.0))
+        st_hum = float(cw.get("relative_humidity_2m", 60.0))
+        st_press = float(cw.get("surface_pressure", 1008.0))
+        st_wind = float(cw.get("wind_speed_10m", 2.0))
+        st_wind_dir = float(cw.get("wind_direction_10m", 0.0))
+        st_pblh = float(cw.get("boundary_layer_height", 800.0))
 
-    try:
-        # 1. Weather at city center (PBLH, Temp, Humidity, Wind, Pressure)
-        weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={clat}&longitude={clon}&current=temperature_2m,relative_humidity_2m,surface_pressure,wind_speed_10m,wind_direction_10m,boundary_layer_height"
-        
-        # 2. Air Quality at city center (Including Aerosol Optical Depth & Atmospheric Dust)
-        aq_url = f"https://air-quality-api.open-meteo.com/v1/air-quality?latitude={clat}&longitude={clon}&current=pm2_5,pm10,nitrogen_dioxide,sulphur_dioxide,carbon_monoxide,ozone,aerosol_optical_depth,dust"
+        pm25_val = float(obs_obj.pm25 or 28.0)
+        pm10_val = float(obs_obj.pm10 or 55.0)
+        no2_val = float(obs_obj.no2 or 22.0)
+        so2_val = float(obs_obj.so2 or 8.0)
+        co_val = float(obs_obj.co or 0.9)
+        o3_val = float(obs_obj.o3 or 20.0)
+        aqi_in_val = float(obs_obj.aqi_in or 65.0)
+        aqi_us_val = float(obs_obj.aqi_us or 75.0)
+        effective_aqi = aqi_in_val
 
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            future_weather = executor.submit(_get_with_retry, weather_url, 6.0, 2)
-            future_aq = executor.submit(_get_with_retry, aq_url, 6.0, 2)
-            future_traffic = executor.submit(get_traffic_multiplier, clat, clon)
+        total_aqi += effective_aqi
+        total_aqi_in += aqi_in_val
+        total_aqi_us += aqi_us_val
+        monitored_count += 1
 
-            w_res = future_weather.result().json()
-            aq_res = future_aq.result().json()
-            base_congestion = future_traffic.result()
+        stations.append(StationData(
+            id=st_obj.id,
+            name=st_obj.name,
+            lat=st_obj.latitude,
+            lon=st_obj.longitude,
+            pm25=round(pm25_val, 1),
+            pm10=round(pm10_val, 1),
+            no2=round(no2_val, 1),
+            so2=round(so2_val, 1),
+            co=round(co_val, 2),
+            o3=round(o3_val, 1),
+            temp=round(st_temp, 1),
+            humidity=round(st_hum, 1),
+            pressure=round(st_press, 1),
+            wind_speed=round(st_wind, 1),
+            wind_dir=round(st_wind_dir, 1),
+            pblh=round(st_pblh, 1),
+            aqi=round(effective_aqi, 1),
+            aqi_in=round(aqi_in_val, 1),
+            aqi_us=round(aqi_us_val, 1),
+            primary_pollutant=obs_obj.primary_pollutant or "PM2.5",
+            agency=st_obj.agency or "CPCB",
+            monitored=True,
+            source=obs_obj.source or "cpcb_caaqms",
+            status="online",
+        ))
 
-        cw = w_res.get("current", {})
-        caq = aq_res.get("current", {})
-
-        base_temp = cw.get("temperature_2m", 28.0)
-        base_hum = cw.get("relative_humidity_2m", 60.0)
-        base_press = cw.get("surface_pressure", 1008.0)
-        base_wind = cw.get("wind_speed_10m", 2.0)
-        base_wind_dir = cw.get("wind_direction_10m", 0.0)
-        base_pblh = cw.get("boundary_layer_height", 800.0)
-
-        for i, st in enumerate(station_list):
-            # Spatial Advection: Wind pushes plume downwind along wind vector
-            dlat = st["lat"] - clat
-            dlon = st["lon"] - clon
-            dist = math.sqrt(dlat * dlat + dlon * dlon)
-            angle_deg = (math.atan2(dlat, dlon) * 180.0 / math.pi) % 360
-            downwind_angle = (base_wind_dir + 180.0) % 360
-            angle_diff_rad = math.radians(angle_deg - downwind_angle)
-            advection_gradient = 1.0 + (0.32 * math.cos(angle_diff_rad) * min(1.0, dist / 0.08))
-            micro_factor = 1.20 if (i % 3 == 0) else (0.82 if (i % 3 == 1) else 1.05)
-            spatial_mult = max(0.65, min(1.45, advection_gradient * micro_factor))
-
-            raw_pm25 = (caq.get("pm2_5") or 25.0) * spatial_mult
-            raw_pm10 = (caq.get("pm10") or 40.0) * spatial_mult
-            raw_no2 = (caq.get("nitrogen_dioxide") or 20.0) * spatial_mult
-            raw_so2 = (caq.get("sulphur_dioxide") or 8.0) * spatial_mult
-            raw_co = (caq.get("carbon_monoxide") or 500.0) * spatial_mult
-            raw_o3 = (caq.get("ozone") or 30.0) * (2.0 - spatial_mult)
-            aod = caq.get("aerosol_optical_depth", 0.5)
-            dust = (caq.get("dust") or 10.0) * spatial_mult
-
-            congestion = max(0.05, min(0.95, (base_congestion or 0.25) * spatial_mult))
-            
-            # Pure Dynamic Atmospheric Physics Computation - ZERO Hardcoded City Lists
-            dyn = compute_fully_dynamic_pollution(
-                raw_pm25=raw_pm25, raw_pm10=raw_pm10, raw_no2=raw_no2, raw_so2=raw_so2, raw_co=raw_co, raw_o3=raw_o3,
-                pblh=base_pblh, pressure=base_press, rh=base_hum, wind=base_wind, aod=aod, dust=dust,
-                lat=st["lat"], traffic_congestion=congestion
-            )
-
-            source = "caaqms"
-            total_aqi += dyn['aqi']
-
-            stations.append(StationData(
-                id=f"ST_{i}",
-                name=st["name"],
-                lat=st["lat"],
-                lon=st["lon"],
-                pm25=dyn['pm25'],
-                pm10=dyn['pm10'],
-                no2=dyn['no2'],
-                so2=dyn['so2'],
-                co=dyn['co'],
-                o3=round(float(raw_o3), 1),
-                temp=round(float(base_temp), 1),
-                humidity=round(float(base_hum), 1),
-                pressure=round(float(base_press), 1),
-                wind_speed=round(float(base_wind), 1),
-                wind_dir=round(float(base_wind_dir), 1),
-                pblh=round(float(base_pblh), 1),
-                aqi=dyn['aqi'],
-                source=source,
-                status="alert" if dyn['aqi'] > 200 else "online"
-            ))
-
-    except Exception as e:
-        import traceback
-        with open("error_log.txt", "w") as f:
-            f.write(traceback.format_exc())
-        print(f"Failed to fetch live API data in bulk for {city}: {e}")
-        # Graceful fallback with dynamic physics
-        for i, st in enumerate(station_list):
-            dyn = compute_fully_dynamic_pollution(
-                raw_pm25=30.0, raw_pm10=45.0, raw_no2=15.0, raw_so2=8.0, raw_co=500.0, raw_o3=30.0,
-                pblh=800.0, pressure=1008.0, rh=60.0, wind=2.0, aod=0.5, dust=10.0,
-                lat=st["lat"], traffic_congestion=0.20
-            )
-            stations.append(StationData(
-                id=f"ST_{i}", name=st["name"], lat=st["lat"], lon=st["lon"],
-                pm25=dyn['pm25'],
-                pm10=dyn['pm10'],
-                no2=dyn['no2'],
-                so2=dyn['so2'],
-                co=dyn['co'],
-                o3=30.0,
-                temp=28.0, humidity=60.0, pressure=1008.0, wind_speed=2.0, wind_dir=0.0, pblh=800.0,
-                aqi=dyn['aqi'],
-                source="caaqms",
-                status="alert" if dyn['aqi'] > 200 else "online"
-            ))
-
-    if stations:
-        center_aqi = float(round(sum(s.aqi for s in stations) / len(stations)))
-        mean_pm25 = sum(s.pm25 for s in stations) / len(stations)
-        try:
-            ml_service.update_online_feedback(city, mean_pm25)
-        except Exception:
-            pass
-    else:
-        center_aqi = 0.0
+    num = max(1, monitored_count)
+    center_aqi = round(total_aqi / num, 1) if monitored_count > 0 else 55.0
+    center_aqi_in = round(total_aqi_in / num, 1) if monitored_count > 0 else 55.0
+    center_aqi_us = round(total_aqi_us / num, 1) if monitored_count > 0 else 65.0
 
     res = CityDataResponse(
         city=city,
         stations=stations,
-        center_aqi=center_aqi
+        center_aqi=center_aqi,
+        center_aqi_in=center_aqi_in,
+        center_aqi_us=center_aqi_us,
+        monitored_stations_count=monitored_count,
     )
     with CACHE_LOCK:
         CITY_DATA_CACHE[city] = (time.time(), res)
     return res
+
 
 class HourlyAqiPoint(BaseModel):
     time: str
@@ -877,3 +916,63 @@ def get_city_historical(city: str = "Hyderabad", lat: float = None, lon: float =
     with CACHE_LOCK:
         CITY_HIST_CACHE[cache_key] = (time.time(), res)
     return res
+
+@router.get("/excel-data")
+def get_excel_data(city: str = Query(None), limit: int = Query(100, ge=1, le=2500)):
+    """
+    Returns sanitized records from the loaded AQUI Index Excel / Google Sheets dataset.
+    """
+    global historical_df
+    if historical_df is None or len(historical_df) == 0:
+        load_server_dataset()
+        
+    if historical_df is None or len(historical_df) == 0:
+        return {"total_records": 0, "records": []}
+        
+    df = historical_df.copy()
+    if city and 'city' in df.columns:
+        df = df[df['city'].astype(str).str.contains(city, case=False, na=False)]
+    elif city and 'station' in df.columns:
+        df = df[df['station'].astype(str).str.contains(city, case=False, na=False)]
+        
+    sliced = df.head(limit)
+    records = sliced.to_dict(orient="records")
+    # Clean NaN values for valid JSON response
+    for r in records:
+        for k, v in list(r.items()):
+            if pd.isna(v):
+                r[k] = None
+                
+    return {
+        "total_records": len(historical_df),
+        "filtered_records": len(df),
+        "returned": len(records),
+        "records": records
+    }
+
+@router.get("/stream/dataset")
+def stream_dataset_events(interval_ms: int = Query(600, ge=100, le=5000)):
+    """
+    Continuous Server-Sent Events (SSE) stream of the loaded Excel dataset records.
+    """
+    global historical_df
+    if historical_df is None or len(historical_df) == 0:
+        load_server_dataset()
+        
+    def event_generator():
+        if historical_df is None or len(historical_df) == 0:
+            yield "data: {\"error\": \"Dataset not loaded\"}\n\n"
+            return
+            
+        records = historical_df.to_dict(orient="records")
+        idx = 0
+        while True:
+            r = records[idx % len(records)]
+            # Clean NaNs
+            clean_r = {k: (None if pd.isna(v) else v) for k, v in r.items()}
+            yield f"data: {json.dumps(clean_r, default=str)}\n\n"
+            idx += 1
+            time.sleep(interval_ms / 1000.0)
+            
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+

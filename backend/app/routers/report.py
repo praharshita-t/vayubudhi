@@ -59,8 +59,10 @@ def generate_deterministic_report(req: ReportRequest) -> Dict[str, Any]:
     temp = float(live.get("temp") or 28.0)
     humidity = float(live.get("humidity") or 65.0)
     pblh = float(live.get("pblh") or 600.0)
-    voc = float(live.get("voc_index") or (pm25 * 1.8 + float(live.get("so2") or 10.0) * 1.2))
-    nox = float(live.get("nox_index") or (float(live.get("no2") or 25.0) / 20.0))
+    raw_voc = live.get("voc_index")
+    voc = round(float(raw_voc), 1) if raw_voc is not None else None
+    raw_nox = live.get("nox_index")
+    nox = round(float(raw_nox), 1) if raw_nox is not None else None
     
     # Calculate NCAP Grade
     if avg_aqi <= 50:
@@ -104,8 +106,8 @@ def generate_deterministic_report(req: ReportRequest) -> Dict[str, Any]:
         "temperature": f"{temp}°C",
         "humidity": f"{humidity}%",
         "boundary_layer_height": f"{int(pblh)}m",
-        "voc_index": voc,
-        "nox_index": nox,
+        "voc_index": voc if voc is not None else "--",
+        "nox_index": nox if nox is not None else "--",
         "no2": round(float(live.get("no2") or 25.0), 1),
         "so2": round(float(live.get("so2") or 10.0), 1),
         "co": round(float(live.get("co") or 1.2), 1),

@@ -2375,3 +2375,318 @@ select.home-chart-select option {
   font-size: 0.7rem;
   color: var(--accent-cyan);
 }
+
+/* ==========================================================
+   ENTERPRISE RBAC & AUTH STYLES
+   ========================================================== */
+.global-top-right-controls {
+  position: fixed;
+  top: 16px;
+  right: 20px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.auth-badge-container {
+  position: relative;
+}
+
+.auth-role-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(12px);
+  border: 1px solid;
+}
+
+.auth-role-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.auth-pill-arrow {
+  transition: transform 0.2s ease;
+}
+
+.auth-pill-arrow.open {
+  transform: rotate(180deg);
+}
+
+/* Role Color Themes */
+.role-badge-officer {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+.role-badge-admin {
+  background: rgba(168, 85, 247, 0.12);
+  color: #a855f7;
+  border-color: rgba(168, 85, 247, 0.35);
+}
+
+.role-badge-inspector {
+  background: rgba(14, 165, 233, 0.12);
+  color: #0ea5e9;
+  border-color: rgba(14, 165, 233, 0.35);
+}
+
+.role-badge-public {
+  background: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
+  border-color: rgba(148, 163, 184, 0.25);
+}
+
+.auth-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+}
+
+.auth-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 330px;
+  background: var(--bg-surface, #111827);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+  border-radius: var(--radius-lg, 14px);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(24px);
+  padding: 14px;
+  z-index: 9999;
+  animation: fadeInDown 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.auth-dropdown-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.auth-user-name {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text-primary, #f8fafc);
+}
+
+.auth-user-email {
+  font-size: 0.75rem;
+  color: var(--text-muted, #94a3b8);
+}
+
+.auth-dropdown-tag {
+  font-size: 0.68rem;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.auth-dropdown-divider {
+  height: 1px;
+  background: var(--border-color, rgba(255, 255, 255, 0.08));
+  margin: 10px 0;
+}
+
+.auth-dropdown-section-title {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted, #94a3b8);
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.auth-role-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.auth-role-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+  width: 100%;
+}
+
+.auth-role-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.auth-role-item.selected {
+  background: rgba(16, 185, 129, 0.08);
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.auth-role-item-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.auth-role-icon-wrap {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.auth-role-item-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary, #f8fafc);
+}
+
+.auth-role-item-desc {
+  font-size: 0.68rem;
+  color: var(--text-muted, #94a3b8);
+  line-height: 1.25;
+}
+
+.auth-check-icon {
+  color: #10b981;
+}
+
+.auth-dropdown-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.auth-logout-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  font-size: 0.75rem;
+  color: var(--text-muted, #94a3b8);
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: color 0.15s ease;
+}
+
+.auth-logout-btn:hover {
+  color: #ef4444;
+}
+
+/* Sidebar Lock Badge */
+.sidebar-officer-badge {
+  font-size: 0.62rem;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  margin-left: auto;
+  font-weight: 700;
+}
+
+/* Officer Gate Restriction Screen */
+.officer-gate-card {
+  max-width: 640px;
+  margin: 60px auto;
+  background: var(--bg-surface, #111827);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 16px;
+  padding: 40px;
+  text-align: center;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+}
+
+.officer-gate-icon-wrap {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px auto;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.officer-gate-title {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--text-primary, #f8fafc);
+  margin-bottom: 12px;
+}
+
+.officer-gate-desc {
+  font-size: 0.9rem;
+  color: var(--text-muted, #94a3b8);
+  line-height: 1.6;
+  margin-bottom: 28px;
+}
+
+.officer-gate-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+}
+
+.officer-gate-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #10b981;
+  color: #ffffff;
+  padding: 10px 22px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.88rem;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.officer-gate-btn-primary:hover {
+  background: #059669;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4);
+}
+
+.officer-gate-btn-secondary {
+  background: transparent;
+  color: var(--text-muted, #94a3b8);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.15));
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.officer-gate-btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary, #f8fafc);
+}

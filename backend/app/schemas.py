@@ -84,6 +84,8 @@ class IngestResponse(BaseModel):
 class HealthStatus(BaseModel):
     status: str = Field(..., examples=["healthy"])
     database: str = Field(..., examples=["connected"])
+    cache: Optional[Dict[str, Any]] = None
+    data_sovereignty: Optional[Dict[str, Any]] = None
 
 # Contract 6: Mobile dispatch alert
 class DispatchAlertRequest(BaseModel):

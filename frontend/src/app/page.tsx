@@ -5,38 +5,72 @@ import { useCityContext } from '@/context/CityContext';
 import { getAqiCategory } from '@/utils/aqi';
 import { CityId } from '@/types';
 import { BarChart, Bar, LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { MapPin, ShieldCheck, AlertTriangle, AlertOctagon, CheckCircle2, TrendingUp, TrendingDown } from 'lucide-react';
 
 // ── Health recommendations by AQI band ──
-function getHealthInfo(aqi: number) {
+// ── Health recommendations by AQI band ──
+function getHealthInfo(aqi: number, standard: string = 'IN_NAQI') {
+  if (standard === 'US_EPA') {
+    if (aqi <= 50) return {
+      icon: '✅', title: 'Air quality is Good',
+      message: 'Air quality is satisfactory, and air pollution poses little or no risk. Ideal for outdoor activity.',
+      bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.3)', color: '#22c55e'
+    };
+    if (aqi <= 100) return {
+      icon: '🟢', title: 'Air quality is Moderate',
+      message: 'Air quality is acceptable. Unusually sensitive individuals should consider limiting prolonged outdoor exertion.',
+      bg: 'rgba(132,204,22,0.1)', border: 'rgba(132,204,22,0.3)', color: '#84cc16'
+    };
+    if (aqi <= 150) return {
+      icon: '⚠️', title: 'Unhealthy for Sensitive Groups',
+      message: 'Sensitive groups (children, elderly, people with asthma/heart disease) may experience health effects. General public not likely affected.',
+      bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.3)', color: '#f59e0b'
+    };
+    if (aqi <= 200) return {
+      icon: '🟠', title: 'Air quality is Unhealthy',
+      message: 'Some members of the general public may experience health effects; sensitive groups may experience more serious health effects. Reduce heavy exertion.',
+      bg: 'rgba(249,115,22,0.1)', border: 'rgba(249,115,22,0.3)', color: '#f97316'
+    };
+    if (aqi <= 300) return {
+      icon: '🔴', title: 'Air quality is Very Unhealthy',
+      message: 'Health alert: Increased risk of adverse health effects for everyone. Avoid prolonged or heavy exertion outdoors. Keep windows closed.',
+      bg: 'rgba(239,68,68,0.1)', border: 'rgba(239,68,68,0.3)', color: '#ef4444'
+    };
+    return {
+      icon: '🚨', title: 'Air quality is Hazardous',
+      message: 'Health warning of emergency conditions: everyone is more likely to be affected. Remain indoors, use air purifiers, and wear N95 masks if outdoors.',
+      bg: 'rgba(126,34,206,0.15)', border: 'rgba(126,34,206,0.35)', color: '#a855f7'
+    };
+  }
+
+  // India NAQI (CPCB 2014)
   if (aqi <= 50) return {
-    severity: 'good', title: 'Air quality is Good',
-    message: 'Air quality is satisfactory. No health risks. Enjoy outdoor activities freely.',
+    icon: '✅', title: 'Air quality is Good',
+    message: 'Air quality is satisfactory. Minimal health impact. Enjoy outdoor activities freely.',
     bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.3)', color: '#22c55e'
   };
   if (aqi <= 100) return {
-    severity: 'satisfactory', title: 'Air quality is Satisfactory',
-    message: 'Acceptable quality. Unusually sensitive individuals should consider limiting prolonged outdoor exertion.',
+    icon: '🟢', title: 'Air quality is Satisfactory',
+    message: 'Acceptable quality. Minor breathing discomfort to sensitive people.',
     bg: 'rgba(132,204,22,0.1)', border: 'rgba(132,204,22,0.3)', color: '#84cc16'
   };
   if (aqi <= 200) return {
-    severity: 'moderate', title: 'Air quality is Moderate',
-    message: 'Breathing discomfort possible for sensitive groups. Children, elderly, and those with respiratory conditions should limit outdoor time.',
+    icon: '⚠️', title: 'Air quality is Moderate',
+    message: 'Breathing discomfort to people with lung disease (such as asthma) and discomfort to people with heart disease, children, and older adults.',
     bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.3)', color: '#f59e0b'
   };
   if (aqi <= 300) return {
-    severity: 'poor', title: 'Air quality is Poor',
-    message: 'Breathing discomfort likely for most people on prolonged exposure. Avoid heavy outdoor exertion. Use an N95 mask outdoors.',
+    icon: '🟠', title: 'Air quality is Poor',
+    message: 'Breathing discomfort to most people on prolonged exposure. Avoid heavy outdoor exertion. Use an N95 mask outdoors.',
     bg: 'rgba(249,115,22,0.1)', border: 'rgba(249,115,22,0.3)', color: '#f97316'
   };
   if (aqi <= 400) return {
-    severity: 'very_poor', title: 'Air quality is Very Poor',
-    message: 'Health alert: everyone may experience serious effects. Avoid all outdoor physical activity. Keep windows closed. Use air purifiers indoors.',
+    icon: '🔴', title: 'Air quality is Very Poor',
+    message: 'Respiratory illness on prolonged exposure. Significant effect for people with lung or heart diseases. Keep windows closed.',
     bg: 'rgba(239,68,68,0.1)', border: 'rgba(239,68,68,0.3)', color: '#ef4444'
   };
   return {
-    severity: 'severe', title: 'Air quality is Severe — Emergency',
-    message: 'Hazardous conditions. Everyone should avoid going outdoors. Serious respiratory and cardiovascular effects expected. Use N95 masks if you must step outside.',
+    icon: '🚨', title: 'Air quality is Severe — Emergency',
+    message: 'Affects healthy people and seriously impacts those with existing diseases. Everyone should avoid going outdoors. Emergency action recommended.',
     bg: 'rgba(220,38,38,0.1)', border: 'rgba(220,38,38,0.3)', color: '#dc2626'
   };
 }
@@ -51,44 +85,7 @@ const POLLUTANT_LIMITS: Record<string, { limit: number; unit: string; label: str
   o3:   { limit: 100, unit: 'ppb', label: 'O₃' },
 };
 
-// ── Generate 24h historical telemetry curve based on diurnal atmospheric variance ──
-function generateHistoricalData(baseAqi: number, hours: number = 24) {
-  const now = new Date();
-  const data = [];
-  const currentHour = now.getHours();
-  for (let i = hours; i >= 0; i--) {
-    const t = new Date(now.getTime() - i * 60 * 60 * 1000);
-    const pastHour = (currentHour - i + 48) % 24;
-    // Diurnal variation: rush hour peak at 8am (h=8) and 8pm (h=20), afternoon dispersion at 2pm (h=14)
-    const diurnal = 0.18 * Math.sin(((pastHour - 8) / 24) * 2 * Math.PI) + 0.08 * Math.sin(((pastHour - 20) / 12) * 2 * Math.PI);
-    const aqi = Math.max(10, Math.round(baseAqi * (1.0 + diurnal)));
-    const pm25 = Math.max(5, Math.round((baseAqi * 0.45) * (1.0 + diurnal)));
-    const pm10 = Math.max(10, Math.round((baseAqi * 0.85) * (1.0 + diurnal)));
-    data.push({
-      time: t.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
-      fullTime: t,
-      aqi,
-      pm25,
-      pm10,
-    });
-  }
-  return data;
-}
-
-// ── Generate 24h forecast sparkline derived from ML trajectory and diurnal dispersion ──
-function generateForecastData(baseAqi: number) {
-  const data = [];
-  const currentHour = new Date().getHours();
-  for (let i = 1; i <= 24; i++) {
-    const futureHour = (currentHour + i) % 24;
-    const diurnal = 0.15 * Math.sin(((futureHour - 8) / 24) * 2 * Math.PI) + 0.05 * Math.sin(((futureHour - 20) / 12) * 2 * Math.PI);
-    // Slight drift towards clean air if dispersion is active
-    const trend = -0.005 * i;
-    const aqi = Math.max(10, Math.round(baseAqi * (1.0 + diurnal + trend)));
-    data.push({ hour: `+${i}h`, aqi });
-  }
-  return data;
-}
+// ── Color formatting helpers ──
 
 function aqiBarColor(aqi: number): string {
   if (aqi <= 50) return '#22c55e';
@@ -107,39 +104,20 @@ function pollutantColor(value: number, limit: number): string {
   return '#ef4444';
 }
 
-function useAnimatedCounter(targetValue: number, duration: number = 800) {
-  const [displayValue, setDisplayValue] = useState(targetValue);
-
-  useEffect(() => {
-    if (targetValue === 0) {
-      setDisplayValue(0);
-      return;
-    }
-    let startTime: number | null = null;
-    let frameId: number;
-    const startVal = displayValue;
-
-    const animate = (timestamp: number) => {
-      if (!startTime) startTime = timestamp;
-      const progress = Math.min((timestamp - startTime) / duration, 1);
-      const easedProgress = 1 - Math.pow(1 - progress, 3);
-      setDisplayValue(Math.round(startVal + (targetValue - startVal) * easedProgress));
-
-      if (progress < 1) {
-        frameId = requestAnimationFrame(animate);
-      }
-    };
-
-    frameId = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(frameId);
-  }, [targetValue, duration]);
-
-  return displayValue;
-}
-
 export default function HomePage() {
-  const { activeCity, setActiveCity, cityData, liveData, stations, districts, liveLoading } = useCityContext();
+  const {
+    activeCity,
+    setActiveCity,
+    cityData,
+    liveData,
+    stations,
+    districts,
+    liveLoading,
+    aqiStandard,
+    setAqiStandard,
+  } = useCityContext();
   const [chartType, setChartType] = useState<'bar' | 'line'>('bar');
+
   const [timeRange, setTimeRange] = useState<'6h' | '12h' | '24h'>('24h');
   const [chartMetric, setChartMetric] = useState<'aqi' | 'pm25' | 'pm10'>('aqi');
   const [now, setNow] = useState(new Date());
@@ -168,32 +146,57 @@ export default function HomePage() {
     fetchHistory();
   }, [activeCity]);
 
-  // Compute aggregate metrics from stations
+  // Compute aggregate metrics from genuine monitored stations only
   const avgAqi = useMemo(() => {
-    if (stations.length === 0) return 0;
-    return Math.round(stations.reduce((s, st) => s + st.aqi, 0) / stations.length);
-  }, [stations]);
+    // If backend provided city-level center AQI for this standard, use it if available
+    if (cityData) {
+      const cityVal = aqiStandard === 'US_EPA' ? (cityData.center_aqi_us ?? cityData.aqi_us) : (cityData.center_aqi_in ?? cityData.aqi_in);
+      if (typeof cityVal === 'number' && cityVal > 0) {
+        return Math.round(cityVal);
+      }
+    }
+    const monitored = stations.filter((s: any) => s.monitored !== false);
+    const pool = monitored.length > 0 ? monitored : stations;
+    const validStations = pool.filter((st: any) => {
+      const v = aqiStandard === 'US_EPA' ? (st.aqi_us ?? st.aqi) : (st.aqi_in ?? st.aqi);
+      return typeof v === 'number' && !isNaN(v);
+    });
+    if (validStations.length === 0) return 0;
+    return Math.round(
+      validStations.reduce((s: number, st: any) => {
+        const val = aqiStandard === 'US_EPA' ? (st.aqi_us ?? st.aqi ?? 0) : (st.aqi_in ?? st.aqi ?? 0);
+        return s + val;
+      }, 0) / validStations.length
+    );
+  }, [cityData, stations, aqiStandard]);
 
   const avgPm25 = useMemo(() => {
-    if (stations.length === 0) return 0;
-    return Math.round(stations.reduce((s, st) => s + st.pm25, 0) / stations.length);
+    const valid = stations.filter((s: any) => s.monitored !== false && typeof s.pm25 === 'number' && !isNaN(s.pm25));
+    if (valid.length === 0) return 0;
+    return Math.round(valid.reduce((s, st) => s + (st.pm25 ?? 0), 0) / valid.length);
   }, [stations]);
 
   const avgPm10 = useMemo(() => {
-    if (stations.length === 0) return 0;
-    return Math.round(stations.reduce((s, st) => s + st.pm10, 0) / stations.length);
+    const valid = stations.filter((s: any) => s.monitored !== false && typeof s.pm10 === 'number' && !isNaN(s.pm10));
+    if (valid.length === 0) return 0;
+    return Math.round(valid.reduce((s, st) => s + (st.pm10 ?? 0), 0) / valid.length);
   }, [stations]);
 
   const avgPollutants = useMemo(() => {
-    if (stations.length === 0) return { no2: 0, so2: 0, co: 0, o3: 0, pm25: 0, pm10: 0 };
-    const n = stations.length;
+    const valid = stations.filter((s: any) => s.monitored !== false);
+    if (valid.length === 0) return { no2: 0, so2: 0, co: 0, o3: 0, pm25: 0, pm10: 0 };
+    const getAvg = (field: string) => {
+      const items = valid.filter((s: any) => typeof s[field] === 'number' && !isNaN(s[field]));
+      if (items.length === 0) return 0;
+      return items.reduce((acc, it: any) => acc + it[field], 0) / items.length;
+    };
     return {
-      pm25: Math.round(stations.reduce((s, st) => s + st.pm25, 0) / n),
-      pm10: Math.round(stations.reduce((s, st) => s + st.pm10, 0) / n),
-      no2: Math.round(stations.reduce((s, st) => s + st.no2, 0) / n),
-      so2: Math.round(stations.reduce((s, st) => s + st.so2, 0) / n),
-      co: +(stations.reduce((s, st) => s + st.co, 0) / n).toFixed(1),
-      o3: Math.round(stations.reduce((s, st) => s + st.o3, 0) / n),
+      pm25: Math.round(getAvg('pm25')),
+      pm10: Math.round(getAvg('pm10')),
+      no2: Math.round(getAvg('no2')),
+      so2: Math.round(getAvg('so2')),
+      co: +getAvg('co').toFixed(1),
+      o3: Math.round(getAvg('o3')),
     };
   }, [stations]);
 
@@ -229,7 +232,8 @@ export default function HomePage() {
       }
       return copy;
     }
-    return generateHistoricalData(avgAqi, 24);
+    // Return empty array when no historical telemetry is logged yet
+    return [];
   }, [realHistory, avgAqi, avgPm25, avgPm10]);
 
   const historicalData = useMemo(() => {
@@ -253,13 +257,26 @@ export default function HomePage() {
     }, { val: Math.round(historicalData[0][chartMetric] ?? historicalData[0].aqi), time: historicalData[0].time });
   }, [historicalData, chartMetric]);
 
-  const forecastData = useMemo(() => generateForecastData(avgAqi), [avgAqi]);
+  const forecastData = useMemo(() => {
+    if (liveData?.forecast?.points && Array.isArray(liveData.forecast.points) && liveData.forecast.points.length >= 3) {
+      return [
+        { hour: 'Now', aqi: Math.round(avgAqi) },
+        { hour: '+24h', aqi: Math.round(liveData.forecast.points[0]) },
+        { hour: '+48h', aqi: Math.round(liveData.forecast.points[1]) },
+        { hour: '+72h', aqi: Math.round(liveData.forecast.points[2]) }
+      ];
+    }
+    return [
+      { hour: 'Now', aqi: Math.round(avgAqi) }
+    ];
+  }, [liveData, avgAqi]);
 
   const forecastEnd = forecastData[forecastData.length - 1]?.aqi ?? avgAqi;
   const trendUp = forecastEnd > avgAqi;
 
-  const aqiCat = getAqiCategory(avgAqi);
-  const healthInfo = getHealthInfo(avgAqi);
+  const aqiCat = getAqiCategory(avgAqi, aqiStandard);
+  const healthInfo = getHealthInfo(avgAqi, aqiStandard);
+
   const scalePosition = useMemo(() => {
     if (avgAqi <= 50) return (avgAqi / 50) * 16.66;
     if (avgAqi <= 100) return 16.66 + ((avgAqi - 50) / 50) * 16.66;
@@ -269,17 +286,29 @@ export default function HomePage() {
     return Math.min(100, 83.33 + ((avgAqi - 300) / 200) * 16.66);
   }, [avgAqi]);
 
-  // Sort districts for leaderboard
-  const sortedDistricts = useMemo(() => {
-    return [...districts].sort((a, b) => a.aqi - b.aqi);
+  // Filter and sort only genuinely monitored municipal wards for leaderboard
+  const monitoredDistricts = useMemo(() => {
+    return districts.filter((d: any) => {
+      if (d.monitored === false) return false;
+      const v = aqiStandard === 'US_EPA' ? (d.aqi_us ?? d.aqi) : (d.aqi_in ?? d.aqi);
+      return typeof v === 'number' && !isNaN(v);
+    });
+  }, [districts, aqiStandard]);
+
+  const unmonitoredWardsCount = useMemo(() => {
+    return districts.filter((d: any) => d.monitored === false).length;
   }, [districts]);
+
+  const sortedDistricts = useMemo(() => {
+    return [...monitoredDistricts].sort((a, b) => {
+      const aVal = aqiStandard === 'US_EPA' ? (a.aqi_us ?? a.aqi ?? 0) : (a.aqi_in ?? a.aqi ?? 0);
+      const bVal = aqiStandard === 'US_EPA' ? (b.aqi_us ?? b.aqi ?? 0) : (b.aqi_in ?? b.aqi ?? 0);
+      return aVal - bVal;
+    });
+  }, [monitoredDistricts, aqiStandard]);
 
   const best5 = sortedDistricts.slice(0, 5);
   const worst5 = [...sortedDistricts].reverse().slice(0, 5);
-
-  const animatedAqi = useAnimatedCounter(avgAqi, 800);
-  const animatedPm25 = useAnimatedCounter(avgPm25, 700);
-  const animatedPm10 = useAnimatedCounter(avgPm10, 700);
 
   if (liveLoading && stations.length === 0) {
     return (
@@ -305,7 +334,7 @@ export default function HomePage() {
             </div>
             {/* City Selector Dropdown */}
             <div className="home-city-select-wrap">
-              <span className="home-city-select-icon"><MapPin size={13} style={{ color: 'var(--accent-cyan)' }} /></span>
+              <span className="home-city-select-icon">📍</span>
               <select
                 className="home-city-select"
                 value={activeCity}
@@ -339,31 +368,61 @@ export default function HomePage() {
               </select>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {/* Standard Toggle */}
+            <div style={{
+              display: 'flex',
+              background: 'var(--bg-secondary)',
+              borderRadius: 6,
+              border: '1px solid var(--border-primary)',
+              overflow: 'hidden',
+              padding: 2,
+            }}>
+              <button
+                onClick={() => setAqiStandard('IN_NAQI')}
+                style={{
+                  padding: '4px 10px',
+                  fontSize: '0.7rem',
+                  fontWeight: 700,
+                  border: 'none',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  background: aqiStandard === 'IN_NAQI' ? 'var(--accent-primary, #3b82f6)' : 'transparent',
+                  color: aqiStandard === 'IN_NAQI' ? '#ffffff' : 'var(--text-muted)',
+                  transition: 'all 0.2s',
+                }}
+              >
+                🇮🇳 India NAQI
+              </button>
+              <button
+                onClick={() => setAqiStandard('US_EPA')}
+                style={{
+                  padding: '4px 10px',
+                  fontSize: '0.7rem',
+                  fontWeight: 700,
+                  border: 'none',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  background: aqiStandard === 'US_EPA' ? 'var(--accent-primary, #3b82f6)' : 'transparent',
+                  color: aqiStandard === 'US_EPA' ? '#ffffff' : 'var(--text-muted)',
+                  transition: 'all 0.2s',
+                }}
+              >
+                🇺🇸 US EPA
+              </button>
+            </div>
             <div className="home-live-badge">
               <div className="dot" /> Live Telemetry
-            </div>
-            <div style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '4px 10px',
-              borderRadius: '16px',
-              background: 'rgba(56, 189, 248, 0.1)',
-              border: '1px solid rgba(56, 189, 248, 0.25)',
-              color: 'var(--accent-cyan)',
-              fontSize: '0.68rem',
-              fontWeight: 600,
-              letterSpacing: '0.04em'
-            }}>
-              <ShieldCheck size={13} style={{ color: 'var(--accent-cyan)', flexShrink: 0 }} /> CPCB & EPA Calibrated • 100% Sensor Uptime
             </div>
           </div>
         </div>
 
         {/* Title */}
         <h1 className="home-title">{activeCity} Air Quality Index (AQI) | Air Pollution</h1>
-        <p className="home-subtitle">Real-time PM2.5, PM10 air pollution level in {activeCity}</p>
+        <p className="home-subtitle">
+          Real-time PM2.5, PM10 air pollution level in {activeCity} ({aqiStandard === 'IN_NAQI' ? 'CPCB India NAQI Standard' : 'US EPA 40 CFR Standard'})
+        </p>
+
         <p className="home-timestamp" suppressHydrationWarning>
           Last Updated: {now.toLocaleDateString('en-IN')} {now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })} (Local Time)
         </p>
@@ -374,8 +433,8 @@ export default function HomePage() {
             <div className="home-aqi-indicator">
               <div className="dot" style={{ background: aqiCat.color }} /> Live AQI
             </div>
-            <div className="home-aqi-value" style={{ color: aqiCat.color }}>{animatedAqi}</div>
-            <div className="home-aqi-unit">AQI (US)</div>
+            <div className="home-aqi-value" style={{ color: aqiCat.color }}>{avgAqi}</div>
+            <div className="home-aqi-unit">AQI ({aqiStandard === 'IN_NAQI' ? 'India NAQI' : 'US EPA'})</div>
           </div>
 
           <div className="home-hero-right">
@@ -385,20 +444,14 @@ export default function HomePage() {
             </div>
             <div className="home-pm-values">
               <div className="home-pm-item">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div className="home-pm-label">PM2.5</div>
-                  <span style={{ fontSize: '0.62rem', color: '#f59e0b', fontWeight: 600 }}>+4.2% vs 24h</span>
-                </div>
-                <span className="home-pm-val">{animatedPm25}</span>
-                <span className="home-pm-unit">µg/m³ • WHO Cap: 15</span>
+                <div className="home-pm-label">PM2.5</div>
+                <span className="home-pm-val">{avgPm25}</span>
+                <span className="home-pm-unit">µg/m³</span>
               </div>
               <div className="home-pm-item">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div className="home-pm-label">PM10</div>
-                  <span style={{ fontSize: '0.62rem', color: '#22c55e', fontWeight: 600 }}>-3.8% vs 24h</span>
-                </div>
-                <span className="home-pm-val">{animatedPm10}</span>
-                <span className="home-pm-unit">µg/m³ • CPCB Cap: 60</span>
+                <div className="home-pm-label">PM10</div>
+                <span className="home-pm-val">{avgPm10}</span>
+                <span className="home-pm-unit">µg/m³</span>
               </div>
             </div>
           </div>
@@ -418,7 +471,11 @@ export default function HomePage() {
               <div className="home-scale-marker" style={{ left: `${scalePosition}%` }} />
             </div>
             <div className="home-scale-labels">
-              <span>Good</span><span>Moderate</span><span>Poor</span><span>Unhealthy</span><span>Severe</span><span>Hazardous</span>
+              {aqiStandard === 'IN_NAQI' ? (
+                <><span>Good</span><span>Satisfactory</span><span>Moderate</span><span>Poor</span><span>Very Poor</span><span>Severe</span></>
+              ) : (
+                <><span>Good</span><span>Moderate</span><span>USG</span><span>Unhealthy</span><span>Very Unhealthy</span><span>Hazardous</span></>
+              )}
             </div>
             <div className="home-scale-numbers">
               <span>0</span><span>50</span><span>100</span><span>150</span><span>200</span><span>300</span><span>500+</span>
@@ -427,30 +484,10 @@ export default function HomePage() {
         </div>
 
         {/* ═══ Section 5: Health Impact Banner ═══ */}
-        <div className="home-health-banner" style={{ background: healthInfo.bg, borderColor: healthInfo.border, color: healthInfo.color, position: 'relative' }}>
-          {healthInfo.severity === 'good' || healthInfo.severity === 'satisfactory' ? (
-            <CheckCircle2 size={24} color={healthInfo.color} style={{ flexShrink: 0 }} />
-          ) : healthInfo.severity === 'severe' ? (
-            <AlertOctagon size={24} color={healthInfo.color} style={{ flexShrink: 0 }} />
-          ) : (
-            <AlertTriangle size={24} color={healthInfo.color} style={{ flexShrink: 0 }} />
-          )}
-          <div style={{ flex: 1 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-              <div className="home-health-title">{healthInfo.title}</div>
-              <span style={{
-                fontSize: '0.65rem',
-                background: 'rgba(0,0,0,0.3)',
-                padding: '2px 8px',
-                borderRadius: 4,
-                border: '1px solid rgba(255,255,255,0.15)',
-                fontWeight: 700,
-                letterSpacing: '0.04em',
-                textTransform: 'uppercase'
-              }}>
-                GRAP Stage-II Alert Active
-              </span>
-            </div>
+        <div className="home-health-banner" style={{ background: healthInfo.bg, borderColor: healthInfo.border, color: healthInfo.color }}>
+          <span className="home-health-icon">{healthInfo.icon}</span>
+          <div>
+            <div className="home-health-title">{healthInfo.title}</div>
             <div style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>{healthInfo.message}</div>
           </div>
         </div>
@@ -464,17 +501,11 @@ export default function HomePage() {
             const clr = pollutantColor(value, info.limit);
             return (
               <div className="home-pollutant-card" key={key}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                  <div className="home-pollutant-name" style={{ margin: 0 }}>{info.label}</div>
-                  <span style={{ fontSize: '0.55rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>Limit: {info.limit}</span>
-                </div>
+                <div className="home-pollutant-name">{info.label}</div>
                 <div className="home-pollutant-value" style={{ color: clr }}>{value}</div>
                 <span className="home-pollutant-unit">{info.unit}</span>
                 <div className="home-pollutant-bar">
                   <div className="home-pollutant-bar-fill" style={{ width: `${pct}%`, background: clr }} />
-                </div>
-                <div style={{ marginTop: 6, fontSize: '0.58rem', fontWeight: 600, color: clr, textAlign: 'center' }}>
-                  {pct <= 50 ? 'Optimal' : pct <= 100 ? 'Moderate' : pct <= 150 ? 'Exceeding' : 'Hazardous'}
                 </div>
               </div>
             );
@@ -542,8 +573,8 @@ export default function HomePage() {
               </ResponsiveContainer>
             </div>
             <div className="home-forecast-trend">
-              <span className="home-trend-arrow" style={{ color: trendUp ? '#ef4444' : '#22c55e', display: 'inline-flex', alignItems: 'center' }}>
-                {trendUp ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+              <span className="home-trend-arrow" style={{ color: trendUp ? '#ef4444' : '#22c55e' }}>
+                {trendUp ? '↗' : '↘'}
               </span>
               <span className="home-trend-text" style={{ color: trendUp ? '#ef4444' : '#22c55e' }}>
                 {trendUp ? 'Worsening trend' : 'Improving trend'} — predicted {forecastEnd} AQI in 24h
@@ -683,33 +714,49 @@ export default function HomePage() {
         {sortedDistricts.length > 0 && (
           <div className="home-leaderboard">
             <div className="home-leaderboard-section">
-              <div className="home-leaderboard-title">
-                <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#22c55e', display: 'inline-block', marginRight: 6 }} />
-                Lowest AQI Districts
-              </div>
-              {best5.map((d, i) => (
-                <div className="home-leaderboard-item" key={d.id}>
-                  <span className="home-leaderboard-rank">{i + 1}</span>
-                  <span className="home-leaderboard-name">{d.name}</span>
-                  <span className="home-leaderboard-aqi" style={{ color: getAqiCategory(d.aqi).color }}>{d.aqi}</span>
-                </div>
-              ))}
+              <div className="home-leaderboard-title">🟢 Cleanest Municipal Wards ({aqiStandard === 'IN_NAQI' ? 'India NAQI' : 'US EPA'})</div>
+              {best5.map((d, i) => {
+                const wardAqi = Math.round(aqiStandard === 'US_EPA' ? (d.aqi_us ?? d.aqi ?? 0) : (d.aqi_in ?? d.aqi ?? 0));
+                const cat = getAqiCategory(wardAqi, aqiStandard);
+                return (
+                  <div className="home-leaderboard-item" key={d.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span className="home-leaderboard-rank">{i + 1}</span>
+                      <div>
+                        <span className="home-leaderboard-name">{d.name}</span>
+                      </div>
+                    </div>
+                    <span className="home-leaderboard-aqi" style={{ color: cat.color }}>{wardAqi}</span>
+                  </div>
+                );
+              })}
             </div>
             <div className="home-leaderboard-section">
-              <div className="home-leaderboard-title">
-                <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#ef4444', display: 'inline-block', marginRight: 6 }} />
-                Highest AQI Districts
-              </div>
-              {worst5.map((d, i) => (
-                <div className="home-leaderboard-item" key={d.id}>
-                  <span className="home-leaderboard-rank">{i + 1}</span>
-                  <span className="home-leaderboard-name">{d.name}</span>
-                  <span className="home-leaderboard-aqi" style={{ color: getAqiCategory(d.aqi).color }}>{d.aqi}</span>
-                </div>
-              ))}
+              <div className="home-leaderboard-title">🔴 Most Polluted Municipal Wards ({aqiStandard === 'IN_NAQI' ? 'India NAQI' : 'US EPA'})</div>
+              {worst5.map((d, i) => {
+                const wardAqi = Math.round(aqiStandard === 'US_EPA' ? (d.aqi_us ?? d.aqi ?? 0) : (d.aqi_in ?? d.aqi ?? 0));
+                const cat = getAqiCategory(wardAqi, aqiStandard);
+                return (
+                  <div className="home-leaderboard-item" key={d.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span className="home-leaderboard-rank">{i + 1}</span>
+                      <div>
+                        <span className="home-leaderboard-name">{d.name}</span>
+                      </div>
+                    </div>
+                    <span className="home-leaderboard-aqi" style={{ color: cat.color }}>{wardAqi}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
+        {unmonitoredWardsCount > 0 && (
+          <div style={{ textAlign: 'center', marginTop: 14, fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+            ℹ️ {unmonitoredWardsCount} municipal wards currently have no active CAAQMS center and are excluded from rankings (shaded grey on the live map referencing nearest centers).
+          </div>
+        )}
+
       </div>
     </div>
   );

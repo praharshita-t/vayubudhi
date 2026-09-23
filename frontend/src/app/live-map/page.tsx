@@ -5,7 +5,6 @@ import { useCityContext } from '@/context/CityContext';
 import { getAqiCategory } from '@/utils/aqi';
 import { recommendDeployments } from '@/utils/mcda';
 import { Station, CityId, RecommendedDeployment } from '@/types';
-import { FileText, X } from 'lucide-react';
 
 const CityMap = dynamic(() => import('@/components/CityMap'), { ssr: false });
 const DeepDivePanel = dynamic(() => import('@/components/DeepDivePanel'), { ssr: false });
@@ -32,6 +31,7 @@ export default function LiveMapPage() {
     activeCity, setActiveCity,
     cityData, liveData, userCoords, liveLoading,
     stations, districts,
+    aqiStandard, setAqiStandard,
   } = useCityContext();
 
   const [alertStation, setAlertStation] = useState<Station | null>(null);
@@ -59,7 +59,11 @@ export default function LiveMapPage() {
     }));
   }, [selectedDistrict, districts]);
 
-  // Compute commander header metrics
+  // Compute commander header metrics from genuine monitored stations only
+  const monitoredStations = useMemo(() => {
+    return stations.filter(s => s.monitored !== false && typeof (aqiStandard === 'US_EPA' ? (s.aqi_us ?? s.aqi) : (s.aqi_in ?? s.aqi)) === 'number');
+  }, [stations, aqiStandard]);
+
   let avgAqi = 0;
   let worstStationName = 'N/A';
   let worstStationAqi = 0;
@@ -74,15 +78,32 @@ export default function LiveMapPage() {
     } else {
       worstStationName = 'Locating...';
     }
-  } else if (stations.length > 0) {
-    avgAqi = Math.round(stations.reduce((s, st) => s + st.aqi, 0) / stations.length);
-    const maxStation = stations.reduce((max, st) => st.aqi > max.aqi ? st : max, stations[0]);
+  } else if (monitoredStations.length > 0) {
+    if (cityData) {
+      const cityVal = aqiStandard === 'US_EPA' ? (cityData.center_aqi_us ?? cityData.aqi_us) : (cityData.center_aqi_in ?? cityData.aqi_in);
+      if (typeof cityVal === 'number' && cityVal > 0) {
+        avgAqi = Math.round(cityVal);
+      }
+    }
+    if (avgAqi === 0) {
+      avgAqi = Math.round(
+        monitoredStations.reduce((s, st) => {
+          const val = aqiStandard === 'US_EPA' ? (st.aqi_us ?? st.aqi ?? 0) : (st.aqi_in ?? st.aqi ?? 0);
+          return s + val;
+        }, 0) / monitoredStations.length
+      );
+    }
+    const maxStation = monitoredStations.reduce((max, st) => {
+      const stVal = aqiStandard === 'US_EPA' ? (st.aqi_us ?? st.aqi ?? 0) : (st.aqi_in ?? st.aqi ?? 0);
+      const maxVal = aqiStandard === 'US_EPA' ? (max.aqi_us ?? max.aqi ?? 0) : (max.aqi_in ?? max.aqi ?? 0);
+      return stVal > maxVal ? st : max;
+    }, monitoredStations[0]);
     worstStationName = maxStation.name;
-    worstStationAqi = maxStation.aqi;
-    alertCount = stations.filter(s => s.status === 'alert').length;
+    worstStationAqi = Math.round(aqiStandard === 'US_EPA' ? (maxStation.aqi_us ?? maxStation.aqi ?? 0) : (maxStation.aqi_in ?? maxStation.aqi ?? 0));
+    alertCount = monitoredStations.filter(s => (s.status === 'alert') || ((aqiStandard === 'US_EPA' ? (s.aqi_us ?? s.aqi ?? 0) : (s.aqi_in ?? s.aqi ?? 0)) > 200)).length;
   }
 
-  const avgCat = getAqiCategory(avgAqi);
+  const avgCat = getAqiCategory(avgAqi, aqiStandard);
 
   return (
     <div className="livemap-page">
@@ -131,7 +152,7 @@ export default function LiveMapPage() {
 
         <div className="header-metrics">
           <div className="metric-item">
-            <span className="metric-label">City Avg AQI</span>
+            <span className="metric-label">City Avg ({aqiStandard === 'IN_NAQI' ? 'NAQI' : 'US EPA'})</span>
             <span className="metric-value" style={{ color: avgCat.color }}>{avgAqi}</span>
           </div>
           <div className="metric-item">
@@ -142,17 +163,52 @@ export default function LiveMapPage() {
             <span className="metric-label">Active Alerts</span>
             <span className="metric-value" style={{ color: 'var(--accent-amber)' }}>{alertCount}</span>
           </div>
-          <div className="metric-item">
-            <span className="metric-label">Grid Coverage</span>
-            <span className="metric-value" style={{ color: 'var(--accent-cyan)' }}>1,480 km²</span>
-          </div>
-          <div className="metric-item">
-            <span className="metric-label">Sensor Uptime</span>
-            <span className="metric-value" style={{ color: 'var(--accent-green)' }}>99.8% (1 Hz)</span>
-          </div>
         </div>
 
         <div className="header-status" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {/* Dual AQI Standard Toggle */}
+          <div style={{
+            display: 'flex',
+            background: '#1c2128',
+            borderRadius: 6,
+            border: '1px solid #30363d',
+            overflow: 'hidden',
+            padding: 2,
+          }}>
+            <button
+              onClick={() => setAqiStandard('IN_NAQI')}
+              style={{
+                padding: '4px 8px',
+                fontSize: '0.68rem',
+                fontWeight: 700,
+                border: 'none',
+                borderRadius: 4,
+                cursor: 'pointer',
+                background: aqiStandard === 'IN_NAQI' ? '#3b82f6' : 'transparent',
+                color: aqiStandard === 'IN_NAQI' ? '#ffffff' : '#8b949e',
+                transition: 'all 0.2s',
+              }}
+            >
+              🇮🇳 NAQI
+            </button>
+            <button
+              onClick={() => setAqiStandard('US_EPA')}
+              style={{
+                padding: '4px 8px',
+                fontSize: '0.68rem',
+                fontWeight: 700,
+                border: 'none',
+                borderRadius: 4,
+                cursor: 'pointer',
+                background: aqiStandard === 'US_EPA' ? '#3b82f6' : 'transparent',
+                color: aqiStandard === 'US_EPA' ? '#ffffff' : '#8b949e',
+                transition: 'all 0.2s',
+              }}
+            >
+              🇺🇸 EPA
+            </button>
+          </div>
+
           <button
             onClick={() => setIsReportModalOpen(true)}
             style={{
@@ -170,8 +226,7 @@ export default function LiveMapPage() {
               transition: 'var(--transition-fast)'
             }}
           >
-            <FileText size={14} />
-            <span>AI Report</span>
+            📄 AI Report
           </button>
           <div className="status-badge live">
             <div className="dot" />
@@ -242,7 +297,7 @@ export default function LiveMapPage() {
               onClick={() => setAdvisoryOpen(false)}
               aria-label="Close Advisory"
             >
-              <X size={16} />
+              ✕
             </button>
           </div>
           <div className="advisory-popup-body">

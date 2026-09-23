@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.env
+.env*
+*.env.local
 .venv/
 env/
 venv/
@@ -21,6 +23,8 @@ build/
 # Database
 *.db
 *.sqlite
+*.db-shm
+*.db-wal
 
 # PlatformIO / IDEs
 .pio/

@@ -4,17 +4,25 @@ import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   Home, Map, FlaskConical, TrendingUp, Shield,
-  FileText, Building2, Menu, PanelLeftClose,
+  FileText, Building2, Menu, PanelLeftClose, Lock,
 } from 'lucide-react';
 import { useCityContext } from '@/context/CityContext';
+import { useAuth, UserRole } from '@/context/AuthContext';
 
-const navItems = [
+interface NavItem {
+  id: string;
+  label: string;
+  href: string;
+  icon: any;
+  requiredRoles?: UserRole[];
+}
+
+const navItems: NavItem[] = [
   { id: 'home', label: 'Home', href: '/', icon: Home },
   { id: 'live-map', label: 'Live Map', href: '/live-map', icon: Map },
   { id: 'simulate', label: 'Simulate', href: '/simulate', icon: FlaskConical },
   { id: 'forecast', label: 'Forecast', href: '/forecast', icon: TrendingUp },
-  { id: 'enforce', label: 'Enforce', href: '/enforce', icon: Shield },
-
+  { id: 'enforce', label: 'Enforce', href: '/enforce', icon: Shield, requiredRoles: ['city_officer', 'super_admin'] },
   { id: 'compare', label: 'Compare Cities', href: '/compare', icon: Building2 },
 ];
 
@@ -23,6 +31,7 @@ export default function Sidebar() {
   const [hovered, setHovered] = useState(false);
   const pathname = usePathname();
   const { activeCity } = useCityContext();
+  const { hasRole } = useAuth();
 
   const expanded = pinned || hovered;
 
@@ -63,17 +72,25 @@ export default function Sidebar() {
               (item.href !== '/' && pathname.startsWith(item.href));
             const Icon = item.icon;
 
+            const isLocked = item.requiredRoles && !hasRole(item.requiredRoles);
+
             return (
               <Link
                 key={item.id}
                 href={item.href}
-                className={`sidebar-nav-item${isActive ? ' active' : ''}`}
-                title={!expanded ? item.label : undefined}
+                className={`sidebar-nav-item${isActive ? ' active' : ''}${isLocked ? ' locked' : ''}`}
+                title={!expanded ? (isLocked ? `${item.label} (Officer Only)` : item.label) : undefined}
               >
                 <Icon size={20} strokeWidth={isActive ? 2.5 : 2} />
                 <span className={`sidebar-nav-label${expanded ? ' visible' : ''}`}>
                   {item.label}
                 </span>
+                {isLocked && expanded && (
+                  <span className="sidebar-officer-badge">
+                    <Lock size={9} style={{ display: 'inline', marginRight: 2 }} />
+                    OFFICER
+                  </span>
+                )}
                 {isActive && expanded && <div className="sidebar-active-glow-dot" />}
               </Link>
             );

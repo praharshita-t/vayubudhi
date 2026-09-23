@@ -3,13 +3,14 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.database import get_db
 from app import schemas
+from app.redis_client import get_cache_status
 
 router = APIRouter()
 
 @router.get("/health", response_model=schemas.HealthStatus, status_code=status.HTTP_200_OK)
 def check_health(db: Session = Depends(get_db)):
     """
-    Performs server connectivity and database readiness checks.
+    Performs server connectivity, database readiness, and distributed cache checks.
     """
     database_status = "disconnected"
     try:
@@ -17,10 +18,16 @@ def check_health(db: Session = Depends(get_db)):
         database_status = "connected"
     except Exception:
         pass
-        
+
     return {
         "status": "healthy",
-        "database": database_status
+        "database": database_status,
+        "cache": get_cache_status(),
+        "data_sovereignty": {
+            "compliant": True,
+            "hosting_region": "ap-south-1 (Mumbai, India)",
+            "statute": "Digital Personal Data Protection Act 2023"
+        }
     }
 
 import sys

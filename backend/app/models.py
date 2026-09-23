@@ -3,15 +3,66 @@ SQLAlchemy database models for VayuBudhi.
 Defines storage schema for sensor readings, ML model forecasts,
 source attribution classifier results, optimized dispatch routes, and ROI calculations.
 """
-from sqlalchemy import Column, Integer, String, Float, JSON, DateTime
+from sqlalchemy import Column, Integer, String, Float, JSON, DateTime, Boolean, ForeignKey, UniqueConstraint, Index
 from datetime import datetime
 from app.database import Base
+
+class Station(Base):
+    """
+    Physical ambient air quality monitoring station (CAAQMS / OpenAQ).
+    """
+    __tablename__ = "stations"
+
+    id = Column(String, primary_key=True, index=True)
+    name = Column(String, nullable=False, index=True)
+    city = Column(String, nullable=False, index=True)
+    state = Column(String, nullable=False, index=True)
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    agency = Column(String, nullable=True)  # e.g., TSPCB, DPCC, CPCB
+    source = Column(String, nullable=False, default="cpcb_caaqms")  # cpcb_caaqms | openaq
+    ward_id = Column(String, nullable=True, index=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class StationObservation(Base):
+    """
+    Time-series air quality telemetry observation from physical stations.
+    Supports dual-standard AQI: India NAQI (CPCB) and US EPA.
+    """
+    __tablename__ = "station_observations"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    station_id = Column(String, ForeignKey("stations.id"), nullable=False, index=True)
+    timestamp = Column(DateTime, nullable=False, index=True)
+    pm25 = Column(Float, nullable=True)
+    pm10 = Column(Float, nullable=True)
+    no2 = Column(Float, nullable=True)
+    so2 = Column(Float, nullable=True)
+    co = Column(Float, nullable=True)
+    o3 = Column(Float, nullable=True)
+    nh3 = Column(Float, nullable=True)
+    aqi_in = Column(Float, nullable=True)  # India National AQI (CPCB 2014)
+    aqi_us = Column(Float, nullable=True)  # US EPA AQI (40 CFR Part 58)
+    primary_pollutant = Column(String, nullable=True)  # e.g. PM2.5, PM10, NO2
+    source = Column(String, nullable=False, default="cpcb_caaqms")  # cpcb_caaqms | openaq
+    raw_payload = Column(JSON, nullable=True)  # Raw unmanipulated API record
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("station_id", "timestamp", name="uix_station_obs_timestamp"),
+        Index("ix_station_time", "station_id", "timestamp"),
+    )
+
 
 class SensorReading(Base):
     """
     Model for live weather/AQI sensor telemetry received from ESP32 station (Contract 1).
     """
     __tablename__ = "sensor_readings"
+
 
     id = Column(Integer, primary_key=True, index=True)
     station_id = Column(String, nullable=False, index=True)
@@ -72,3 +123,23 @@ class ROIResult(Base):
     compliance_cost = Column(Float, nullable=False)
     roi = Column(Float, nullable=False)
     calculated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class User(Base):
+    """
+    Enterprise user model supporting 4-Tier Role-Based Access Control (RBAC):
+    - super_admin: Full platform control, fleet management, telemetry ingestion overrides.
+    - city_officer: Municipal dispatch approval, regulatory threshold enforcement.
+    - field_inspector: Patrol routing, ground photo evidence upload, inspection logging.
+    - public_viewer: Read-only ambient air quality exploration.
+    """
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    hashed_password = Column(String(255), nullable=False)
+    full_name = Column(String(255), nullable=False)
+    role = Column(String(50), nullable=False, default="public_viewer")
+    department = Column(String(100), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)

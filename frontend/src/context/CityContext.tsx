@@ -1,6 +1,6 @@
 'use client';
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
-import { Station, CityId } from '@/types';
+import { Station, CityId, District, AqiStandard } from '@/types';
 import { computeDelhiDistricts } from '@/data/delhiDistricts';
 import { computeHyderabadDistricts, computeGuwahatiDistricts, computeBengaluruDistricts } from '@/data/otherDistricts';
 
@@ -12,8 +12,11 @@ interface CityContextType {
   userCoords: { lat: number; lon: number } | null;
   liveLoading: boolean;
   stations: Station[];
-  districts: any[];
+  districts: District[];
+  aqiStandard: AqiStandard;
+  setAqiStandard: (std: AqiStandard) => void;
 }
+
 
 const CityContext = createContext<CityContextType | null>(null);
 
@@ -25,12 +28,14 @@ export function useCityContext() {
 
 export function CityProvider({ children }: { children: React.ReactNode }) {
   const [activeCity, setActiveCity] = useState<CityId>('Delhi');
+  const [aqiStandard, setAqiStandard] = useState<AqiStandard>('IN_NAQI');
   const [cityData, setCityData] = useState<any>(null);
   const [liveData, setLiveData] = useState<any>(null);
   const [userCoords, setUserCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [liveLoading, setLiveLoading] = useState(false);
 
   const cityCacheRef = React.useRef<Record<string, any>>({});
+
 
   // Geolocate for "My Location"
   useEffect(() => {
@@ -124,20 +129,22 @@ export function CityProvider({ children }: { children: React.ReactNode }) {
 
   // Compute districts (used by enforce page and leaderboard)
   const districts = useMemo(() => {
-    if (activeCity === 'Delhi') return computeDelhiDistricts(stations);
-    if (activeCity === 'Hyderabad') return computeHyderabadDistricts(stations);
-    if (activeCity === 'Guwahati') return computeGuwahatiDistricts(stations);
-    if (activeCity === 'Bengaluru') return computeBengaluruDistricts(stations);
+    if (activeCity === 'Delhi') return computeDelhiDistricts(stations, aqiStandard);
+    if (activeCity === 'Hyderabad') return computeHyderabadDistricts(stations, aqiStandard);
+    if (activeCity === 'Guwahati') return computeGuwahatiDistricts(stations, aqiStandard);
+    if (activeCity === 'Bengaluru') return computeBengaluruDistricts(stations, aqiStandard);
     return [];
-  }, [activeCity, stations]);
+  }, [activeCity, stations, aqiStandard]);
 
   return (
     <CityContext.Provider value={{
       activeCity, setActiveCity,
       cityData, liveData, userCoords, liveLoading,
       stations, districts,
+      aqiStandard, setAqiStandard,
     }}>
       {children}
     </CityContext.Provider>
   );
 }
+

@@ -21,6 +21,8 @@ build/
 # Database
 *.db
 *.sqlite
+*.db-shm
+*.db-wal
 
 # PlatformIO / IDEs
 .pio/

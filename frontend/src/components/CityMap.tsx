@@ -1,10 +1,12 @@
 'use client';
 import React, { useState, useMemo, useCallback } from 'react';
 import { getAqiCategory } from '@/utils/aqi';
-import { Station, RecommendedDeployment } from '@/types';
+import { Station, RecommendedDeployment, AqiStandard } from '@/types';
 import { computeDelhiDistricts, District } from '@/data/delhiDistricts';
 import { computeHyderabadDistricts, computeGuwahatiDistricts, computeBengaluruDistricts } from '@/data/otherDistricts';
 import { createWindArrowLayers, useWindParticles, computeWindSummary } from './WindLayer';
+import { useCityContext } from '@/context/CityContext';
+
 
 export interface HexDataPoint {
   lat: number;
@@ -18,7 +20,6 @@ import DeckGL from '@deck.gl/react';
 import Map from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { ColumnLayer, PolygonLayer, ScatterplotLayer, TextLayer, BitmapLayer } from '@deck.gl/layers';
-import { ArrowUp } from 'lucide-react';
 
 const CITY_CENTERS: Record<string, {longitude: number, latitude: number, zoom: number}> = {
   'Delhi': { longitude: 77.17, latitude: 28.62, zoom: 11 },
@@ -186,31 +187,6 @@ function offsetInsideDistrict(
   return best;
 }
 
-function districtToDeployedSensor(d: District, lon: number, lat: number): Station {
-  return {
-    id: `DEPLOYED_${d.id}`,
-    name: `Deployed · ${d.name}`,
-    districtName: d.name,
-    lat,
-    lon,
-    pm25: d.pm25,
-    pm10: d.pm10,
-    no2: d.no2,
-    so2: d.so2,
-    co: d.co,
-    o3: d.o3,
-    aqi: d.aqi,
-    source: 'deployed',
-    status: 'online',
-    temp: d.temp,
-    humidity: d.humidity,
-    pressure: d.pressure,
-    wind_speed: d.wind_speed,
-    wind_dir: d.wind_dir,
-    pblh: d.pblh,
-  };
-}
-
 export default function CityMap({ 
   alertStation, 
   city = 'Delhi', 
@@ -238,6 +214,7 @@ export default function CityMap({
   monitoringLocation?: { lat: number; lon: number; name?: string } | null;
   recommendedDeployments?: RecommendedDeployment[];
 }) {
+  const { aqiStandard, setAqiStandard } = useCityContext();
   const [hoveredHex, setHoveredHex] = useState<HexDataPoint | null>(null);
   const [hoveredDistrict, setHoveredDistrict] = useState<District | null>(null);
   const [hoveredStation, setHoveredStation] = useState<Station | null>(null);
@@ -270,26 +247,17 @@ export default function CityMap({
   const windSummary = useMemo(() => computeWindSummary(stations), [stations]);
 
   const dynamicDistricts = useMemo(() => {
-    if (city === 'Delhi') return computeDelhiDistricts(stations);
-    if (city === 'Hyderabad') return computeHyderabadDistricts(stations);
-    if (city === 'Guwahati') return computeGuwahatiDistricts(stations);
-    if (city === 'Bengaluru') return computeBengaluruDistricts(stations);
+    if (city === 'Delhi') return computeDelhiDistricts(stations, aqiStandard);
+    if (city === 'Hyderabad') return computeHyderabadDistricts(stations, aqiStandard);
+    if (city === 'Guwahati') return computeGuwahatiDistricts(stations, aqiStandard);
+    if (city === 'Bengaluru') return computeBengaluruDistricts(stations, aqiStandard);
     return [];
-  }, [city, stations]);
-
-  const deployedSensors = useMemo(() => {
-    const placed: { lon: number; lat: number }[] = [];
-    return dynamicDistricts.map((district) => {
-      const [lon, lat] = offsetInsideDistrict(district, [...stations, ...placed]);
-      placed.push({ lon, lat });
-      return districtToDeployedSensor(district, lon, lat);
-    });
-  }, [dynamicDistricts, stations]);
+  }, [city, stations, aqiStandard]);
 
   const recommendedPins = useMemo(() => {
     if (!recommendedDeployments.length) return [];
-    const placed: { lon: number; lat: number }[] = deployedSensors.map((s) => ({ lon: s.lon, lat: s.lat }));
-    const avoidBase = [...stations, ...placed];
+    const placed: { lon: number; lat: number }[] = [];
+    const avoidBase = [...stations];
     return recommendedDeployments.map((rec) => {
       const district = dynamicDistricts.find((d) => d.id === rec.districtId);
       if (!district) return null;
@@ -308,7 +276,7 @@ export default function CityMap({
         o3: district.o3,
       };
     }).filter(Boolean) as any[];
-  }, [recommendedDeployments, dynamicDistricts, stations, deployedSensors]);
+  }, [recommendedDeployments, dynamicDistricts, stations]);
 
   React.useEffect(() => {
     if (onDistrictsComputed) {
@@ -466,6 +434,11 @@ export default function CityMap({
         const isSelected = selectedDistrictId === d.id;
         const isHovered = hoveredDistrict && hoveredDistrict.id === d.id;
         
+        // Districts without an active CAAQMS center render in neutral slate-grey
+        if (!d.monitored || d.aqi == null) {
+          return [71, 85, 105, isHovered ? 75 : 35];
+        }
+        
         // Dim unselected districts if a selection exists
         let alpha = 50;
         if (selectedDistrictId && !isSelected) {
@@ -474,16 +447,19 @@ export default function CityMap({
           alpha = 90; // bright for hover or selected
         }
         
-        return aqiToColor(d.aqi, alpha);
+        const val = aqiStandard === 'US_EPA' ? (d.aqi_us ?? d.aqi ?? 0) : (d.aqi_in ?? d.aqi ?? 0);
+        return aqiToColor(val, alpha);
       },
       getLineColor: (d: District) => {
         const isSelected = selectedDistrictId === d.id;
-        return isSelected ? [255, 255, 255, 200] : [200, 210, 220, 100];
+        if (isSelected) return [255, 255, 255, 240];
+        if (!d.monitored || d.aqi == null) return [100, 116, 139, 130]; // Clean slate-grey border
+        return [59, 130, 246, 180]; // Vibrant cyan/blue for active CAAQMS wards
       },
-      getLineWidth: (d: District) => (selectedDistrictId === d.id ? 4 : 2),
+      getLineWidth: (d: District) => (selectedDistrictId === d.id ? 4 : d.monitored ? 2 : 1.5),
       updateTriggers: {
-        getFillColor: [hoveredDistrict?.id, selectedDistrictId],
-        getLineColor: [selectedDistrictId],
+        getFillColor: [hoveredDistrict?.id, selectedDistrictId, aqiStandard],
+        getLineColor: [selectedDistrictId, aqiStandard],
         getLineWidth: [selectedDistrictId],
       },
       onHover: (info: any) => setHoveredDistrict(info.object || null),
@@ -500,7 +476,7 @@ export default function CityMap({
             transitionDuration: 1200,
           }));
         } else if (!info.object && onClick) {
-          onClick(null); // Clear selection when clicking off
+          onClick(null);
           const target = getInitialViewState(city, userCoords);
           setViewState((prev: any) => ({
             ...prev,
@@ -518,9 +494,10 @@ export default function CityMap({
       },
     });
 
-    const caaqmsStations = stations;
+    // Authentic physical CAAQMS stations
+    const caaqmsStations = stations.filter((s: Station) => s.monitored !== false);
 
-    // Layer 2: Station glow rings (official CAAQMS)
+    // Layer 2: Station glow rings (authentic CAAQMS)
     const stationGlowLayer = new ScatterplotLayer<Station>({
       id: 'station-glow',
       data: caaqmsStations,
@@ -528,56 +505,21 @@ export default function CityMap({
       opacity: 0.25,
       stroked: false,
       filled: true,
-      radiusMinPixels: 10,
-      radiusMaxPixels: 24,
+      radiusMinPixels: 6,
+      radiusMaxPixels: 16,
       getPosition: (d: Station) => [d.lon, d.lat],
       getFillColor: (d: Station) => {
-        const c = aqiToColor(d.aqi, 220);
-        return [c[0], c[1], c[2], 60];
+        const val = aqiStandard === 'US_EPA' ? (d.aqi_us ?? d.aqi ?? 60) : (d.aqi_in ?? d.aqi ?? 60);
+        const c = aqiToColor(val, 220);
+        return [c[0], c[1], c[2], 50];
       },
-      getRadius: 300,
+      getRadius: 200,
+      updateTriggers: {
+        getFillColor: [aqiStandard],
+      },
     });
 
-    const deployedGlowLayer = new ScatterplotLayer<Station>({
-      id: 'deployed-glow',
-      data: deployedSensors,
-      pickable: false,
-      opacity: 0.35,
-      stroked: false,
-      filled: true,
-      radiusMinPixels: 12,
-      radiusMaxPixels: 28,
-      getPosition: (d: Station) => [d.lon, d.lat],
-      getFillColor: [57, 210, 192, 90],
-      getRadius: 500,
-    });
-
-    // Helper to determine dominant pollution cause for distinct colored dots
-    const getCauseColor = (d: Station): [number, number, number, number] => {
-      if (isDeployed(d)) return [57, 210, 192, 255];
-      
-      // Calculate a normalized score for each cause based on typical unhealthy thresholds
-      const trafficScore = (d.no2 / 80) + (d.co / 2.0); // NO2 and CO
-      const industryScore = (d.so2 / 40) + (d.pm25 / 60); // SO2 and fine PM
-      const dustScore = (d.pm10 / 100); // Coarse PM
-      
-      const maxScore = Math.max(trafficScore, industryScore, dustScore);
-      
-      if (maxScore < 0.3) {
-        // Very clean air, default to AQI color (green)
-        return aqiToColor(d.aqi, 255);
-      }
-      
-      if (maxScore === trafficScore) {
-        return [239, 68, 68, 255]; // Traffic -> Red
-      } else if (maxScore === industryScore) {
-        return [168, 85, 247, 255]; // Industry -> Purple
-      } else {
-        return [234, 179, 8, 255]; // Dust -> Yellow
-      }
-    };
-
-    // Layer 3: Station core dots (Distinct colors for pollution causes)
+    // Layer 3: Clean, crisp station markers
     const stationDotLayer = new ScatterplotLayer<Station>({
       id: 'station-dots',
       data: caaqmsStations,
@@ -585,72 +527,20 @@ export default function CityMap({
       opacity: 1,
       stroked: true,
       filled: true,
-      radiusMinPixels: 5,
-      radiusMaxPixels: 10,
-      lineWidthMinPixels: 2,
+      radiusMinPixels: 4,
+      radiusMaxPixels: 8,
+      lineWidthMinPixels: 1.5,
       getPosition: (d: Station) => [d.lon, d.lat],
-      getFillColor: getCauseColor,
-      getLineColor: [255, 255, 255, 120] as [number, number, number, number],
-      getRadius: 200,
-      onHover: (info: any) => setHoveredStation(info.object || null),
-    });
-
-    const deployedDotLayer = new ScatterplotLayer<Station>({
-      id: 'deployed-dots',
-      data: deployedSensors,
-      pickable: true,
-      opacity: 1,
-      stroked: true,
-      filled: true,
-      radiusMinPixels: 6,
-      radiusMaxPixels: 12,
-      lineWidthMinPixels: 2,
-      getPosition: (d: Station) => [d.lon, d.lat],
-      getFillColor: [57, 210, 192, 255],
-      getLineColor: [255, 255, 255, 160] as [number, number, number, number],
-      getRadius: 350,
-      onHover: (info: any) => {
-        setHoveredStation(info.object || null);
-        if (info.object) setHoveredDistrict(null);
+      getFillColor: (d: Station) => {
+        const val = aqiStandard === 'US_EPA' ? (d.aqi_us ?? d.aqi ?? 60) : (d.aqi_in ?? d.aqi ?? 60);
+        return aqiToColor(val, 240);
       },
-    });
-
-    // Layer 4: Labels — stacked "Deployed" / district name, plus alert CAAQMS names
-    const deployedLabelLayer = new TextLayer<Station>({
-      id: 'deployed-labels',
-      data: deployedSensors,
-      pickable: false,
-      getPosition: (d: Station) => [d.lon, d.lat],
-      getText: (d: Station) => `Deployed\n${d.districtName || d.name}`,
-      getSize: 7.5,
-      getColor: [57, 210, 192, 255],
-      getTextAnchor: 'middle' as const,
-      getAlignmentBaseline: 'bottom' as const,
-      getPixelOffset: [0, -12],
-      lineHeight: 1.15,
-      fontFamily: 'Inter, system-ui, sans-serif',
-      fontWeight: 600,
-      outlineWidth: 2,
-      outlineColor: [6, 8, 15, 220],
-      billboard: true,
-    });
-
-    const alertLabelLayer = new TextLayer<Station>({
-      id: 'station-labels',
-      data: caaqmsStations.filter((s: Station) => s.status === 'alert' && !isDeployed(s)),
-      pickable: false,
-      getPosition: (d: Station) => [d.lon, d.lat],
-      getText: (d: Station) => d.name,
-      getSize: 11,
-      getColor: [230, 237, 243, 200],
-      getTextAnchor: 'middle' as const,
-      getAlignmentBaseline: 'bottom' as const,
-      getPixelOffset: [0, -14],
-      fontFamily: 'Inter, system-ui, sans-serif',
-      fontWeight: 600,
-      outlineWidth: 2,
-      outlineColor: [6, 8, 15, 200],
-      billboard: true,
+      getLineColor: [255, 255, 255, 220] as [number, number, number, number],
+      getRadius: 160,
+      updateTriggers: {
+        getFillColor: [aqiStandard],
+      },
+      onHover: (info: any) => setHoveredStation(info.object || null),
     });
 
     // Layer 5: Alert pulse ring
@@ -689,8 +579,8 @@ export default function CityMap({
           radiusMaxPixels: 15,
           lineWidthMinPixels: 3,
           getPosition: (d: any) => [d.lon, d.lat],
-          getFillColor: [59, 130, 246, 240], // Bright Blue (#3B82F6)
-          getLineColor: [255, 255, 255, 255], // White border
+          getFillColor: [59, 130, 246, 240],
+          getLineColor: [255, 255, 255, 255],
           getRadius: 400,
         }),
         new TextLayer({
@@ -698,7 +588,7 @@ export default function CityMap({
           data: [monitoringLocation],
           pickable: false,
           getPosition: (d: any) => [d.lon, d.lat],
-          getText: (d: any) => `Deploy Sensor: ${d.name || ''}`,
+          getText: (d: any) => `📡 Deploy Sensor: ${d.name || ''}`,
           getSize: 12,
           getColor: [59, 130, 246, 255],
           getTextAnchor: 'middle' as const,
@@ -772,41 +662,6 @@ export default function CityMap({
       );
     }
 
-    // Hovered station glowing aura layers
-    const hoverLayers: any[] = [];
-    if (hoveredStation) {
-      const aqiCol = aqiToColor(hoveredStation.aqi, 255);
-      hoverLayers.push(
-        new ScatterplotLayer({
-          id: 'hovered-station-glow-outer',
-          data: [hoveredStation],
-          pickable: false,
-          opacity: 0.5,
-          stroked: false,
-          filled: true,
-          radiusMinPixels: 18,
-          radiusMaxPixels: 42,
-          getPosition: (d: Station) => [d.lon, d.lat],
-          getFillColor: [aqiCol[0], aqiCol[1], aqiCol[2], 130],
-          getRadius: 800,
-        }),
-        new ScatterplotLayer({
-          id: 'hovered-station-ring',
-          data: [hoveredStation],
-          pickable: false,
-          opacity: 0.95,
-          stroked: true,
-          filled: false,
-          radiusMinPixels: 10,
-          radiusMaxPixels: 22,
-          lineWidthMinPixels: 3,
-          getPosition: (d: Station) => [d.lon, d.lat],
-          getLineColor: [255, 255, 255, 240],
-          getRadius: 450,
-        })
-      );
-    }
-
     // Wind animation layers
     const windLayers: any[] = [];
     if (showWind) {
@@ -815,33 +670,21 @@ export default function CityMap({
     }
 
     if (dynamicDistricts.length > 0) {
-      return [satelliteLayer, districtLayer, stationGlowLayer, stationDotLayer, deployedGlowLayer, deployedDotLayer, deployedLabelLayer, alertLabelLayer, ...alertLayers, ...monitoringLayers, ...recommendedLayers, ...hoverLayers, ...windLayers];
+      return [satelliteLayer, districtLayer, stationGlowLayer, stationDotLayer, ...alertLayers, ...monitoringLayers, ...windLayers];
     } else {
-      return [satelliteLayer, columnLayer, stationGlowLayer, stationDotLayer, deployedGlowLayer, deployedDotLayer, deployedLabelLayer, alertLabelLayer, ...alertLayers, ...monitoringLayers, ...recommendedLayers, ...hoverLayers, ...windLayers];
+      return [satelliteLayer, columnLayer, stationGlowLayer, stationDotLayer, ...alertLayers, ...monitoringLayers, ...windLayers];
     }
-  }, [alertStation, stations, deployedSensors, recommendedPins, hexGrid, city, hoveredDistrict, hoveredStation, dynamicDistricts, showSatellite, monitoringLocation, selectedDistrictId, showWind, windArrowLayers, windParticleLayer]);
+  }, [alertStation, stations, hexGrid, city, hoveredDistrict, dynamicDistricts, showSatellite, monitoringLocation, selectedDistrictId, showWind, windArrowLayers, windParticleLayer, aqiStandard]);
 
   const onViewStateChange = useCallback(({ viewState: vs }: any) => {
     setViewState(vs);
   }, []);
 
-  // Build tooltip data — prefer a hovered deployed/CAAQMS pin over the district fill
-  const tooltipData = hoveredRecommended
-    ? {
-        name: `Recommend · ${hoveredRecommended.name}`,
-        aqi: hoveredRecommended.aqi,
-        pm25: hoveredRecommended.pm25,
-        pm10: hoveredRecommended.pm10,
-        no2: hoveredRecommended.no2,
-        so2: hoveredRecommended.so2,
-        co: hoveredRecommended.co,
-        o3: hoveredRecommended.o3,
-        type: `Recommended site · ${hoveredRecommended.dominantSource} · Score ${hoveredRecommended.priorityScore}`,
-      }
-    : hoveredStation
+  // Build tooltip data — prefer a hovered physical CAAQMS pin over the district fill
+  const tooltipData = hoveredStation
     ? {
           name: hoveredStation.name,
-          aqi: hoveredStation.aqi,
+          aqi: Math.round(aqiStandard === 'US_EPA' ? (hoveredStation.aqi_us ?? hoveredStation.aqi ?? 0) : (hoveredStation.aqi_in ?? hoveredStation.aqi ?? 0)),
           pm25: hoveredStation.pm25,
           pm10: hoveredStation.pm10,
           no2: hoveredStation.no2,
@@ -858,7 +701,9 @@ export default function CityMap({
     : hoveredDistrict
     ? {
         name: hoveredDistrict.name,
-        aqi: hoveredDistrict.aqi,
+        aqi: hoveredDistrict.aqi != null ? Math.round(aqiStandard === 'US_EPA' ? (hoveredDistrict.aqi_us ?? hoveredDistrict.aqi) : (hoveredDistrict.aqi_in ?? hoveredDistrict.aqi)) : null,
+        aqi_in: hoveredDistrict.aqi_in,
+        aqi_us: hoveredDistrict.aqi_us,
         pm25: hoveredDistrict.pm25,
         pm10: hoveredDistrict.pm10,
         no2: hoveredDistrict.no2,
@@ -870,11 +715,20 @@ export default function CityMap({
         pressure: hoveredDistrict.pressure,
         wind_speed: hoveredDistrict.wind_speed,
         pblh: hoveredDistrict.pblh,
-        type: 'District',
+        type: 'Municipal Ward',
+        monitored: hoveredDistrict.monitored,
+        station_name: hoveredDistrict.station_name,
+        agency: hoveredDistrict.agency,
+        reference_station: hoveredDistrict.reference_station,
+        reference_distance_km: hoveredDistrict.reference_distance_km,
+        reference_aqi_in: hoveredDistrict.reference_aqi_in,
+        reference_aqi_us: hoveredDistrict.reference_aqi_us,
+        primary_pollutant: hoveredDistrict.primary_pollutant,
       }
       : null;
 
-  const tooltipCat = tooltipData ? getAqiCategory(tooltipData.aqi) : null;
+  const tooltipCat = (tooltipData && typeof tooltipData.aqi === 'number') ? getAqiCategory(tooltipData.aqi, aqiStandard) : null;
+
 
   React.useEffect(() => {
     if (onHover) {
@@ -897,8 +751,52 @@ export default function CityMap({
         />
       </DeckGL>
 
-      {/* Overlay Stats & Satellite Toggle */}
-      <div className="map-overlay-stats">
+      {/* Overlay Stats & Controls */}
+      <div className="map-overlay-stats" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        {/* Standard Toggle: India NAQI vs US EPA */}
+        <div style={{
+          display: 'flex',
+          background: 'rgba(15, 23, 42, 0.85)',
+          backdropFilter: 'blur(8px)',
+          borderRadius: 6,
+          border: '1px solid var(--border-primary)',
+          overflow: 'hidden',
+          padding: 2,
+        }}>
+          <button
+            onClick={() => setAqiStandard('IN_NAQI')}
+            style={{
+              padding: '4px 9px',
+              fontSize: '0.65rem',
+              fontWeight: 700,
+              border: 'none',
+              borderRadius: 4,
+              cursor: 'pointer',
+              background: aqiStandard === 'IN_NAQI' ? '#3b82f6' : 'transparent',
+              color: aqiStandard === 'IN_NAQI' ? '#ffffff' : 'var(--text-muted)',
+              transition: 'all 0.2s',
+            }}
+          >
+            🇮🇳 India NAQI
+          </button>
+          <button
+            onClick={() => setAqiStandard('US_EPA')}
+            style={{
+              padding: '4px 9px',
+              fontSize: '0.65rem',
+              fontWeight: 700,
+              border: 'none',
+              borderRadius: 4,
+              cursor: 'pointer',
+              background: aqiStandard === 'US_EPA' ? '#3b82f6' : 'transparent',
+              color: aqiStandard === 'US_EPA' ? '#ffffff' : 'var(--text-muted)',
+              transition: 'all 0.2s',
+            }}
+          >
+            🇺🇸 US EPA
+          </button>
+        </div>
+
         {CITY_SATELLITE_BOUNDS[city] && (
           <button 
             className={`map-stat-chip ${showSatellite ? 'active' : ''}`}
@@ -921,13 +819,13 @@ export default function CityMap({
             background: showWind ? 'rgba(200,220,255,0.1)' : 'var(--bg-secondary)'
           }}
         >
-          Wind Flow: <span className="chip-value" style={{ color: showWind ? 'rgba(200,220,255,0.95)' : 'inherit' }}>{showWind ? 'ON' : 'OFF'}</span>
+          🌬️ Wind Flow: <span className="chip-value" style={{ color: showWind ? 'rgba(200,220,255,0.95)' : 'inherit' }}>{showWind ? 'ON' : 'OFF'}</span>
         </button>
         <div className="map-stat-chip">
-          Stations Online: <span className="chip-value">{stations.filter((s: Station) => s.status !== 'offline').length + deployedSensors.length}</span>
+          Stations Online: <span className="chip-value">{stations.filter((s: Station) => s.monitored !== false && s.status !== 'offline').length}</span>
         </div>
         <div className="map-stat-chip">
-          Alerts Active: <span className="chip-value" style={{ color: 'var(--accent-red)' }}>{stations.filter((s: Station) => s.status === 'alert').length}</span>
+          Alerts Active: <span className="chip-value" style={{ color: 'var(--accent-red)' }}>{stations.filter((s: Station) => s.monitored !== false && s.status === 'alert').length}</span>
         </div>
         <div className="map-stat-chip">
           {dynamicDistricts.length > 0 ? (
@@ -938,7 +836,7 @@ export default function CityMap({
         </div>
       </div>
 
-      {/* CPCB Standard AQI Color Legend */}
+      {/* Dual Standard AQI Color Legend */}
       <div style={{
         position: 'absolute', bottom: 12, left: 12, zIndex: 5,
         background: 'var(--bg-surface)', backdropFilter: 'blur(12px)',
@@ -946,28 +844,53 @@ export default function CityMap({
         padding: '9px 14px', minWidth: 260
       }}>
         <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
-          CPCB Indian NAQI Standard Scale
+          {aqiStandard === 'IN_NAQI' ? '🇮🇳 CPCB India NAQI Standard Scale' : '🇺🇸 US EPA Standard Scale'}
         </div>
-        <div style={{ display: 'flex', height: 8, borderRadius: 3, overflow: 'hidden', position: 'relative' }}>
-          <div style={{ width: '10%', background: '#22c55e', borderRight: '1px solid rgba(0,0,0,0.3)' }} title="Good (0-50)" />
-          <div style={{ width: '10%', background: '#84cc16', borderRight: '1px solid rgba(0,0,0,0.3)' }} title="Satisfactory (51-100)" />
-          <div style={{ width: '20%', background: '#f59e0b', borderRight: '1px solid rgba(0,0,0,0.3)' }} title="Moderate (101-200)" />
-          <div style={{ width: '20%', background: '#f97316', borderRight: '1px solid rgba(0,0,0,0.3)' }} title="Poor (201-300)" />
-          <div style={{ width: '20%', background: '#ef4444', borderRight: '1px solid rgba(0,0,0,0.3)' }} title="Very Poor (301-400)" />
-          <div style={{ width: '20%', background: '#dc2626' }} title="Severe (401-500+)" />
-        </div>
-        <div style={{ position: 'relative', height: 16, marginTop: 4, fontSize: '0.55rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-          <span style={{ position: 'absolute', left: '0%' }}>0</span>
-          <span style={{ position: 'absolute', left: '10%', transform: 'translateX(-50%)' }}>50</span>
-          <span style={{ position: 'absolute', left: '20%', transform: 'translateX(-50%)' }}>100</span>
-          <span style={{ position: 'absolute', left: '40%', transform: 'translateX(-50%)' }}>200</span>
-          <span style={{ position: 'absolute', left: '60%', transform: 'translateX(-50%)' }}>300</span>
-          <span style={{ position: 'absolute', left: '80%', transform: 'translateX(-50%)' }}>400</span>
-          <span style={{ position: 'absolute', right: '0%', textAlign: 'right' }}>500+</span>
-        </div>
+        {aqiStandard === 'IN_NAQI' ? (
+          <>
+            <div style={{ display: 'flex', height: 8, borderRadius: 3, overflow: 'hidden', position: 'relative' }}>
+              <div style={{ width: '10%', background: '#22c55e' }} title="Good (0-50)" />
+              <div style={{ width: '10%', background: '#84cc16' }} title="Satisfactory (51-100)" />
+              <div style={{ width: '20%', background: '#f59e0b' }} title="Moderate (101-200)" />
+              <div style={{ width: '20%', background: '#f97316' }} title="Poor (201-300)" />
+              <div style={{ width: '20%', background: '#ef4444' }} title="Very Poor (301-400)" />
+              <div style={{ width: '20%', background: '#dc2626' }} title="Severe (401-500+)" />
+            </div>
+            <div style={{ position: 'relative', height: 16, marginTop: 4, fontSize: '0.55rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+              <span style={{ position: 'absolute', left: '0%' }}>0</span>
+              <span style={{ position: 'absolute', left: '10%', transform: 'translateX(-50%)' }}>50</span>
+              <span style={{ position: 'absolute', left: '20%', transform: 'translateX(-50%)' }}>100</span>
+              <span style={{ position: 'absolute', left: '40%', transform: 'translateX(-50%)' }}>200</span>
+              <span style={{ position: 'absolute', left: '60%', transform: 'translateX(-50%)' }}>300</span>
+              <span style={{ position: 'absolute', left: '80%', transform: 'translateX(-50%)' }}>400</span>
+              <span style={{ position: 'absolute', right: '0%', textAlign: 'right' }}>500+</span>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ display: 'flex', height: 8, borderRadius: 3, overflow: 'hidden', position: 'relative' }}>
+              <div style={{ width: '10%', background: '#22c55e' }} title="Good (0-50)" />
+              <div style={{ width: '10%', background: '#84cc16' }} title="Moderate (51-100)" />
+              <div style={{ width: '10%', background: '#f59e0b' }} title="USG (101-150)" />
+              <div style={{ width: '10%', background: '#f97316' }} title="Unhealthy (151-200)" />
+              <div style={{ width: '20%', background: '#ef4444' }} title="Very Unhealthy (201-300)" />
+              <div style={{ width: '40%', background: '#7e22ce' }} title="Hazardous (301-500+)" />
+            </div>
+            <div style={{ position: 'relative', height: 16, marginTop: 4, fontSize: '0.55rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+              <span style={{ position: 'absolute', left: '0%' }}>0</span>
+              <span style={{ position: 'absolute', left: '10%', transform: 'translateX(-50%)' }}>50</span>
+              <span style={{ position: 'absolute', left: '20%', transform: 'translateX(-50%)' }}>100</span>
+              <span style={{ position: 'absolute', left: '30%', transform: 'translateX(-50%)' }}>150</span>
+              <span style={{ position: 'absolute', left: '40%', transform: 'translateX(-50%)' }}>200</span>
+              <span style={{ position: 'absolute', left: '60%', transform: 'translateX(-50%)' }}>300</span>
+              <span style={{ position: 'absolute', right: '0%', textAlign: 'right' }}>500+</span>
+            </div>
+          </>
+        )}
       </div>
 
-      {/* Wind Compass Legend — shown when wind layer is active */}
+
+      {/* Wind Compass Legend */}
       {showWind && windSummary.speed > 0 && (
         <div style={{
           position: 'absolute', bottom: 80, left: 12, zIndex: 5,
@@ -979,7 +902,6 @@ export default function CityMap({
             Wind Direction
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {/* Compass circle with rotated arrow */}
             <div style={{
               width: 40, height: 40, borderRadius: '50%',
               border: '1px solid rgba(200,220,255,0.25)',
@@ -987,19 +909,14 @@ export default function CityMap({
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               position: 'relative',
             }}>
-              {/* N marker */}
               <span style={{ position: 'absolute', top: 1, fontSize: '0.45rem', color: 'rgba(200,220,255,0.5)', fontWeight: 700 }}>N</span>
-              {/* Arrow — points in direction wind is going TO (windDir + 180) */}
               <div style={{
                 transform: `rotate(${(windSummary.direction + 180) % 360}deg)`,
                 transition: 'transform 1s ease',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
+                fontSize: '1.1rem',
+                lineHeight: 1,
                 color: 'rgba(200,220,255,0.9)',
-              }}>
-                <ArrowUp size={16} />
-              </div>
+              }}>↑</div>
             </div>
             <div>
               <div style={{ fontSize: '0.85rem', fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'rgba(200,220,255,0.9)' }}>
@@ -1013,95 +930,105 @@ export default function CityMap({
         </div>
       )}
 
-      {/* Map Legend for Station Dots */}
-      <div style={{
-        position: 'absolute',
-        right: 16,
-        bottom: 16,
-        zIndex: 10,
-        display: 'flex',
-        alignItems: 'center',
-        gap: '14px',
-        padding: '8px 16px',
-        background: 'rgba(13, 17, 23, 0.9)',
-        backdropFilter: 'blur(12px)',
-        border: '1px solid rgba(255, 255, 255, 0.12)',
-        borderRadius: '24px',
-        fontSize: '0.72rem',
-        color: 'var(--text-secondary)',
-        boxShadow: '0 8px 24px rgba(0,0,0,0.5)'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444' }} />
-          <span>Traffic (NO₂)</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#a855f7' }} />
-          <span>Industry (SO₂)</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#eab308' }} />
-          <span>Dust (PM₁₀)</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent-cyan)', boxShadow: '0 0 6px var(--accent-cyan)' }} />
-          <span style={{ color: 'var(--accent-cyan)', fontWeight: 600 }}>IoT Node</span>
-        </div>
-        {recommendedPins.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#fbbf24', boxShadow: '0 0 6px #fbbf24' }} />
-            <span style={{ color: '#fbbf24', fontWeight: 600 }}>Recommended Site</span>
-          </div>
-        )}
+      {/* Map Legend: Simplified and Authentic */}
+      <div className="map-legend" style={{ left: 'auto', right: 12, bottom: 12, gap: '12px' }}>
+        <div className="legend-item"><div className="legend-dot" style={{ background: '#3b82f6' }} />Monitored Ward</div>
+        <div className="legend-item"><div className="legend-dot" style={{ background: '#64748b' }} />Unmonitored Ward (No Center)</div>
+        <div className="legend-item"><div className="legend-dot" style={{ background: '#22c55e', border: '1.5px solid #ffffff', boxShadow: '0 0 6px rgba(34, 197, 94, 0.6)' }} />Active CAAQMS Center (Exact Coords)</div>
       </div>
 
       {/* Hover tooltip — detailed district/station info */}
-      {tooltipData && tooltipCat && (
+      {tooltipData && (
         <div style={{
           position: 'absolute', bottom: 80, right: 12,
           background: 'var(--bg-surface)', backdropFilter: 'blur(14px)',
           border: '1px solid var(--border-primary)', borderRadius: 'var(--radius-md)',
           padding: '12px 16px', zIndex: 10, minWidth: 230, maxWidth: 290,
+          boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
         }}>
           <div style={{ fontWeight: 700, fontSize: '0.85rem', marginBottom: 2 }}>{tooltipData.name}</div>
-          <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{tooltipData.type}</div>
+          <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{tooltipData.type}</div>
 
-          {/* AQI banner */}
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10,
-            padding: '6px 10px', borderRadius: 'var(--radius-sm)',
-            background: tooltipCat.bg, border: `1px solid ${tooltipCat.color}30`,
-          }}>
-            <span style={{ fontSize: '1.3rem', fontWeight: 800, fontFamily: 'var(--font-mono)', color: tooltipCat.color }}>{tooltipData.aqi}</span>
-            <div>
-              <div style={{ fontSize: '0.7rem', fontWeight: 600, color: tooltipCat.color }}>{tooltipCat.label}</div>
-              <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)' }}>Air Quality Index (NAQI)</div>
-            </div>
-          </div>
-
-          {/* Pollutant grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4 }}>
-            {[
-              { label: 'PM2.5', value: tooltipData.pm25, unit: 'µg/m³' },
-              { label: 'PM10', value: tooltipData.pm10, unit: 'µg/m³' },
-              { label: 'NO₂', value: tooltipData.no2, unit: 'ppb' },
-              { label: 'SO₂', value: tooltipData.so2, unit: 'ppb' },
-              { label: 'CO', value: tooltipData.co, unit: 'mg/m³' },
-              { label: 'O₃', value: tooltipData.o3, unit: 'ppb' },
-            ].map((p) => (
-              <div key={p.label} style={{
-                padding: '4px 6px', background: 'var(--bg-elevated)', borderRadius: 4,
-                textAlign: 'center',
-              }}>
-                <div style={{ fontSize: '0.78rem', fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
-                  {typeof p.value === 'number' ? (p.value < 10 ? p.value.toFixed(1) : Math.round(p.value)) : p.value || '--'}
-                </div>
-                <div style={{ fontSize: '0.5rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                  {p.label} <span style={{ fontSize: '0.42rem', opacity: 0.75 }}>({p.unit})</span>
-                </div>
+          {/* Active CAAQMS vs Unmonitored Ward Representation */}
+          {tooltipData.type === 'Municipal Ward' && !tooltipData.monitored ? (
+            <div style={{
+              background: 'rgba(100, 116, 139, 0.12)',
+              border: '1px solid rgba(148, 163, 184, 0.3)',
+              borderRadius: 6,
+              padding: '10px 12px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#94a3b8', fontSize: '0.72rem', fontWeight: 700, marginBottom: 6 }}>
+                <span>⚪ No Active CAAQMS Center</span>
               </div>
-            ))}
-          </div>
+              <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', lineHeight: 1.4, marginBottom: 4 }}>
+                Nearest Active Center: <strong style={{ color: 'var(--text-primary)' }}>{tooltipData.reference_station || 'Regional Station'}</strong>
+              </div>
+              <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginBottom: 4 }}>
+                Distance: <strong style={{ color: 'var(--text-primary)' }}>{tooltipData.reference_distance_km ?? 5.0} km away</strong>
+              </div>
+              <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>
+                Nearest Center AQI: <strong style={{ color: '#38bdf8' }}>{aqiStandard === 'IN_NAQI' ? (tooltipData.reference_aqi_in ?? '--') : (tooltipData.reference_aqi_us ?? '--')}</strong> ({aqiStandard === 'IN_NAQI' ? 'India NAQI' : 'US EPA'})
+              </div>
+            </div>
+          ) : (
+            <>
+              {tooltipData.type === 'Municipal Ward' && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.35)',
+                  padding: '4px 8px', borderRadius: 4, marginBottom: 8, fontSize: '0.62rem', color: '#4ade80', fontWeight: 600
+                }}>
+                  <span>✅ Active CAAQMS: {tooltipData.station_name || tooltipData.name} ({tooltipData.agency || 'CPCB'})</span>
+                </div>
+              )}
+
+              {/* AQI banner */}
+              {tooltipCat && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10,
+                  padding: '6px 10px', borderRadius: 'var(--radius-sm)',
+                  background: tooltipCat.bg, border: `1px solid ${tooltipCat.color}30`,
+                }}>
+                  <span style={{ fontSize: '1.3rem', fontWeight: 800, fontFamily: 'var(--font-mono)', color: tooltipCat.color }}>{tooltipData.aqi}</span>
+                  <div>
+                    <div style={{ fontSize: '0.7rem', fontWeight: 600, color: tooltipCat.color }}>{tooltipCat.label}</div>
+                    <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)' }}>
+                      {aqiStandard === 'IN_NAQI' ? 'India NAQI (CPCB 2014)' : 'US EPA Standard (40 CFR)'}
+                    </div>
+                    {tooltipData.primary_pollutant && (
+                      <div style={{ fontSize: '0.55rem', color: 'var(--accent-cyan)', marginTop: 2 }}>
+                        Driver: <strong>{tooltipData.primary_pollutant}</strong>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Pollutant grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 4 }}>
+                {[
+                  { label: 'PM2.5', value: tooltipData.pm25, unit: 'µg/m³' },
+                  { label: 'PM10', value: tooltipData.pm10, unit: 'µg/m³' },
+                  { label: 'NO₂', value: tooltipData.no2, unit: 'ppb' },
+                  { label: 'SO₂', value: tooltipData.so2, unit: 'ppb' },
+                  { label: 'CO', value: tooltipData.co, unit: 'mg/m³' },
+                  { label: 'O₃', value: tooltipData.o3, unit: 'ppb' },
+                ].map((p) => (
+                  <div key={p.label} style={{
+                    padding: '4px 6px', background: 'var(--bg-elevated)', borderRadius: 4,
+                    textAlign: 'center',
+                  }}>
+                    <div style={{ fontSize: '0.78rem', fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+                      {typeof p.value === 'number' ? (p.value < 10 ? p.value.toFixed(1) : Math.round(p.value)) : p.value || '--'}
+                    </div>
+                    <div style={{ fontSize: '0.5rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                      {p.label} <span style={{ fontSize: '0.42rem', opacity: 0.75 }}>({p.unit})</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

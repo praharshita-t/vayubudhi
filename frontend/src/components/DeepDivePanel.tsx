@@ -6,9 +6,11 @@ import {
   LineChart, Line
 } from 'recharts';
 import ReportModal from './ReportModal';
-import { FileText, X } from 'lucide-react';
+import { useCityContext } from '@/context/CityContext';
+import { getAqiCategory } from '@/utils/aqi';
 
 export default function DeepDivePanel({ district, city, onReset, recommendedDeployments = [] }: { district: any, city: string, onReset: () => void, recommendedDeployments?: any[] }) {
+  const { aqiStandard } = useCityContext();
   const [attribution, setAttribution] = useState<any>(null);
   const [fingerprint, setFingerprint] = useState<any>(null);
   const [shap, setShap] = useState<any>(null);
@@ -127,6 +129,11 @@ export default function DeepDivePanel({ district, city, onReset, recommendedDepl
           <div style={{ fontSize: '0.72rem', color: 'var(--accent-blue)', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 700 }}>
             Hyperlocal ML Intelligence
           </div>
+          {!district.monitored && (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 4, padding: '2px 8px', borderRadius: 4, background: 'rgba(100, 116, 139, 0.2)', border: '1px solid rgba(148, 163, 184, 0.3)', color: '#94a3b8', fontSize: '0.65rem', fontWeight: 600 }}>
+              <span>⚪ No CAAQMS Center — Deployment Candidate</span>
+            </div>
+          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <button 
@@ -141,13 +148,12 @@ export default function DeepDivePanel({ district, city, onReset, recommendedDepl
               fontSize: '0.75rem',
               fontWeight: 700,
               display: 'flex',
-              alignItems: 'center', 
-              gap: 6, 
+              alignItems: 'center',
+              gap: 4,
               transition: 'var(--transition-fast)' 
             }}
           >
-            <FileText size={13} />
-            <span>AI Report</span>
+            📄 AI Report
           </button>
           <button 
             onClick={onReset} 
@@ -160,14 +166,10 @@ export default function DeepDivePanel({ district, city, onReset, recommendedDepl
               cursor: 'pointer', 
               fontSize: '0.75rem',
               fontWeight: 600,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 5,
               transition: 'var(--transition-fast)' 
             }}
           >
-            <X size={13} />
-            <span>Close</span>
+            ✕ Close
           </button>
         </div>
       </div>
@@ -225,10 +227,37 @@ export default function DeepDivePanel({ district, city, onReset, recommendedDepl
       {/* Section 1: Headline Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         <div className="panel" style={{ padding: '14px', background: 'var(--bg-surface)' }}>
-          <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginBottom: 4, textTransform: 'uppercase', fontWeight: 600 }}>CURRENT AQI</div>
-          <div style={{ fontSize: '2.2rem', fontWeight: 800, color: 'var(--accent-red)', lineHeight: 1.1 }}>
-            {district.aqi || Math.round(district.pm25 * 1.3)}
+          <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginBottom: 4, textTransform: 'uppercase', fontWeight: 600 }}>
+            {district.monitored ? `CURRENT AQI (${aqiStandard === 'IN_NAQI' ? 'NAQI' : 'US EPA'})` : 'CAAQMS STATUS'}
           </div>
+          {district.monitored ? (
+            (() => {
+              const val = Math.round(aqiStandard === 'US_EPA' ? (district.aqi_us ?? district.aqi ?? 0) : (district.aqi_in ?? district.aqi ?? 0));
+              const cat = getAqiCategory(val, aqiStandard);
+              return (
+                <div>
+                  <div style={{ fontSize: '2.2rem', fontWeight: 800, color: cat.color, lineHeight: 1.1 }}>
+                    {val}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 700, color: cat.color, marginTop: 4 }}>
+                    {cat.label}
+                  </div>
+                </div>
+              );
+            })()
+          ) : (
+            <div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#94a3b8', lineHeight: 1.2 }}>
+                ⚪ No Center
+              </div>
+              <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: 6, lineHeight: 1.3 }}>
+                Nearest: <strong style={{ color: 'var(--text-primary)' }}>{district.reference_station || 'Regional Station'}</strong> ({district.reference_distance_km ?? 5.0} km)
+              </div>
+              <div style={{ fontSize: '0.65rem', color: '#38bdf8', marginTop: 3 }}>
+                Ref AQI: <strong>{aqiStandard === 'IN_NAQI' ? (district.reference_aqi_in ?? '--') : (district.reference_aqi_us ?? '--')}</strong> ({aqiStandard === 'IN_NAQI' ? 'India NAQI' : 'US EPA'})
+              </div>
+            </div>
+          )}
         </div>
         <div className="panel" style={{ padding: '14px', background: 'var(--bg-surface)' }}>
           <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginBottom: 4, textTransform: 'uppercase', fontWeight: 600 }}>METEOROLOGY</div>

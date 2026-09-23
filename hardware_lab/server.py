@@ -6,7 +6,7 @@ import time
 import pandas as pd
 import numpy as np
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -282,6 +282,10 @@ def api_packet(packet_index: int):
         return data[packet_index]
     return JSONResponse(status_code=404, content={'error': 'Packet not found'})
 
+@app.get("/chart.min.js")
+def get_chart_js():
+    return FileResponse(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'chart.min.js'))
+
 @app.get("/", response_class=HTMLResponse)
 def index():
     html_content = """
@@ -292,7 +296,7 @@ def index():
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>VayuBudhi — Hardware AI Verification Lab</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="/chart.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
@@ -480,8 +484,8 @@ def index():
           </div>
           <span class="text-xs text-slate-400 mono">Base: <span id="shapBaseVal" class="text-slate-200 font-bold">35.0</span></span>
         </div>
-        <div class="h-44 w-full">
-          <canvas id="shapChart"></canvas>
+        <div class="h-44 w-full" style="height: 180px; width: 100%; position: relative;">
+          <canvas id="shapChart" style="height: 100%; width: 100%;"></canvas>
         </div>
       </div>
 
@@ -499,8 +503,8 @@ def index():
           </div>
           <span class="text-xs px-2 py-1 rounded bg-slate-800 text-slate-300 font-medium">142 Stream Points</span>
         </div>
-        <div class="h-64 w-full">
-          <canvas id="telemetryChart"></canvas>
+        <div class="h-64 w-full" style="height: 250px; width: 100%; position: relative;">
+          <canvas id="telemetryChart" style="height: 100%; width: 100%;"></canvas>
         </div>
       </div>
 
@@ -535,7 +539,7 @@ def index():
       <!-- SURGE EVENT VALIDATION TABLE -->
       <div class="glass-card p-5 flex flex-col gap-3">
         <h2 class="text-base font-bold text-slate-200">Anomaly & Surge Event Diagnostics</h2>
-        <div class="overflow-x-auto max-h-48">
+        <div class="overflow-x-auto max-h-48" style="max-height: 220px; overflow-y: auto;">
           <table class="w-full text-left text-xs">
             <thead class="bg-slate-800/80 text-slate-300 uppercase text-[10px] sticky top-0">
               <tr>
@@ -836,12 +840,18 @@ def index():
       modal.classList.remove('hidden');
     });
 
-    document.getElementById('modalClose').addEventListener('click', () => {
-      document.getElementById('reportModal').classList.add('hidden');
-    });
-
-    document.getElementById('modalPrint').addEventListener('click', () => {
-      window.print();
+    document.addEventListener('DOMContentLoaded', () => {
+      const modalClose = document.getElementById('modalClose');
+      if (modalClose) {
+        modalClose.addEventListener('click', () => {
+          const m = document.getElementById('reportModal');
+          if (m) m.classList.add('hidden');
+        });
+      }
+      const modalPrint = document.getElementById('modalPrint');
+      if (modalPrint) {
+        modalPrint.addEventListener('click', () => window.print());
+      }
     });
 
     // Start

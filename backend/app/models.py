@@ -123,3 +123,23 @@ class ROIResult(Base):
     compliance_cost = Column(Float, nullable=False)
     roi = Column(Float, nullable=False)
     calculated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class User(Base):
+    """
+    Enterprise user model supporting 4-Tier Role-Based Access Control (RBAC):
+    - super_admin: Full platform control, fleet management, telemetry ingestion overrides.
+    - city_officer: Municipal dispatch approval, regulatory threshold enforcement.
+    - field_inspector: Patrol routing, ground photo evidence upload, inspection logging.
+    - public_viewer: Read-only ambient air quality exploration.
+    """
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    hashed_password = Column(String(255), nullable=False)
+    full_name = Column(String(255), nullable=False)
+    role = Column(String(50), nullable=False, default="public_viewer")
+    department = Column(String(100), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)

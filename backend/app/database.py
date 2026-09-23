@@ -1,16 +1,28 @@
+"""
+Database configuration and session management for VayuBudhi.
+Supports dual-mode execution:
+1. Enterprise Cloud TimescaleDB / PostgreSQL with connection pooling (pool_size=20, max_overflow=40).
+2. Local Development SQLite with Write-Ahead Logging (WAL) and non-blocking concurrency.
+Provides both Synchronous and Asynchronous (SQLAlchemy 2.0 AsyncSession) interfaces.
+"""
 import os
-from sqlalchemy import create_engine, event
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from typing import AsyncGenerator, Generator
+from sqlalchemy import create_engine, event, text
+from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
+# Base database URL from environment
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./vayubudhi.db")
 
-# Normalize legacy postgres:// to postgresql:// (common in cloud providers like Heroku/Render/AWS)
+# Normalize legacy postgres:// to postgresql://
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 is_sqlite = DATABASE_URL.startswith("sqlite")
 
+# ==========================================================
+# 1. Synchronous Engine & Session Factory
+# ==========================================================
 if is_sqlite:
     # High-concurrency SQLite engine with multi-threading support
     engine = create_engine(
@@ -26,25 +38,66 @@ if is_sqlite:
         cursor.execute("PRAGMA synchronous=NORMAL")
         cursor.close()
 else:
-    # Production-grade PostgreSQL / TimescaleDB engine with connection pooling
+    # Enterprise-grade PostgreSQL / TimescaleDB engine with connection pooling
     engine = create_engine(
         DATABASE_URL,
-        pool_size=10,
-        max_overflow=20,
+        pool_size=20,
+        max_overflow=40,
+        pool_timeout=30,
         pool_pre_ping=True,
-        pool_recycle=300
+        pool_recycle=1800
     )
 
-# Session factory for database sessions
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# Declarative base class for models
 Base = declarative_base()
 
-def get_db():
+
+# ==========================================================
+# 2. Asynchronous Engine & Session Factory (SQLAlchemy 2.0)
+# ==========================================================
+if is_sqlite:
+    if DATABASE_URL.startswith("sqlite:///"):
+        ASYNC_DATABASE_URL = DATABASE_URL.replace("sqlite:///", "sqlite+aiosqlite:///", 1)
+    else:
+        ASYNC_DATABASE_URL = "sqlite+aiosqlite:///./vayubudhi.db"
+
+    async_engine = create_async_engine(
+        ASYNC_DATABASE_URL,
+        connect_args={"check_same_thread": False}
+    )
+else:
+    if DATABASE_URL.startswith("postgresql://"):
+        ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+    elif DATABASE_URL.startswith("postgresql+psycopg2://"):
+        ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
+    else:
+        ASYNC_DATABASE_URL = DATABASE_URL
+
+    async_engine = create_async_engine(
+        ASYNC_DATABASE_URL,
+        pool_size=20,
+        max_overflow=40,
+        pool_timeout=30,
+        pool_pre_ping=True,
+        pool_recycle=1800
+    )
+
+AsyncSessionLocal = async_sessionmaker(
+    bind=async_engine,
+    class_=AsyncSession,
+    autocommit=False,
+    autoflush=False,
+    expire_on_commit=False
+)
+
+
+# ==========================================================
+# 3. Session Dependency Generators
+# ==========================================================
+def get_db() -> Generator:
     """
-    Dependency generator that yields database sessions.
-    Guarantees session is closed after request lifecycle.
+    Synchronous dependency yielding database sessions.
+    Used across standard FastAPI routes and background ingestion workers.
     """
     db = SessionLocal()
     try:
@@ -52,3 +105,14 @@ def get_db():
     finally:
         db.close()
 
+
+async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
+    """
+    Asynchronous dependency yielding AsyncSession.
+    Enables non-blocking high-throughput async endpoints.
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+        finally:
+            await session.close()

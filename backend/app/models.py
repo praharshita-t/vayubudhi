@@ -131,7 +131,10 @@ class User(Base):
     - super_admin: Full platform control, fleet management, telemetry ingestion overrides.
     - city_officer: Municipal dispatch approval, regulatory threshold enforcement.
     - field_inspector: Patrol routing, ground photo evidence upload, inspection logging.
-    - public_viewer: Read-only ambient air quality exploration.
+    - public_viewer: Read-only ambient air quality exploration (only role available via self-register).
+
+    Privileged staff accounts are provisioned (seeded / admin-created), never self-assigned.
+    Passwords are stored only as bcrypt hashes (hashed_password) — never plaintext.
     """
     __tablename__ = "users"
 
@@ -141,5 +144,9 @@ class User(Base):
     full_name = Column(String(255), nullable=False)
     role = Column(String(50), nullable=False, default="public_viewer")
     department = Column(String(100), nullable=True)
+    phone = Column(String(20), nullable=True)
+    assigned_city = Column(String(100), nullable=True)
     is_active = Column(Boolean, default=True)
+    last_login_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

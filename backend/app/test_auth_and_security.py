@@ -88,3 +88,98 @@ def test_redis_cache_and_rate_limiter():
     assert allowed2 is True
     allowed3, rem3, _ = check_rate_limit(ip, max_requests=2, window_seconds=60)
     assert allowed3 is False  # Limit exceeded
+
+
+def test_public_register_always_public_viewer():
+    """Self-registration must never elevate role, even if a client tries to send one."""
+    email = "citizen_pytest_001@example.com"
+    # Attempt to smuggle a privileged role in the body (API schema should ignore/reject it)
+    resp = client.post("/api/auth/register", json={
+        "email": email,
+        "password": "Citizen123!",
+        "full_name": "Pytest Citizen",
+        "phone": "+919999000001",
+        "role": "super_admin",  # must be ignored by schema / forced public_viewer
+    })
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["role"] == "public_viewer"
+    assert data["user"]["role"] == "public_viewer"
+    assert data["user"]["email"] == email
+    assert data["user"]["phone"] == "+919999000001"
+    assert "access_token" in data
+
+
+def test_register_rejects_duplicate_email():
+    email = "dup_pytest@example.com"
+    payload = {
+        "email": email,
+        "password": "Citizen123!",
+        "full_name": "Dup Citizen",
+    }
+    first = client.post("/api/auth/register", json=payload)
+    assert first.status_code == 201
+    second = client.post("/api/auth/register", json=payload)
+    assert second.status_code == 400
+
+
+def test_register_rejects_short_password():
+    resp = client.post("/api/auth/register", json={
+        "email": "shortpwd@example.com",
+        "password": "ab",
+        "full_name": "Short Pwd",
+    })
+    assert resp.status_code == 422
+
+
+def test_staff_seed_login_and_last_login():
+    login_resp = client.post("/api/auth/login", json={
+        "email": "admin@vayubudhi.gov.in",
+        "password": "Admin123!",
+    })
+    assert login_resp.status_code == 200
+    body = login_resp.json()
+    assert body["role"] == "super_admin"
+    assert body["user"]["last_login_at"] is not None
+
+
+def test_admin_create_user_requires_super_admin():
+    # Public / officer must not provision staff
+    officer_login = client.post("/api/auth/login", json={
+        "email": "officer@ghmc.gov.in",
+        "password": "Officer123!",
+    })
+    officer_token = officer_login.json()["access_token"]
+    denied = client.post(
+        "/api/auth/admin/create-user",
+        headers={"Authorization": f"Bearer {officer_token}"},
+        json={
+            "email": "new_officer_denied@ghmc.gov.in",
+            "password": "Officer123!",
+            "full_name": "Should Fail",
+            "role": "city_officer",
+            "assigned_city": "Hyderabad",
+        },
+    )
+    assert denied.status_code == 403
+
+    admin_login = client.post("/api/auth/login", json={
+        "email": "admin@vayubudhi.gov.in",
+        "password": "Admin123!",
+    })
+    admin_token = admin_login.json()["access_token"]
+    created = client.post(
+        "/api/auth/admin/create-user",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={
+            "email": "new_officer_ok@ghmc.gov.in",
+            "password": "Officer123!",
+            "full_name": "New GHMC Officer",
+            "role": "city_officer",
+            "department": "GHMC Environmental Wing",
+            "assigned_city": "Hyderabad",
+        },
+    )
+    assert created.status_code == 201
+    assert created.json()["role"] == "city_officer"
+    assert created.json()["assigned_city"] == "Hyderabad"

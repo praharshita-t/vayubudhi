@@ -8,8 +8,18 @@ export interface UserProfile {
   email: string;
   full_name: string;
   role: UserRole;
-  department?: string;
+  department?: string | null;
+  phone?: string | null;
+  assigned_city?: string | null;
   is_active: boolean;
+  last_login_at?: string | null;
+}
+
+export interface RegisterPayload {
+  email: string;
+  password: string;
+  full_name: string;
+  phone?: string;
 }
 
 interface AuthContextType {
@@ -20,25 +30,19 @@ interface AuthContextType {
   isLoading: boolean;
   error: string | null;
   login: (email: string, password: string) => Promise<boolean>;
+  register: (payload: RegisterPayload) => Promise<boolean>;
   logout: () => void;
-  switchDemoRole: (role: UserRole) => Promise<void>;
   hasRole: (allowedRoles: UserRole[]) => boolean;
+  clearError: () => void;
 }
 
 const GUEST_USER: UserProfile = {
   id: 0,
-  email: 'public@vayubudhi.in',
-  full_name: 'Public Viewer',
+  email: '',
+  full_name: 'Guest',
   role: 'public_viewer',
-  department: 'Public Citizen',
+  department: null,
   is_active: true,
-};
-
-const DEMO_CREDENTIALS: Record<UserRole, { email: string; pass: string }> = {
-  super_admin: { email: 'admin@vayubudhi.gov.in', pass: 'Admin123!' },
-  city_officer: { email: 'officer@ghmc.gov.in', pass: 'Officer123!' },
-  field_inspector: { email: 'inspector@ghmc.gov.in', pass: 'Inspector123!' },
-  public_viewer: { email: 'public@vayubudhi.in', pass: 'Public123!' },
 };
 
 const AuthContext = createContext<AuthContextType>({
@@ -49,12 +53,19 @@ const AuthContext = createContext<AuthContextType>({
   isLoading: false,
   error: null,
   login: async () => false,
+  register: async () => false,
   logout: () => {},
-  switchDemoRole: async () => {},
   hasRole: () => false,
+  clearError: () => {},
 });
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+function extractError(detail: unknown, fallback: string): string {
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail) && detail[0]?.msg) return String(detail[0].msg);
+  return fallback;
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(GUEST_USER);
@@ -62,22 +73,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Restore stored session on mount
+  const persistSession = (accessToken: string, profile: UserProfile) => {
+    setToken(accessToken);
+    setUser(profile);
+    localStorage.setItem('vayubudhi_auth_token', accessToken);
+    localStorage.setItem('vayubudhi_auth_user', JSON.stringify(profile));
+  };
+
+  // Restore stored session on mount; re-validate with /auth/me when possible
   useEffect(() => {
-    try {
-      const storedToken = localStorage.getItem('vayubudhi_auth_token');
-      const storedUser = localStorage.getItem('vayubudhi_auth_user');
-      if (storedToken && storedUser) {
+    const restore = async () => {
+      try {
+        const storedToken = localStorage.getItem('vayubudhi_auth_token');
+        const storedUser = localStorage.getItem('vayubudhi_auth_user');
+        if (!storedToken || !storedUser) {
+          setUser(GUEST_USER);
+          setToken(null);
+          return;
+        }
+
         setToken(storedToken);
         setUser(JSON.parse(storedUser));
-      } else {
+
+        const meResp = await fetch(`${API_BASE}/api/auth/me`, {
+          headers: { Authorization: `Bearer ${storedToken}` },
+        });
+        if (meResp.ok) {
+          const profile = await meResp.json();
+          persistSession(storedToken, profile);
+        } else {
+          localStorage.removeItem('vayubudhi_auth_token');
+          localStorage.removeItem('vayubudhi_auth_user');
+          setToken(null);
+          setUser(GUEST_USER);
+        }
+      } catch {
         setUser(GUEST_USER);
+        setToken(null);
+      } finally {
+        setIsLoading(false);
       }
-    } catch {
-      setUser(GUEST_USER);
-    } finally {
-      setIsLoading(false);
-    }
+    };
+    restore();
   }, []);
 
   const login = async (email: string, password: string): Promise<boolean> => {
@@ -92,16 +129,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (!resp.ok) {
         const data = await resp.json().catch(() => ({}));
-        setError(data.detail || 'Authentication failed. Please verify credentials.');
+        setError(extractError(data.detail, 'Authentication failed. Please verify credentials.'));
         setIsLoading(false);
         return false;
       }
 
       const data = await resp.json();
-      setToken(data.access_token);
-      setUser(data.user);
-      localStorage.setItem('vayubudhi_auth_token', data.access_token);
-      localStorage.setItem('vayubudhi_auth_user', JSON.stringify(data.user));
+      persistSession(data.access_token, data.user);
+      setIsLoading(false);
+      return true;
+    } catch (e: any) {
+      setError(e.message || 'Network error connecting to auth server.');
+      setIsLoading(false);
+      return false;
+    }
+  };
+
+  const register = async (payload: RegisterPayload): Promise<boolean> => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const resp = await fetch(`${API_BASE}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: payload.email,
+          password: payload.password,
+          full_name: payload.full_name,
+          phone: payload.phone || undefined,
+        }),
+      });
+
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        setError(extractError(data.detail, 'Registration failed.'));
+        setIsLoading(false);
+        return false;
+      }
+
+      const data = await resp.json();
+      persistSession(data.access_token, data.user);
       setIsLoading(false);
       return true;
     } catch (e: any) {
@@ -121,21 +188,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {}
   };
 
-  const switchDemoRole = async (targetRole: UserRole) => {
-    const creds = DEMO_CREDENTIALS[targetRole];
-    if (creds) {
-      await login(creds.email, creds.pass);
-    }
-  };
-
   const hasRole = (allowedRoles: UserRole[]): boolean => {
-    if (!user) return false;
+    if (!user || !token) return false;
     if (user.role === 'super_admin') return true;
     return allowedRoles.includes(user.role);
   };
 
   const role: UserRole = user?.role || 'public_viewer';
-  const isAuthenticated = !!token && role !== 'public_viewer';
+  // Any successful login/register with a real user id counts as authenticated
+  const isAuthenticated = !!token && !!user && user.id > 0;
 
   return (
     <AuthContext.Provider
@@ -147,9 +208,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         error,
         login,
+        register,
         logout,
-        switchDemoRole,
         hasRole,
+        clearError: () => setError(null),
       }}
     >
       {children}

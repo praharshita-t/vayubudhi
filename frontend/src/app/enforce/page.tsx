@@ -3,13 +3,13 @@ import React from 'react';
 import dynamic from 'next/dynamic';
 import { useCityContext } from '@/context/CityContext';
 import { useAuth } from '@/context/AuthContext';
-import { ShieldAlert, ShieldCheck, ArrowRight, Lock } from 'lucide-react';
+import { ShieldAlert, Lock } from 'lucide-react';
 
 const OptimizerPanel = dynamic(() => import('@/components/OptimizerPanel'), { ssr: false });
 
 export default function EnforcePage() {
   const { activeCity, cityData, liveData, districts } = useCityContext();
-  const { hasRole, role, switchDemoRole, isLoading } = useAuth();
+  const { hasRole, role, isAuthenticated } = useAuth();
 
   const isAuthorized = hasRole(['city_officer', 'super_admin']);
 
@@ -47,20 +47,16 @@ export default function EnforcePage() {
               Officer Authorization Required
             </h3>
             <p className="officer-gate-desc">
-              The <strong>Google OR-Tools Municipal Fleet Enforcement & Sprinkler Dispatch</strong> portal is strictly restricted to verified Municipal Officers (GHMC Environmental Wing) and Central System Administrators. Public citizens have read-only access to ambient city maps and health advisories.
+              The <strong>Google OR-Tools Municipal Fleet Enforcement & Sprinkler Dispatch</strong> portal is strictly restricted to verified Municipal Officers (GHMC Environmental Wing) and Central System Administrators. Use the Sign in control in the header with your provisioned staff credentials.
             </p>
             <div className="officer-gate-actions">
-              <button
-                className="officer-gate-btn-primary"
-                disabled={isLoading}
-                onClick={() => switchDemoRole('city_officer')}
-              >
-                <ShieldCheck size={18} />
-                <span>Unlock as GHMC City Officer (1-Click Demo)</span>
-                <ArrowRight size={16} />
-              </button>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Current Role: <span style={{ fontWeight: 600, color: '#f59e0b' }}>{role}</span>
+              <div className="officer-gate-login-hint">
+                <Lock size={16} />
+                <span>
+                  {isAuthenticated
+                    ? `Signed in as ${role.replace('_', ' ')} — this role cannot open Enforce.`
+                    : 'Sign in from the header as a city officer or admin to unlock this page.'}
+                </span>
               </div>
             </div>
           </div>

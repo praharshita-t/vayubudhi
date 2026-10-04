@@ -1,196 +1,148 @@
-# 🏆 VayuBudhi (वायुबुद्धि)
+# VayuBudhi
 
-> **The Calibrated Decision Layer for Urban Air Quality**  
-> 🥉 **National 3rd Position** — **The Economic Times AI Hackathon 2.0** (T-Hub, Hyderabad) | Cash Prize: **₹2,00,000**
+Municipal air-quality decision and enforcement platform. VayuBudhi turns official station readings and field telemetry into a dispatch decision: where a limited fleet of inspectors, vans, and drones should go, and with what confidence.
 
-<div align="center">
-  <img src="docs/assets/et_ai_hackathon_winners.png" alt="Economic Times AI Hackathon 2.0 Winners - Team Kassak Squad" width="680" />
-</div>
+## Recognition
 
----
+Built by **Kassak Squad** for The Economic Times AI Hackathon 2.0.
 
-### 🎖️ National Recognition — The Economic Times AI Hackathon 2.0
+| | |
+|---|---|
+| Team | Praharshita Tata, Purusharth Mishra, Sai Koushik Pallapolu, Veerabhadra Yerram |
+| Result | National 3rd place, Top 30 of about 10,000 teams |
+| Finale | T-Hub, Hyderabad, 25 August 2026 |
+| Prize | ₹2,00,000 |
 
-**VayuBudhi** was conceptualized, built, and defended as part of **The Economic Times AI Hackathon 2.0**, a premier national-level hackathon focused on developing innovative Artificial Intelligence-based solutions to mission-critical real-world challenges.
+## Platform
 
-* **Team:** **Kassak Squad**
-* **Team Members (3rd Year B.Tech Students):**
-  * **Praharshita Tata**
-  * **Purusharth Mishra**
-  * **Sai Koushik Pallapolu**
-  * **Veerabhadra Yerram**
-* **National Standing:** Progressed across nationwide competitive rounds and selected into the **Top 30 teams** from approximately **10,000 teams** that registered from across India.
-* **Grand Finale:** During the Finale Round held at **T-Hub, Hyderabad** on **25th August 2026**, the team finished **3rd Position** nationwide, winning a cash prize of **₹2,00,000 (Rs. 2 Lakhs)**.
+- **Official monitoring.** CPCB CAAQMS and OpenAQ v3 are ingested on a 15-minute schedule. Wards without an active station are marked unmonitored and attributed to the nearest station.
+- **Dual air-quality standards.** The console switches between India NAQI (CPCB 2014) and US EPA AQI.
+- **Forecasting and source attribution.** XGBoost multi-horizon forecasts (24h, 48h, 72h) and a Random Forest source classifier (vehicular, industrial, biomass, dust), with MAPIE conformal intervals in the model stack.
+- **Enforcement routing.** Google OR-Tools (CVRPTW) ranks patrol routes from severity, confidence, and exposure. The Enforce view is limited to city officers and super admins.
+- **Citizen advisories.** Gemini 1.5 Flash drafts health advisories in English, Hindi, and Kannada.
+- **Audit reports.** City and district environmental reports export to PDF.
+- **Field hardware.** ESP32 nodes report PM2.5, PM10, and weather into the same pipeline.
 
-During the hackathon, the team designed and built **VayuBudhi** — an intelligent, mathematically optimal decision layer built on top of urban air quality monitoring networks. Instead of just forecasting AQI or detecting pollution hotspots, VayuBudhi solves the harder operational problem: **Given a city's actual limited resources (inspectors, drones, and enforcement vans), what is the mathematically optimal way to deploy them?**
+Sign-in lives on the home page. Other sections use the session created there.
 
-Crucially, the system quantifies its own uncertainty through conformal prediction, ensuring that valuable physical resources are never wasted on shaky evidence.
-
----
-
-## 🌟 Key Features
-
-VayuBudhi is built around 5 core modules designed to turn raw pollution signals into actionable, cost-effective interventions:
-
-1. **Source Attribution with Calibrated Confidence**
-   * Uses weak-supervision labeling and Random Forest classification to identify dominant pollution sources (vehicular, industrial, biomass, dust).
-   * Wraps predictions in **MAPIE conformal prediction sets** to output mathematically calibrated confidence bounds (e.g., 90% certainty), feeding directly into the optimizer.
-2. **Physics-Informed Hyperlocal Forecasting**
-   * Forecasts AQI at 24/48/72-hour horizons using XGBoost.
-   * Incorporates a custom engineered **Ventilation Index** (Boundary Layer Height × Wind Speed) to predict atmospheric stagnation events before pollution accumulates.
-3. **Uncertainty-Aware Enforcement Optimizer**
-   * Uses **Google OR-Tools (CVRPTW)** to calculate provably optimal routing for a heterogeneous fleet (drones, vans, inspectors).
-   * Evaluates deployment based on Severity × Confidence × Population Exposure. Low-confidence signals are routed to cheap verification (drones) before committing full inspection teams.
-4. **Multilingual Exposure-Dose Citizen Advisory**
-   * Translates generic AQI numbers into personalized inhaled dose estimates ($\mu g/h$) based on user activity.
-   * Leverages **Google Gemini API** to generate actionable, hyper-local health advisories in multiple languages (Hindi, English, Kannada).
-5. **Real-Time IoT Sensor Network**
-   * Low-cost (~₹3,150) custom ESP32 + SDS011 nodes capable of real-time PM2.5/PM10 monitoring and edge classification.
-   * Demonstrates a sub-60-second response loop from physical particle detection to optimized inspector dispatch.
-
----
-
-## 🏗️ System Architecture
-
-VayuBudhi bridges physical IoT hardware with satellite atmospheric modeling, physics-informed machine learning, operations research dispatching, and generative AI advisories.
+## Architecture
 
 ```mermaid
 flowchart TB
-    subgraph SENSORS ["📡 1. IoT & Edge Network"]
-        ESP32["ESP32 DevKit V1"]
-        SDS011["Nova SDS011 (PM2.5 / PM10)"]
-        BME280["BME280 (Temp/Humidity/Press)"]
-        OLED["SSD1306 OLED (Local Telemetry)"]
-        SDS011 & BME280 --> ESP32 --> OLED
+    subgraph sources [Sources]
+        CPCB[CPCB CAAQMS]
+        OPENAQ[OpenAQ v3]
+        IOT[ESP32 sensor nodes]
+        FEEDS[Open-Meteo, Sentinel-5P, FIRMS, TomTom]
     end
 
-    subgraph TELEMETRY ["🛰️ 2. Environmental & Spatial Feeds"]
-        OPENMETEO["Open-Meteo API (Hourly PM & Winds)"]
-        ERA5["ERA5 Reanalysis (PBLH Layer Height)"]
-        SENTINEL["Sentinel-5P Cache (NO2 Satellite Plumes)"]
-        TOMTOM["TomTom API (Live Traffic Congestion)"]
-        FIRMS["NASA FIRMS (Thermal Hotspots)"]
+    subgraph platform [Platform]
+        API[FastAPI]
+        AQI[India NAQI and US EPA engine]
+        DB[(TimescaleDB or local SQLite)]
+        CACHE[(Redis 7 cache)]
+        AUTH[JWT, four roles]
     end
 
-    subgraph BACKEND ["⚡ 3. FastAPI Backend & Physics Engine"]
-        API["FastAPI Orchestrator (/api/*)"]
-        PHYSICS["Atmospheric Physics Engine\n- Ventilation Index (VI = PBLH × Wind)\n- Gaussian Dispersion Plumes"]
-        DB[(SQLite / PostgreSQL DB)]
-        API <--> PHYSICS
-        API <--> DB
+    subgraph decision [Decision layer]
+        ML[Forecast and source attribution]
+        ROUTE[OR-Tools dispatch]
     end
 
-    subgraph ML ["🧠 4. AI/ML & Conformal Uncertainty"]
-        XGB["XGBoost Multi-Horizon (24h/48h/72h)"]
-        RF["Random Forest Source Attribution"]
-        MAPIE["MAPIE 90% Conformal Prediction Bounds"]
-        XGB & RF <--> MAPIE
+    subgraph clients [Clients]
+        WEB[Next.js command console]
     end
 
-    subgraph OPTIMIZER ["🎯 5. OR-Tools Fleet Optimizer & LLM"]
-        OR_TOOLS["Google OR-Tools (CVRPTW Solver)"]
-        FLEET["Heterogeneous Fleet (Vans, Drones, Bikes)"]
-        GEMINI["Google Gemini 2.0 Flash (Multilingual Advisories)"]
-        OR_TOOLS --> FLEET
-    end
-
-    subgraph FRONTEND ["🖥️ 6. Next.js 14 Geospatial Command Dashboard"]
-        MAP["deck.gl + Mapbox 3D Engine (Wind Particles + NO2)"]
-        PANELS["Forecast, Deep Dive, Enforcement & Advisory Panels"]
-        REPORT["Automated Executive AI PDF Generator"]
-    end
-
-    ESP32 -- "HTTP Telemetry" --> API
-    OPENMETEO & SENTINEL --> API
-    ERA5 --> PHYSICS
-    TOMTOM & FIRMS --> API
-    API <--> ML
-    ML -- "Calibrated Uncertainty" --> OR_TOOLS
-    API --> GEMINI
-    API <--> FRONTEND
+    CPCB --> API
+    OPENAQ --> API
+    IOT --> API
+    FEEDS --> API
+    API --> AQI
+    API --> DB
+    API --> CACHE
+    AUTH --> API
+    API --> ML
+    ML --> ROUTE
+    API --> WEB
 ```
 
-> 📖 *For the complete technical breakdown and data schema specifications, see [System Architecture Specification](docs/system_architecture.md).*
+Detail is in [docs/system_architecture.md](docs/system_architecture.md).
 
----
+## Tech stack
 
-## 💻 Tech Stack
+| Layer | Technologies |
+|---|---|
+| Frontend | Next.js 14, React 18, TypeScript, Mapbox GL JS, deck.gl |
+| API | FastAPI, Python 3.11, Uvicorn, Pydantic v2 |
+| Data | TimescaleDB / PostgreSQL 16, Redis 7, SQLite for local development, Alembic |
+| Models | XGBoost, Random Forest, MAPIE, SHAP |
+| Routing | Google OR-Tools (CVRPTW) |
+| Advisories | Google Gemini 1.5 Flash, LangGraph |
+| Feeds | CPCB (data.gov.in), OpenAQ v3, Open-Meteo ERA5, Sentinel-5P, NASA FIRMS, TomTom, OpenStreetMap |
+| Hardware | ESP32, Nova SDS011, Bosch BME280 |
+| Delivery | Docker Compose, JWT role checks, TLS |
 
-| Category | Technologies |
-| :--- | :--- |
-| **Backend API** | Python 3.11, FastAPI |
-| **Database** | SQLite (Dev) / PostgreSQL (Prod) |
-| **Machine Learning** | scikit-learn, XGBoost, MAPIE |
-| **Operations Research** | Google OR-Tools |
-| **Frontend & GIS** | Next.js 14, React, deck.gl, Mapbox GL JS |
-| **LLM & Agents** | Google Gemini (gemini-2.0-flash), LangGraph |
-| **IoT Hardware** | C++ (ESP32 Arduino Core), HTTPClient |
+Local development uses SQLite and an in-memory cache fallback. `docker compose up` starts TimescaleDB, Redis, the API, and the frontend together.
 
----
+## Local setup
 
-## 🛠️ Hardware Setup (Sensor Node)
+Python 3.11+ and Node.js 18+ are required.
 
-To build the physical VayuBudhi IoT node, you will need the following components (Total cost ~₹3,150):
-
-* 1x ESP32 DevKit V1
-* 1x Nova SDS011 PM Sensor
-* 1x BME280 Temperature/Humidity Sensor
-* 1x 0.96" SSD1306 OLED Display
-* Breadboard, jumper wires, and a 3D-printed enclosure.
-
-The ESP32 reads real-time PM and weather data, displays the PM2.5/PM10 ratio locally on the OLED, and POSTs the JSON payload to the FastAPI backend over a local Wi-Fi hotspot.
-
----
-
-## 🚀 Getting Started (Local Development)
-
-*(Note: Ensure you have Python 3.11+ and Node.js 18+ installed on your system.)*
-
-### 1. Clone the Repository
 ```bash
-git clone https://github.com/your-org/vayubudhi.git
+git clone https://github.com/praharshita-t/vayubudhi.git
 cd vayubudhi
 ```
 
-### 2. Backend Setup (FastAPI & ML)
+Backend:
+
 ```bash
 cd backend
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# Windows: venv\Scripts\activate
+# macOS/Linux: source venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-### 3. Frontend Setup (Next.js)
+Frontend, in a second terminal:
+
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-### 4. Environment Variables
-Create a `.env` file in both the `backend` and `frontend` directories and add your API keys:
-* `GEMINI_API_KEY`
-* `MAPBOX_ACCESS_TOKEN`
-* `TOMTOM_API_KEY`
+Open [http://localhost:3000](http://localhost:3000). The API is at [http://127.0.0.1:8000](http://127.0.0.1:8000).
 
----
+Optional environment variables:
 
-## 📖 Documentation
+| Variable | Used for |
+|---|---|
+| `DATAGOV_API_KEY` | CPCB CAAQMS ingestion |
+| `OPENAQ_API_KEY` | OpenAQ v3 |
+| `TOMTOM_API_KEY` | Traffic congestion |
+| `GEMINI_API_KEY` | Advisory and report narration |
+| `NEXT_PUBLIC_MAPBOX_TOKEN` | Map tiles |
+| `DATABASE_URL` | PostgreSQL / TimescaleDB (defaults to local SQLite) |
+| `REDIS_URL` | Redis (defaults to `redis://localhost:6379/0`) |
+| `JWT_SECRET_KEY` | Token signing |
+| `ALLOWED_ORIGINS` | CORS allowlist |
 
-All detailed system design specifications, physics formulas, and ML architectures have been organized in the [`docs/`](file:///d:/Puru_VNR/3rd%20Year/Hackathons%20&%20Competitions/Vayubudhi/vayubudhi/docs/README.md) directory:
+Place backend variables in `backend/.env`. Place `NEXT_PUBLIC_MAPBOX_TOKEN` in `frontend/.env.local`. The app starts without these keys and falls back to stored or local data where a live feed is unavailable.
 
-* [**Detailed System Architecture & Diagram**](file:///d:/Puru_VNR/3rd%20Year/Hackathons%20&%20Competitions/Vayubudhi/vayubudhi/docs/system_architecture.md)
-* [**System Architecture & Analysis**](file:///d:/Puru_VNR/3rd%20Year/Hackathons%20&%20Competitions/Vayubudhi/vayubudhi/docs/vayubudhi_comprehensive_analysis.md)
-* [**ML Architecture & Data Blueprint**](file:///d:/Puru_VNR/3rd%20Year/Hackathons%20&%20Competitions/Vayubudhi/vayubudhi/docs/finalized_ml_architecture.md)
-* [**Forecasting & Atmospheric Physics (PBLH)**](file:///d:/Puru_VNR/3rd%20Year/Hackathons%20&%20Competitions/Vayubudhi/vayubudhi/docs/ml_pipeline_and_aqi_forecasting_plan.md)
-* [**Forecaster & Deep Dive Guide**](file:///d:/Puru_VNR/3rd%20Year/Hackathons%20&%20Competitions/Vayubudhi/vayubudhi/docs/aqi_forecaster_and_deepdive_guide.md)
-* [**ML Evaluation Report (PDF)**](file:///d:/Puru_VNR/3rd%20Year/Hackathons%20&%20Competitions/Vayubudhi/vayubudhi/docs/vayu_budhi_ml_predictions_report.pdf)
+## Hardware
 
----
+The field node is an ESP32 with a Nova SDS011 particulate sensor, a Bosch BME280, and a local display. Build notes are in [hardware_demo_code/hardware_build_guide.md](hardware_demo_code/hardware_build_guide.md).
 
-## 🤝 Contributing
-Since VayuBudhi is a tightly scoped project developed under a strict 1.5-week sprint timeline, please ensure any pull requests adhere directly to the core 5 modules outlined above. No scope creep.
+## Documentation
 
-## 📄 License
-This project is licensed under the MIT License - see the [LICENSE](file:///d:/Puru_VNR/3rd%20Year/Hackathons%20&%20Competitions/Vayubudhi/vayubudhi/LICENSE) file for details.
+- [System architecture](docs/system_architecture.md)
+- [Platform analysis](docs/vayubudhi_comprehensive_analysis.md)
+- [ML architecture](docs/finalized_ml_architecture.md)
+- [Forecasting and ventilation index](docs/ml_pipeline_and_aqi_forecasting_plan.md)
+- [Forecaster and deep-dive guide](docs/aqi_forecaster_and_deepdive_guide.md)
+- [Documentation index](docs/README.md)
+
+## License
+
+MIT. See [LICENSE](LICENSE).

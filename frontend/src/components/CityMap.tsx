@@ -214,7 +214,7 @@ export default function CityMap({
   monitoringLocation?: { lat: number; lon: number; name?: string } | null;
   recommendedDeployments?: RecommendedDeployment[];
 }) {
-  const { aqiStandard, setAqiStandard } = useCityContext();
+  const { aqiStandard } = useCityContext();
   const [hoveredHex, setHoveredHex] = useState<HexDataPoint | null>(null);
   const [hoveredDistrict, setHoveredDistrict] = useState<District | null>(null);
   const [hoveredStation, setHoveredStation] = useState<Station | null>(null);
@@ -753,50 +753,6 @@ export default function CityMap({
 
       {/* Overlay Stats & Controls */}
       <div className="map-overlay-stats" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        {/* Standard Toggle: India NAQI vs US EPA */}
-        <div style={{
-          display: 'flex',
-          background: 'rgba(15, 23, 42, 0.85)',
-          backdropFilter: 'blur(8px)',
-          borderRadius: 6,
-          border: '1px solid var(--border-primary)',
-          overflow: 'hidden',
-          padding: 2,
-        }}>
-          <button
-            onClick={() => setAqiStandard('IN_NAQI')}
-            style={{
-              padding: '4px 9px',
-              fontSize: '0.65rem',
-              fontWeight: 700,
-              border: 'none',
-              borderRadius: 4,
-              cursor: 'pointer',
-              background: aqiStandard === 'IN_NAQI' ? '#3b82f6' : 'transparent',
-              color: aqiStandard === 'IN_NAQI' ? '#ffffff' : 'var(--text-muted)',
-              transition: 'all 0.2s',
-            }}
-          >
-            🇮🇳 India NAQI
-          </button>
-          <button
-            onClick={() => setAqiStandard('US_EPA')}
-            style={{
-              padding: '4px 9px',
-              fontSize: '0.65rem',
-              fontWeight: 700,
-              border: 'none',
-              borderRadius: 4,
-              cursor: 'pointer',
-              background: aqiStandard === 'US_EPA' ? '#3b82f6' : 'transparent',
-              color: aqiStandard === 'US_EPA' ? '#ffffff' : 'var(--text-muted)',
-              transition: 'all 0.2s',
-            }}
-          >
-            🇺🇸 US EPA
-          </button>
-        </div>
-
         {CITY_SATELLITE_BOUNDS[city] && (
           <button 
             className={`map-stat-chip ${showSatellite ? 'active' : ''}`}

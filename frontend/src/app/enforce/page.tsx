@@ -47,7 +47,7 @@ export default function EnforcePage() {
               Officer Authorization Required
             </h3>
             <p className="officer-gate-desc">
-              The <strong>Google OR-Tools Municipal Fleet Enforcement & Sprinkler Dispatch</strong> portal is strictly restricted to verified Municipal Officers (GHMC Environmental Wing) and Central System Administrators. Use the Sign in control in the header with your provisioned staff credentials.
+              The <strong>Google OR-Tools Municipal Fleet Enforcement & Sprinkler Dispatch</strong> portal is strictly restricted to verified Municipal Officers (GHMC Environmental Wing) and Central System Administrators. Sign in from the Home page with your provisioned staff credentials.
             </p>
             <div className="officer-gate-actions">
               <div className="officer-gate-login-hint">
@@ -55,7 +55,7 @@ export default function EnforcePage() {
                 <span>
                   {isAuthenticated
                     ? `Signed in as ${role.replace('_', ' ')} — this role cannot open Enforce.`
-                    : 'Sign in from the header as a city officer or admin to unlock this page.'}
+                    : 'Sign in on the Home page as a city officer or admin to unlock this page.'}
                 </span>
               </div>
             </div>

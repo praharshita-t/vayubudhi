@@ -1,5 +1,6 @@
 'use client';
 import React, { useState, FormEvent } from 'react';
+import { usePathname } from 'next/navigation';
 import { useAuth, UserRole } from '@/context/AuthContext';
 import { Shield, ShieldCheck, UserCheck, Key, LogOut, ChevronDown, Lock, UserPlus, LogIn } from 'lucide-react';
 
@@ -29,6 +30,7 @@ const ROLE_METADATA: Record<UserRole, { label: string; badgeClass: string; icon:
 type AuthTab = 'login' | 'register';
 
 export default function AuthBadge() {
+  const pathname = usePathname();
   const { user, role, isAuthenticated, login, register, logout, isLoading, error, clearError } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [tab, setTab] = useState<AuthTab>('login');
@@ -71,6 +73,8 @@ export default function AuthBadge() {
       close();
     }
   };
+
+  if (pathname !== '/') return null;
 
   return (
     <div className="auth-badge-container">

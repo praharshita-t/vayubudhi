@@ -41,7 +41,7 @@ def execute_ingestion_cycle() -> Dict[str, Any]:
     """Serialize workers and manual triggers across processes on PostgreSQL."""
     if engine.dialect.name != "postgresql":
         return _execute_ingestion_cycle()
-    with engine.connect() as connection:
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
         if not connection.scalar(text("SELECT pg_try_advisory_lock(8675309)")):
             return {"status": "skipped", "reason": "Another ingestion process owns the lock"}
         try:

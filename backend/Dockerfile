@@ -3,7 +3,7 @@
 # ==========================================================
 
 # Stage 1: Builder Stage
-FROM python:3.12-slim AS builder
+FROM python:3.15-slim AS builder
 
 WORKDIR /build
 
@@ -22,7 +22,7 @@ RUN --mount=type=cache,target=/root/.cache/pip python -m venv /opt/venv && \
 
 
 # Stage 2: Production Runtime Stage
-FROM python:3.12-slim AS runner
+FROM python:3.15-slim AS runner
 
 WORKDIR /app/backend
 

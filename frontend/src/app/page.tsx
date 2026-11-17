@@ -79,10 +79,10 @@ function getHealthInfo(aqi: number, standard: string = 'IN_NAQI') {
 const POLLUTANT_LIMITS: Record<string, { limit: number; unit: string; label: string }> = {
   pm25: { limit: 60, unit: 'µg/m³', label: 'PM2.5' },
   pm10: { limit: 100, unit: 'µg/m³', label: 'PM10' },
-  no2:  { limit: 80, unit: 'ppb', label: 'NO₂' },
-  so2:  { limit: 80, unit: 'ppb', label: 'SO₂' },
+  no2:  { limit: 80, unit: 'µg/m³', label: 'NO₂' },
+  so2:  { limit: 80, unit: 'µg/m³', label: 'SO₂' },
   co:   { limit: 4, unit: 'mg/m³', label: 'CO' },
-  o3:   { limit: 100, unit: 'ppb', label: 'O₃' },
+  o3:   { limit: 100, unit: 'µg/m³', label: 'O₃' },
 };
 
 // ── Color formatting helpers ──

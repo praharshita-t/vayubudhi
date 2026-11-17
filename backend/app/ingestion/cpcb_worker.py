@@ -67,12 +67,13 @@ def fetch_cpcb_records(limit: int = 1000, offset: int = 0, city: Optional[str] =
     try:
         resp = requests.get(BASE_URL, params=params, timeout=20, headers={"User-Agent": "VayuBudhi/1.0"})
         if resp.status_code != 200:
-            logger.error(f"data.gov.in returned status {resp.status_code}: {resp.text[:200]}")
+            logger.error("data.gov.in returned HTTP %s", resp.status_code)
             return []
         data = resp.json()
         return data.get("records", [])
     except Exception as e:
-        logger.error(f"Failed to fetch data.gov.in records: {e}")
+        # Request exceptions can include the URL, whose query contains the key.
+        logger.error("Failed to fetch data.gov.in records (%s)", type(e).__name__)
         return []
 
 def run_cpcb_ingestion(cities: Optional[List[str]] = None, max_records: int = 4000) -> Dict[str, Any]:
@@ -81,10 +82,7 @@ def run_cpcb_ingestion(cities: Optional[List[str]] = None, max_records: int = 40
     Queries CPCB records, aggregates multi-pollutant measurements per station,
     calculates dual-standard AQIs, and persists to database.
     """
-    # Ensure tables exist
-    from app.config import PRODUCTION
-    if not PRODUCTION:
-        Base.metadata.create_all(bind=engine)
+    # Schema changes belong to Alembic, including when run by a scheduled job.
     db = SessionLocal()
 
     stats = {

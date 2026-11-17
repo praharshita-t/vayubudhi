@@ -33,7 +33,7 @@ can exhaust memory. Do not represent this as a capacity-tested production plan.
 Free services do not support pre-deploy commands. The backend's Docker Command is:
 
 ```sh
-/bin/sh -c 'alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 10000 --workers 1 --no-proxy-headers'
+python -m app.render_start
 ```
 
 Set its health check to `/api/health`. Neon's libpq-style `sslmode` and

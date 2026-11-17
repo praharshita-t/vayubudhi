@@ -132,7 +132,7 @@ export default function CompareCitiesPage() {
     setLastUpdated(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
   }, []);
 
-  const fetchCityTelemetry = async (cityId: string): Promise<CityCompareData> => {
+  const fetchCityTelemetry = async (cityId: string): Promise<CityCompareData | null> => {
     // 0. Check in-memory client cache
     const now = Date.now();
     if (CITY_TELEMETRY_CACHE[cityId] && now - CITY_TELEMETRY_CACHE[cityId].timestamp < CACHE_MAX_AGE_MS) {
@@ -155,6 +155,7 @@ export default function CompareCitiesPage() {
         fetch(`/api/city-historical?city=${cityId}`).catch(() => null)
       ]);
 
+      if (!cityRes.ok) throw new Error(`City telemetry unavailable (HTTP ${cityRes.status})`);
       const cityJson = await cityRes.json();
       const stations: any[] = cityJson?.stations || [];
 
@@ -345,39 +346,7 @@ export default function CompareCitiesPage() {
       return result;
     } catch (e) {
       console.error(`Error loading city data for ${cityId}:`, e);
-      return {
-        id: cityId,
-        name: meta.name,
-        state: meta.state,
-        tier: meta.tier,
-        coordinates: { lat: meta.lat, lon: meta.lon },
-        liveAqi: 85,
-        livePm25: 35.0,
-        livePm10: 55.0,
-        liveNo2: 25.0,
-        liveSo2: 10.0,
-        liveCo: 1.0,
-        liveO3: 30.0,
-        temp: 28.0,
-        humidity: 55,
-        pressure: 1008,
-        windSpeed: 2.5,
-        pblh: 800,
-        ventilationIndex: 2000,
-        stationCount: 5,
-        alertCount: 0,
-        worstStation: { name: `${cityId} Central`, aqi: 95 },
-        bestStation: { name: `${cityId} Ridge`, aqi: 55 },
-        forecastPoints: [35, 33, 30],
-        forecastIntervals: [[28, 42], [26, 40], [24, 38]],
-        forecastAqi24: 85,
-        forecastAqi48: 80,
-        forecastAqi72: 75,
-        trendPct: -5,
-        historical24hAvg: 88,
-        history: [],
-        attribution: { vehicular: 0.65, industrial: 0.20, dust: 0.10, biomass: 0.05, primarySource: 'vehicular', primaryPct: 65, confidence: 0.9 },
-      };
+      return null;
     }
   };
 
@@ -387,7 +356,7 @@ export default function CompareCitiesPage() {
     await Promise.all(
       selectedCityIds.map(async (cid) => {
         const data = await fetchCityTelemetry(cid);
-        result[cid] = data;
+        if (data) result[cid] = data;
       })
     );
     setCitiesData(result);
@@ -520,6 +489,16 @@ export default function CompareCitiesPage() {
       { axis: 'Wind Dispersion', ...selectedCityIds.reduce((acc, cid) => ({ ...acc, [cid]: Math.min(100, Math.round((citiesData[cid]?.windSpeed || 2.0) * 15)) }), {}) },
     ];
   }, [citiesData, selectedCityIds]);
+
+  if (!loading && selectedCityIds.some((id) => !citiesData[id])) {
+    return (
+      <div className="page-container" role="status" style={{ padding: 32 }}>
+        <h1>City comparison unavailable</h1>
+        <p>Station observations are unavailable for one or more selected cities. Please try again after telemetry is connected.</p>
+        <button className="btn btn-secondary" onClick={loadAllCities}>Retry</button>
+      </div>
+    );
+  }
 
   return (
     <div className="page-wrapper" style={{ overflowY: 'auto', maxHeight: '100vh', paddingBottom: '40px' }}>

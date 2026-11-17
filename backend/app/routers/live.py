@@ -648,40 +648,11 @@ def get_city_data(city: str):
 
     physical_stations = list(db_station_map.values())
 
-    # Fallback to configured station coordinates if DB has no stations for this city
     if not physical_stations:
-        cfg_stations = CITY_STATIONS.get(city, [])
-        if not cfg_stations:
-            center = CITY_CENTERS_BACKEND.get(city, {"lat": 28.625, "lon": 77.15})
-            clat, clon = center["lat"], center["lon"]
-            offsets = [
-                (0.0, 0.0, "Central"),
-                (0.04, 0.0, "North"),
-                (-0.04, 0.0, "South"),
-                (0.0, 0.04, "East"),
-                (0.0, -0.04, "West"),
-                (0.03, 0.03, "North-East"),
-                (-0.03, -0.03, "South-West"),
-                (0.03, -0.03, "North-West")
-            ]
-            cfg_stations = [
-                {"name": f"{city} {name}", "lat": round(clat + dy, 4), "lon": round(clon + dx, 4), "id": f"WARD_{i}"}
-                for i, (dy, dx, name) in enumerate(offsets)
-            ]
-        # Create mock st/obs objects for fallback
-        for i, cfg in enumerate(cfg_stations):
-            mock_st = type('MockStation', (), {
-                'id': cfg.get('id', f'ST_{i}'),
-                'name': cfg['name'],
-                'latitude': cfg['lat'],
-                'longitude': cfg['lon'],
-                'agency': 'CPCB'
-            })()
-            mock_obs = type('MockObs', (), {
-                'pm25': 28.0, 'pm10': 55.0, 'no2': 22.0, 'so2': 8.0, 'co': 0.9, 'o3': 20.0,
-                'aqi_in': 65.0, 'aqi_us': 75.0, 'primary_pollutant': 'PM2.5', 'source': 'cpcb_caaqms'
-            })()
-            physical_stations.append((mock_st, mock_obs))
+        raise HTTPException(
+            status_code=503,
+            detail="No station observations are available for this city. Connect a telemetry provider or ingest sensor observations.",
+        )
 
     # Fetch localized atmospheric weather for genuine station coordinates
     w_list = []

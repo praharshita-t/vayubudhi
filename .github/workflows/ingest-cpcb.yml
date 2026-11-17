@@ -1,0 +1,28 @@
+name: Refresh CPCB station observations
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cpcb-station-ingestion
+  cancel-in-progress: false
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements-ingestion.txt
+      - run: pip install -r backend/requirements-ingestion.txt
+      - name: Fetch official CPCB readings into the migrated database
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.INGESTION_DATABASE_URL }}
+          DATAGOV_API_KEY: ${{ secrets.DATAGOV_API_KEY }}
+        run: python -m app.ingestion.cpcb_once

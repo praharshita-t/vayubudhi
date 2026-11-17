@@ -25,6 +25,17 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("cpcb_worker")
 
 DATA_GOV_API_KEY = os.getenv("DATAGOV_API_KEY", "")
+
+
+class ProviderKeyFilter(logging.Filter):
+    def filter(self, record):
+        if DATA_GOV_API_KEY:
+            record.msg = record.getMessage().replace(DATA_GOV_API_KEY, "[REDACTED]")
+            record.args = ()
+        return True
+
+
+logging.getLogger("urllib3.connectionpool").addFilter(ProviderKeyFilter())
 RESOURCE_ID = os.getenv("CPCB_RESOURCE_ID", "3b01bcb8-0b14-4abf-b6f2-c1bfd384ba69")
 BASE_URL = f"https://api.data.gov.in/resource/{RESOURCE_ID}"
 

@@ -1,33 +1,40 @@
 # CPCB updates for the free preview
 
-The `Refresh CPCB station observations` GitHub Actions workflow runs hourly at
-minute 17 UTC and can also be dispatched manually. Scheduled Actions can be
-delayed, so this is periodic ingestion rather than a real-time availability
-guarantee. It continues independently of sleeping Render web services.
+`Refresh CPCB station observations` runs hourly at minute 17 UTC and supports
+manual dispatch. GitHub schedules can be delayed. GitHub-hosted Linux and macOS
+runners could not connect to data.gov.in during setup, so the workflow triggers
+an authenticated background refresh on the Render backend and polls its result.
+The app may cold-start before processing a request.
 
-Repository Actions secrets:
+## Credentials
 
-- `DATAGOV_API_KEY`: the account's personal data.gov.in API key.
-- `INGESTION_DATABASE_URL`: the app's direct Neon PostgreSQL connection string.
+- Render backend: `DATAGOV_API_KEY`, already used by the CPCB ingestion code.
+- Render backend and GitHub Actions: the same independent random
+  `INGESTION_TRIGGER_SECRET` of at least 32 characters.
 
-Do not store these in workflow YAML, logs, or frontend variables. GitHub-hosted
-runners use them to request CPCB observations and write them into the migrated
-app database. API JWT and sensor secrets are not needed by this job. The existing
-Render backend key may remain configured for authenticated manual ingestion.
+The trigger credential can only start ingestion and inspect its run status. It
+is not an account login, staff token, database credential or sensor key. Never
+put it into the frontend or commit it. GitHub does not need the database or
+provider secrets for this workflow; earlier direct-worker secrets may be removed
+from GitHub after switching to the backend-trigger workflow.
 
-The job uses a lightweight dependency lock, does not load ML models or create
-tables, and shares the PostgreSQL advisory lock with the API's manual ingestion.
-An empty feed or database ingestion error fails the job. Repeated observations
-are updated rather than duplicated for the same station and timestamp. The
-10,000-record cap currently accommodates the observed 4,025-record feed; monitor
-provider growth, database storage, and the Actions run results.
+## Operation
 
-Keep Render `INGESTION_ENABLED=false`: production API startup explicitly rejects
-the in-process development scheduler. No paid Render worker is required for this
-workflow. Check `/api/ingestion/status` for station and observation counts and
-the latest provider timestamp. The Redis worker heartbeat is not used by this
-GitHub-hosted scheduled job.
+POST `/api/ingestion/scheduled-refresh` with `X-Ingestion-Key` returns a run ID.
+GET `/api/ingestion/scheduled-refresh/{run_id}` with that header reports queued,
+running, succeeded or failed. Results expire from Redis after 24 hours. The job
+uses the existing PostgreSQL advisory lock, preventing overlap with other
+workers/manual triggers. Request failures are retried and API-key query values
+are redacted from diagnostics. Failed pages abort ingestion rather than silently
+committing an incomplete feed. An empty CPCB feed is a failed refresh.
 
-Before claiming a live dashboard, verify returned pollutant values and timestamps
-for the requested city, not just a successful provider response. Open-Meteo weather
-and optional traffic/AI integrations have independent availability and keys.
+The 10,000-record cap accommodates the observed 4,025-record feed; monitor feed
+growth, database storage and Actions results. Schema changes remain Alembic's
+responsibility. The lightweight `cpcb_once` command is also available for hosts
+that can reach CPCB directly, using `backend/requirements-ingestion.txt`.
+
+Keep `INGESTION_ENABLED=false`: the production API rejects the development
+in-process scheduler. These explicit background refreshes do not start an
+always-on scheduler or paid worker. Check `/api/ingestion/status` for database
+station counts and provider timestamps. This workflow does not publish a worker
+heartbeat. Weather, traffic and AI providers remain separate integrations.

@@ -7,9 +7,12 @@ import asyncio
 import logging
 import threading
 import time
+import os
+import secrets
+from uuid import UUID, uuid4
 from datetime import datetime
 from typing import Dict, Any
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends, Header
 from app.auth import require_roles
 
 from app.database import SessionLocal
@@ -59,7 +62,7 @@ def _execute_ingestion_cycle() -> Dict[str, Any]:
     try:
         logger.info("Executing periodic ambient air quality ingestion cycle...")
         # 1. CPCB CAAQMS ingestion for all major monitored cities
-        cpcb_stats = run_cpcb_ingestion()
+        cpcb_stats = run_cpcb_ingestion(max_records=10000)
         
         # 2. OpenAQ v3 backup ingestion
         openaq_stats = run_openaq_ingestion(max_locations=20)
@@ -115,6 +118,44 @@ def start_ingestion_scheduler(interval_seconds: int = 900):
 def stop_ingestion_scheduler():
     """Stops the scheduler thread gracefully."""
     RUN_EVENT.set()
+
+
+def require_ingestion_trigger(x_ingestion_key: str = Header(default="")):
+    expected = os.getenv("INGESTION_TRIGGER_SECRET", "")
+    if len(expected) < 32:
+        raise HTTPException(status_code=503, detail="Scheduled refresh is not configured")
+    if not secrets.compare_digest(x_ingestion_key, expected):
+        raise HTTPException(status_code=401, detail="Invalid ingestion credential")
+
+
+def run_scheduled_refresh(run_id: str):
+    cache_key = f"ingestion:run:{run_id}"
+    set_cache(cache_key, {"status": "running"}, ttl_seconds=86400)
+    try:
+        result = execute_ingestion_cycle()
+        cpcb = result.get("cpcb", {})
+        ok = bool(cpcb.get("records_fetched")) and not cpcb.get("errors")
+        set_cache(cache_key, {"status": "succeeded" if ok else "failed", "result": result}, ttl_seconds=86400)
+    except Exception:
+        logger.exception("Scheduled refresh failed")
+        set_cache(cache_key, {"status": "failed"}, ttl_seconds=86400)
+
+
+@router.post("/scheduled-refresh", status_code=202, dependencies=[Depends(require_ingestion_trigger)])
+def start_scheduled_refresh(background_tasks: BackgroundTasks):
+    """A dedicated credential can only start and inspect ingestion jobs."""
+    run_id = str(uuid4())
+    set_cache(f"ingestion:run:{run_id}", {"status": "queued"}, ttl_seconds=86400)
+    background_tasks.add_task(run_scheduled_refresh, run_id)
+    return {"run_id": run_id}
+
+
+@router.get("/scheduled-refresh/{run_id}", dependencies=[Depends(require_ingestion_trigger)])
+def scheduled_refresh_status(run_id: UUID):
+    result = get_cache(f"ingestion:run:{run_id}")
+    if result is None:
+        raise HTTPException(status_code=404, detail="Refresh job is unavailable or expired")
+    return result
 
 @router.post("/trigger", dependencies=[Depends(require_roles(["super_admin"]))])
 def trigger_manual_ingestion(background_tasks: BackgroundTasks):

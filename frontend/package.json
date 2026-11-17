@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@deck.gl/core": "^8.9.0",
+    "@deck.gl/core": "^9.4.1",
     "@deck.gl/layers": "^8.9.0",
     "@deck.gl/react": "^8.9.0",
     "d3-interpolate": "^3.0.1",

@@ -1,4 +1,4 @@
-name: Refresh CPCB station observations
+name: Refresh station observations
 on:
   schedule:
     - cron: '17 * * * *'
@@ -17,7 +17,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Refresh official CPCB readings through the backend
+      - name: Refresh station readings through the backend
         env:
           INGESTION_API_URL: https://vayubudhi-preview-api.onrender.com
           INGESTION_TRIGGER_SECRET: ${{ secrets.INGESTION_TRIGGER_SECRET }}

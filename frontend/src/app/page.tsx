@@ -120,13 +120,8 @@ export default function HomePage() {
 
   const [timeRange, setTimeRange] = useState<'6h' | '12h' | '24h'>('24h');
   const [chartMetric, setChartMetric] = useState<'aqi' | 'pm25' | 'pm10'>('aqi');
-  const [now, setNow] = useState(new Date());
   const [realHistory, setRealHistory] = useState<any[]>([]);
 
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 60000);
-    return () => clearInterval(id);
-  }, []);
 
   // Fetch real 24-hour historical hourly telemetry from the live API
   useEffect(() => {
@@ -202,7 +197,7 @@ export default function HomePage() {
 
   // Weather: avg from stations that have weather data
   const weather = useMemo(() => {
-    const withWeather = stations.filter((s: any) => s.temp !== undefined);
+    const withWeather = stations.filter((s: any) => ['temp', 'humidity', 'wind_speed', 'pressure'].every((key) => typeof s[key] === 'number'));
     if (withWeather.length === 0) return null;
     const n = withWeather.length;
     return {
@@ -414,7 +409,7 @@ export default function HomePage() {
               </button>
             </div>
             <div className="home-live-badge">
-              <div className="dot" /> Live Telemetry
+              <div className="dot" /> Station Observations
             </div>
           </div>
         </div>
@@ -422,18 +417,18 @@ export default function HomePage() {
         {/* Title */}
         <h1 className="home-title">{activeCity} Air Quality Index (AQI) | Air Pollution</h1>
         <p className="home-subtitle">
-          Real-time PM2.5, PM10 air pollution level in {activeCity} ({aqiStandard === 'IN_NAQI' ? 'CPCB India NAQI Standard' : 'US EPA 40 CFR Standard'})
+          Latest reported PM2.5, PM10 air pollution level in {activeCity} ({aqiStandard === 'IN_NAQI' ? 'CPCB India NAQI Standard' : 'US EPA 40 CFR Standard'})
         </p>
 
         <p className="home-timestamp" suppressHydrationWarning>
-          Last Updated: {now.toLocaleDateString('en-IN')} {now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false })} (Local Time)
+          Latest station observation: {cityData?.latest_observation_time ? new Date(cityData.latest_observation_time).toLocaleString('en-IN') : 'Timestamp unavailable'} (Local Time)
         </p>
 
         {/* ═══ Section 1: Hero AQI Card ═══ */}
         <div className="home-hero">
           <div className="home-hero-left">
             <div className="home-aqi-indicator">
-              <div className="dot" style={{ background: aqiCat.color }} /> Live AQI
+              <div className="dot" style={{ background: aqiCat.color }} /> Station AQI
             </div>
             <div className="home-aqi-value" style={{ color: aqiCat.color }}>{avgAqi}</div>
             <div className="home-aqi-unit">AQI ({aqiStandard === 'IN_NAQI' ? 'India NAQI' : 'US EPA'})</div>
@@ -447,12 +442,12 @@ export default function HomePage() {
             <div className="home-pm-values">
               <div className="home-pm-item">
                 <div className="home-pm-label">PM2.5</div>
-                <span className="home-pm-val">{avgPm25}</span>
+                <span className="home-pm-val">{stations.some((st) => st.monitored !== false && typeof st.pm25 === 'number') ? avgPm25 : '--'}</span>
                 <span className="home-pm-unit">µg/m³</span>
               </div>
               <div className="home-pm-item">
                 <div className="home-pm-label">PM10</div>
-                <span className="home-pm-val">{avgPm10}</span>
+                <span className="home-pm-val">{stations.some((st) => st.monitored !== false && typeof st.pm10 === 'number') ? avgPm10 : '--'}</span>
                 <span className="home-pm-unit">µg/m³</span>
               </div>
             </div>
@@ -498,13 +493,14 @@ export default function HomePage() {
         <div className="home-section-title">Pollutant Breakdown</div>
         <div className="home-grid-6">
           {Object.entries(POLLUTANT_LIMITS).map(([key, info]) => {
+            const available = stations.some((st: any) => st.monitored !== false && typeof st[key] === 'number');
             const value = (avgPollutants as any)[key] ?? 0;
             const pct = Math.min(100, (value / info.limit) * 100);
-            const clr = pollutantColor(value, info.limit);
+            const clr = available ? pollutantColor(value, info.limit) : 'var(--text-muted)';
             return (
               <div className="home-pollutant-card" key={key}>
                 <div className="home-pollutant-name">{info.label}</div>
-                <div className="home-pollutant-value" style={{ color: clr }}>{value}</div>
+                <div className="home-pollutant-value" style={{ color: clr }}>{available ? value : '--'}</div>
                 <span className="home-pollutant-unit">{info.unit}</span>
                 <div className="home-pollutant-bar">
                   <div className="home-pollutant-bar-fill" style={{ width: `${pct}%`, background: clr }} />

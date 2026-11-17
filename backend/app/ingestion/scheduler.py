@@ -65,11 +65,11 @@ def _execute_ingestion_cycle() -> Dict[str, Any]:
         cpcb_stats = run_cpcb_ingestion(max_records=10000)
         
         # 2. OpenAQ v3 backup ingestion
-        openaq_stats = run_openaq_ingestion(max_locations=20)
+        openaq_stats = run_openaq_ingestion(max_locations=36)
 
         elapsed = round(time.time() - start_time, 2)
         result = {
-            "status": "success",
+            "status": "success" if ((cpcb_stats.get("records_fetched", 0) and not cpcb_stats.get("errors")) or (openaq_stats.get("observations_seen", 0) and not openaq_stats.get("errors"))) else "error",
             "cpcb": cpcb_stats,
             "openaq": openaq_stats,
             "elapsed_seconds": elapsed,
@@ -134,7 +134,8 @@ def run_scheduled_refresh(run_id: str):
     try:
         result = execute_ingestion_cycle()
         cpcb = result.get("cpcb", {})
-        ok = bool(cpcb.get("records_fetched")) and not cpcb.get("errors")
+        openaq = result.get("openaq", {})
+        ok = (bool(cpcb.get("records_fetched")) and not cpcb.get("errors")) or (bool(openaq.get("observations_seen")) and not openaq.get("errors"))
         set_cache(cache_key, {"status": "succeeded" if ok else "failed", "result": result}, ttl_seconds=86400)
     except Exception:
         logger.exception("Scheduled refresh failed")

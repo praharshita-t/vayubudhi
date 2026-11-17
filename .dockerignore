@@ -1,0 +1,14 @@
+.git
+.readiness
+.venv
+**/__pycache__
+**/node_modules
+**/.next
+**/.env*
+**/*.db*
+**/*.log
+**/catboost_info
+docs
+hardware_lab
+hardware_demo_code
+iot_firmware

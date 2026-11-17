@@ -9,28 +9,29 @@ if app_dir not in sys.path:
     sys.path.append(app_dir)
 
 from app.database import get_db
+from app.auth import require_roles
 from app import models
 from app import schemas
 from optimization.solver import RouteSolver
 from optimization.router import get_dispatch_details
 from optimization.roi import calculate_inspection_roi
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_roles(["super_admin", "city_officer"]))])
 
 
 class StationData(BaseModel):
-    lat: float
-    lon: float
-    aqi: float
-    name: str = "Unknown"
+    lat: float = Field(ge=-90, le=90, allow_inf_nan=False)
+    lon: float = Field(ge=-180, le=180, allow_inf_nan=False)
+    aqi: float = Field(ge=0, le=1000, allow_inf_nan=False)
+    name: str = Field(default="Unknown", max_length=255)
 
 class OptimizeRequest(BaseModel):
-    lat: float
-    lon: float
-    stations: List[StationData]
+    lat: float = Field(ge=-90, le=90, allow_inf_nan=False)
+    lon: float = Field(ge=-180, le=180, allow_inf_nan=False)
+    stations: List[StationData] = Field(min_length=1, max_length=100)
 
 @router.post("/optimize")
 def generate_optimal_routes(request: OptimizeRequest, db: Session = Depends(get_db)):

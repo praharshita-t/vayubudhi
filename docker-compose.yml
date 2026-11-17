@@ -1,94 +1,71 @@
-version: '3.8'
-
+# Local development. Production uses compose.production.yml.
+name: vayubudhi-dev
 services:
-  # 1. Enterprise Time-Series Database (PostgreSQL 16 + TimescaleDB)
-  timescaledb:
-    image: timescale/timescaledb:latest-pg16
-    container_name: vayubudhi-timescaledb
-    restart: unless-stopped
-    ports:
-      - "5432:5432"
+  db:
+    image: postgres:16-alpine
     environment:
       POSTGRES_DB: vayubudhi
       POSTGRES_USER: vayuuser
-      POSTGRES_PASSWORD: vayupassword_enterprise_2026
-    volumes:
-      - timescaledb_data:/var/lib/postgresql/data
-      - ./backend/app/scripts/setup_timescaledb.sql:/docker-entrypoint-initdb.d/01_setup_timescaledb.sql:ro
+      POSTGRES_PASSWORD: local-development-only
+    volumes: [dev_postgres:/var/lib/postgresql/data]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U vayuuser -d vayubudhi"]
-      interval: 10s
+      test: [CMD-SHELL, 'pg_isready -U vayuuser -d vayubudhi']
+      interval: 5s
       timeout: 5s
-      retries: 5
-    networks:
-      - vayu-network
-
-  # 2. Distributed Caching & Rate Limiting (Redis 7)
+      retries: 20
   redis:
     image: redis:7-alpine
-    container_name: vayubudhi-redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
-    volumes:
-      - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - vayu-network
-
-  # 3. FastAPI API Server & Background Telemetry Ingestion Worker
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  migrate:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment: &env
+      DATABASE_URL: postgresql://vayuuser:local-development-only@db:5432/vayubudhi
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: local-development-only-not-for-production
+      INGESTION_ENABLED: 'false'
+    command: [alembic, upgrade, head]
+    healthcheck: {disable: true}
+    depends_on:
+      db: {condition: service_healthy}
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: vayubudhi-backend
-    restart: unless-stopped
-    ports:
-      - "8000:8000"
+      context: .
+      dockerfile: backend/Dockerfile
     environment:
-      - DATABASE_URL=postgresql://vayuuser:vayupassword_enterprise_2026@timescaledb:5432/vayubudhi
-      - REDIS_URL=redis://redis:6379/0
-      - DATAGOV_API_KEY=${DATAGOV_API_KEY}
-      - OPENAQ_API_KEY=${OPENAQ_API_KEY}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-vayubudhi_super_secret_jwt_key_2026}
-      - ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+      <<: *env
+      DATAGOV_API_KEY: ${DATAGOV_API_KEY:-}
+      OPENAQ_API_KEY: ${OPENAQ_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      ALLOWED_ORIGINS: http://localhost:3000
+    ports: ['127.0.0.1:8000:8000']
     depends_on:
-      timescaledb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - vayu-network
-
-  # 4. Next.js Geospatial Command Portal
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+  ingestion:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      <<: *env
+      DATAGOV_API_KEY: ${DATAGOV_API_KEY:-}
+      OPENAQ_API_KEY: ${OPENAQ_API_KEY:-}
+    command: [python, -m, app.ingestion.worker]
+    healthcheck: {disable: true}
+    depends_on:
+      backend: {condition: service_healthy}
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
-    container_name: vayubudhi-frontend
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
-      - NEXT_PUBLIC_MAPBOX_TOKEN=${NEXT_PUBLIC_MAPBOX_TOKEN}
+      args:
+        BACKEND_URL: http://backend:8000
+    ports: ['127.0.0.1:3000:3000']
     depends_on:
-      - backend
-    networks:
-      - vayu-network
-
+      backend: {condition: service_healthy}
 volumes:
-  timescaledb_data:
-    driver: local
-  redis_data:
-    driver: local
-
-networks:
-  vayu-network:
-    driver: bridge
+  dev_postgres:

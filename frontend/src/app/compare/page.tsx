@@ -151,8 +151,8 @@ export default function CompareCitiesPage() {
     try {
       // 1. Fetch live city telemetry & historical in parallel
       const [cityRes, histRes] = await Promise.all([
-        fetch(`http://127.0.0.1:8000/api/city-data?city=${cityId}`),
-        fetch(`http://127.0.0.1:8000/api/city-historical?city=${cityId}`).catch(() => null)
+        fetch(`/api/city-data?city=${cityId}`),
+        fetch(`/api/city-historical?city=${cityId}`).catch(() => null)
       ]);
 
       const cityJson = await cityRes.json();
@@ -242,12 +242,12 @@ export default function CompareCitiesPage() {
       };
 
       const [fcRes, attrRes] = await Promise.all([
-        fetch('http://127.0.0.1:8000/api/forecast', {
+        fetch('/api/forecast', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(aggregateReading),
         }).catch(() => null),
-        fetch('http://127.0.0.1:8000/api/attribution', {
+        fetch('/api/attribution', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(aggregateReading),

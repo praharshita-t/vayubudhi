@@ -1,5 +1,8 @@
 # 🏆 VayuBudhi (वायुबुद्धि)
 
+Deployment preparation, CI/CD setup, environment variables, backups and rollback
+are documented in [the deployment runbook](docs/DEPLOYMENT.md).
+
 > **The Calibrated Decision Layer for Urban Air Quality**  
 > 🥉 **National 3rd Position** — **The Economic Times AI Hackathon 2.0** (T-Hub, Hyderabad) | Cash Prize: **₹2,00,000**
 

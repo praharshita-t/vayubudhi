@@ -67,7 +67,9 @@ def run_openaq_ingestion(max_locations: int = 30) -> Dict[str, Any]:
     """
     Ingests latest sensor observations from OpenAQ v3.
     """
-    Base.metadata.create_all(bind=engine)
+    from app.config import PRODUCTION
+    if not PRODUCTION:
+        Base.metadata.create_all(bind=engine)
     db = SessionLocal()
 
     stats = {

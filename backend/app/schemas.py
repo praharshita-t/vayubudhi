@@ -82,6 +82,7 @@ class IngestResponse(BaseModel):
 
 # Health Endpoint Response
 class HealthStatus(BaseModel):
+    models_ready: bool = False
     status: str = Field(..., examples=["healthy"])
     database: str = Field(..., examples=["connected"])
     cache: Optional[Dict[str, Any]] = None

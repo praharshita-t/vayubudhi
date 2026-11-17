@@ -8,19 +8,13 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 try:
-    import google.generativeai as genai
+    from google import genai
 except ImportError:
     genai = None
 
 router = APIRouter(prefix="/report", tags=["report"])
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-if GEMINI_API_KEY and genai:
-    try:
-        genai.configure(api_key=GEMINI_API_KEY)
-    except Exception as e:
-        print(f"Error configuring Gemini in report router: {e}")
-
 class ReportRequest(BaseModel):
     city: str = "Hyderabad"
     district_name: Optional[str] = None
@@ -313,13 +307,13 @@ def generate_deterministic_report(req: ReportRequest) -> Dict[str, Any]:
 def generate_report(req: ReportRequest):
     """
     Generates a structured Executive Environmental Intelligence & Compliance Audit Report
-    using Google Gemini 1.5 Flash when available, with an instant deterministic domain-expert fallback.
+    using the configured Gemini model when available, with an instant deterministic domain-expert fallback.
     """
     try:
         # If Gemini API is available and configured, synthesize tailored narrative
         if GEMINI_API_KEY and genai:
             try:
-                model = genai.GenerativeModel("gemini-1.5-flash")
+                client = genai.Client(api_key=GEMINI_API_KEY, http_options={"timeout": 15000})
                 prompt = (
                     f"You are the Chief Environmental Scientist and Urban Air Quality Auditor for VayuBudhi.\n"
                     f"Synthesize an Executive Environmental Intelligence & NCAP Compliance Audit Report for:\n"
@@ -333,10 +327,11 @@ def generate_report(req: ReportRequest):
                     f"Return a structured JSON document with keys: executive_summary, forensic_analysis, immediate_directives (list of 4 strings), structural_interventions (list of 3 strings), health_assessment (dict with general_population, sensitive_groups, indoor_guidelines)."
                 )
                 
-                response = model.generate_content(
-                    prompt,
-                    generation_config={"response_mime_type": "application/json"}
-                )
+                with client:
+                    response = client.models.generate_content(
+                        model=os.getenv("GEMINI_MODEL", "gemini-3.8-flash"),
+                        contents=prompt, config={"response_mime_type": "application/json"}
+                    )
                 
                 if response and response.text:
                     parsed_ai = json.loads(response.text)

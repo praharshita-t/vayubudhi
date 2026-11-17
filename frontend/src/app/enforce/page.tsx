@@ -9,7 +9,7 @@ const OptimizerPanel = dynamic(() => import('@/components/OptimizerPanel'), { ss
 
 export default function EnforcePage() {
   const { activeCity, cityData, liveData, districts } = useCityContext();
-  const { hasRole, role, switchDemoRole, isLoading } = useAuth();
+  const { hasRole, role } = useAuth();
 
   const isAuthorized = hasRole(['city_officer', 'super_admin']);
 
@@ -50,15 +50,7 @@ export default function EnforcePage() {
               The <strong>Google OR-Tools Municipal Fleet Enforcement & Sprinkler Dispatch</strong> portal is strictly restricted to verified Municipal Officers (GHMC Environmental Wing) and Central System Administrators. Public citizens have read-only access to ambient city maps and health advisories.
             </p>
             <div className="officer-gate-actions">
-              <button
-                className="officer-gate-btn-primary"
-                disabled={isLoading}
-                onClick={() => switchDemoRole('city_officer')}
-              >
-                <ShieldCheck size={18} />
-                <span>Unlock as GHMC City Officer (1-Click Demo)</span>
-                <ArrowRight size={16} />
-              </button>
+              <p>Use Staff sign in at the top of the page with your assigned account.</p>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                 Current Role: <span style={{ fontWeight: 600, color: '#f59e0b' }}>{role}</span>
               </div>

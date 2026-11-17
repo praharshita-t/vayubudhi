@@ -32,7 +32,7 @@ export function CityProvider({ children }: { children: React.ReactNode }) {
   const [cityData, setCityData] = useState<any>(null);
   const [liveData, setLiveData] = useState<any>(null);
   const [userCoords, setUserCoords] = useState<{ lat: number; lon: number } | null>(null);
-  const [liveLoading, setLiveLoading] = useState(false);
+  const [liveLoading, setLiveLoading] = useState(true);
 
   const cityCacheRef = React.useRef<Record<string, any>>({});
 
@@ -61,7 +61,7 @@ export function CityProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (activeCity === 'My Location' && userCoords) {
       setLiveLoading(true);
-      fetch(`http://127.0.0.1:8000/api/live?lat=${userCoords.lat}&lon=${userCoords.lon}`)
+      fetch(`/api/live?lat=${userCoords.lat}&lon=${userCoords.lon}`)
         .then((r) => r.json())
         .then((data) => { setLiveData(data); setLiveLoading(false); })
         .catch(() => setLiveLoading(false));
@@ -76,11 +76,12 @@ export function CityProvider({ children }: { children: React.ReactNode }) {
         setCityData(cityCacheRef.current[activeCity]);
         setLiveLoading(false);
       } else {
+        setCityData(null);
         setLiveLoading(true);
       }
       
       const fetchCity = (retryCount = 0) => {
-        fetch(`http://127.0.0.1:8000/api/city-data?city=${activeCity}`)
+        fetch(`/api/city-data?city=${activeCity}`)
           .then((r) => {
             if (!r.ok) throw new Error(`HTTP ${r.status}`);
             return r.json();

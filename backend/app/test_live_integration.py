@@ -1,5 +1,7 @@
 import sys
 import os
+if os.getenv("APP_ENV") == "production":
+    raise RuntimeError("Destructive legacy demo tests are disabled in production; use backend/tests")
 
 # Add parent backend directory to sys.path to resolve 'app'
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

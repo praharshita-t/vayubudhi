@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.database import get_db
@@ -8,7 +8,7 @@ from app.redis_client import get_cache_status
 router = APIRouter()
 
 @router.get("/health", response_model=schemas.HealthStatus, status_code=status.HTTP_200_OK)
-def check_health(db: Session = Depends(get_db)):
+def check_health(response: Response, db: Session = Depends(get_db)):
     """
     Performs server connectivity, database readiness, and distributed cache checks.
     """
@@ -19,15 +19,19 @@ def check_health(db: Session = Depends(get_db)):
     except Exception:
         pass
 
+    from app.config import PRODUCTION
+    from app.ml_service import ml_service
+    cache = get_cache_status()
+    models_ready = (ml_service.classifier is not None and ml_service.dataset_cache is not None
+                    and all(f"{h}h" in ml_service.forecasters for h in (24, 48, 72)))
+    healthy = database_status == "connected" and (not PRODUCTION or (cache["redis_connected"] and models_ready))
+    if not healthy:
+        response.status_code = 503
     return {
-        "status": "healthy",
+        "status": "healthy" if healthy else "unavailable",
         "database": database_status,
-        "cache": get_cache_status(),
-        "data_sovereignty": {
-            "compliant": True,
-            "hosting_region": "ap-south-1 (Mumbai, India)",
-            "statute": "Digital Personal Data Protection Act 2023"
-        }
+        "cache": cache,
+        "models_ready": models_ready,
     }
 
 import sys

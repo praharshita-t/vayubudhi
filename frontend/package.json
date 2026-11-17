@@ -11,7 +11,7 @@
   "dependencies": {
     "@deck.gl/core": "^8.9.0",
     "@deck.gl/layers": "^8.9.0",
-    "@deck.gl/react": "^8.9.0",
+    "@deck.gl/react": "^9.4.1",
     "d3-interpolate": "^3.0.1",
     "lucide-react": "^1.74.0",
     "maplibre-gl": "^6.18.0",

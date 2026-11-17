@@ -13,7 +13,7 @@ def main():
         raise RuntimeError("DATAGOV_API_KEY is required")
     if engine.dialect.name != "postgresql":
         raise RuntimeError("Scheduled ingestion requires the migrated PostgreSQL database")
-    with engine.connect() as connection:
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
         if not connection.scalar(text("SELECT pg_try_advisory_lock(8675309)")):
             print(json.dumps({"status": "skipped", "reason": "Another ingestion is running"}))
             return

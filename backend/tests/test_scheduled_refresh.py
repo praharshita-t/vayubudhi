@@ -25,10 +25,24 @@ def test_scheduled_refresh_tracks_success_and_provider_failure(monkeypatch):
     monkeypatch.setattr(scheduler, "set_cache", lambda key, value, **_: cache.__setitem__(key, value))
     monkeypatch.setattr(scheduler, "get_cache", cache.get)
     headers = {"X-Ingestion-Key": "x" * 48}
-    for count, expected in [(25, "succeeded"), (0, "failed")]:
-        with patch.object(scheduler, "execute_ingestion_cycle", return_value={"cpcb": {"records_fetched": count, "errors": 0}}):
+    for count, openaq_count, expected in [(25, 0, "succeeded"), (0, 0, "failed"), (0, 3, "succeeded")]:
+        with patch.object(scheduler, "execute_ingestion_cycle", return_value={"cpcb": {"records_fetched": count, "errors": 0}, "openaq": {"observations_seen": openaq_count, "errors": 0}}):
             response = client.post("/api/ingestion/scheduled-refresh", headers=headers)
         assert response.status_code == 202
         run_id = response.json()["run_id"]
         assert client.get(f"/api/ingestion/scheduled-refresh/{run_id}", headers=headers).json()["status"] == expected
         assert client.get(f"/api/ingestion/scheduled-refresh/{run_id}").status_code == 401
+
+
+def test_latest_observation_compares_provider_timezones():
+    from datetime import datetime
+    from unittest.mock import MagicMock
+    session = MagicMock()
+    session.query.return_value.count.side_effect = [5, 6]
+    session.query.return_value.group_by.return_value.all.return_value = [
+        ("cpcb_caaqms", datetime(2026, 11, 17, 18)),
+        ("openaq", datetime(2026, 11, 17, 13, 30)),
+    ]
+    with patch.object(scheduler, "SessionLocal", return_value=session), patch.object(scheduler, "get_cache", return_value=None):
+        result = scheduler.get_ingestion_status()
+    assert result["metrics"]["latest_observation_time"] == "2026-11-17T13:30:00+00:00"

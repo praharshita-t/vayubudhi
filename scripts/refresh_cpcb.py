@@ -29,10 +29,10 @@ def main():
             return
         if state == "failed":
             print(json.dumps(result))
-            raise RuntimeError("Backend CPCB refresh failed")
-        print("CPCB refresh: " + state, flush=True)
+            raise RuntimeError("Backend Station refresh failed")
+        print("Station refresh: " + state, flush=True)
         time.sleep(15)
-    raise TimeoutError("CPCB refresh did not finish within 20 minutes")
+    raise TimeoutError("Station refresh did not finish within 20 minutes")
 
 
 if __name__ == "__main__":

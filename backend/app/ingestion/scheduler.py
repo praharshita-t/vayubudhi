@@ -10,7 +10,8 @@ import time
 import os
 import secrets
 from uuid import UUID, uuid4
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from typing import Dict, Any
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends, Header
 from app.auth import require_roles
@@ -18,7 +19,7 @@ from app.auth import require_roles
 from app.database import SessionLocal
 from app.models import Station, StationObservation
 from app.database import engine
-from sqlalchemy import text
+from sqlalchemy import text, func
 from app.redis_client import get_cache, set_cache
 from app.ingestion.cpcb_worker import run_cpcb_ingestion
 from app.ingestion.openaq_worker import run_openaq_ingestion
@@ -41,7 +42,7 @@ def execute_ingestion_cycle() -> Dict[str, Any]:
     """Serialize workers and manual triggers across processes on PostgreSQL."""
     if engine.dialect.name != "postgresql":
         return _execute_ingestion_cycle()
-    with engine.connect() as connection:
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
         if not connection.scalar(text("SELECT pg_try_advisory_lock(8675309)")):
             return {"status": "skipped", "reason": "Another ingestion process owns the lock"}
         try:
@@ -65,11 +66,11 @@ def _execute_ingestion_cycle() -> Dict[str, Any]:
         cpcb_stats = run_cpcb_ingestion(max_records=10000)
         
         # 2. OpenAQ v3 backup ingestion
-        openaq_stats = run_openaq_ingestion(max_locations=20)
+        openaq_stats = run_openaq_ingestion(max_locations=36)
 
         elapsed = round(time.time() - start_time, 2)
         result = {
-            "status": "success",
+            "status": "success" if ((cpcb_stats.get("records_fetched", 0) and not cpcb_stats.get("errors")) or (openaq_stats.get("observations_seen", 0) and not openaq_stats.get("errors"))) else "error",
             "cpcb": cpcb_stats,
             "openaq": openaq_stats,
             "elapsed_seconds": elapsed,
@@ -134,7 +135,8 @@ def run_scheduled_refresh(run_id: str):
     try:
         result = execute_ingestion_cycle()
         cpcb = result.get("cpcb", {})
-        ok = bool(cpcb.get("records_fetched")) and not cpcb.get("errors")
+        openaq = result.get("openaq", {})
+        ok = (bool(cpcb.get("records_fetched")) and not cpcb.get("errors")) or (bool(openaq.get("observations_seen")) and not openaq.get("errors"))
         set_cache(cache_key, {"status": "succeeded" if ok else "failed", "result": result}, ttl_seconds=86400)
     except Exception:
         logger.exception("Scheduled refresh failed")
@@ -180,12 +182,11 @@ def get_ingestion_status():
     try:
         station_count = db.query(Station).count()
         observation_count = db.query(StationObservation).count()
-        latest_obs = (
-            db.query(StationObservation)
-            .order_by(StationObservation.timestamp.desc())
-            .first()
-        )
-        latest_ts = latest_obs.timestamp.isoformat() if latest_obs else None
+        latest_by_source = db.query(StationObservation.source, func.max(StationObservation.timestamp)).group_by(StationObservation.source).all()
+        observation_times = [timestamp.replace(tzinfo=ZoneInfo("Asia/Kolkata") if source == "cpcb_caaqms" else timezone.utc)
+                             if timestamp.tzinfo is None else timestamp
+                             for source, timestamp in latest_by_source if timestamp is not None]
+        latest_ts = max(observation_times).isoformat() if observation_times else None
 
         return {
             "scheduler_active": SCHEDULER_THREAD is not None and SCHEDULER_THREAD.is_alive(),

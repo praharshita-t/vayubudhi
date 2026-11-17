@@ -2,6 +2,8 @@ import json
 import os
 import threading
 import time
+from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Dict, Any, Optional
 
@@ -391,12 +393,12 @@ class StationData(BaseModel):
     so2: Optional[float] = None
     co: Optional[float] = None
     o3: Optional[float] = None
-    temp: float = 30.0
-    humidity: float = 50.0
-    pressure: float = 1010.0
-    wind_speed: float = 2.0
-    wind_dir: float = 0.0
-    pblh: float = 800.0
+    temp: Optional[float] = None
+    humidity: Optional[float] = None
+    pressure: Optional[float] = None
+    wind_speed: Optional[float] = None
+    wind_dir: Optional[float] = None
+    pblh: Optional[float] = None
     aqi: Optional[float] = None
     aqi_in: Optional[float] = None
     aqi_us: Optional[float] = None
@@ -417,6 +419,7 @@ class CityDataResponse(BaseModel):
     center_aqi_in: Optional[float] = None
     center_aqi_us: Optional[float] = None
     monitored_stations_count: int = 0
+    latest_observation_time: Optional[str] = None
 
 
 # ── Real CPCB/State PCB monitoring station locations per city ──
@@ -612,6 +615,18 @@ CITY_CENTERS_BACKEND = {
     "Patna": {"lat": 25.5941, "lon": 85.1376},
 }
 
+def observation_datetime(observation):
+    value = observation.timestamp
+    if value.tzinfo is None:
+        return value.replace(tzinfo=ZoneInfo("Asia/Kolkata") if observation.source == "cpcb_caaqms" else timezone.utc)
+    return value
+
+
+def observation_is_fresh(observation, now=None):
+    age = (now or datetime.now(timezone.utc)) - observation_datetime(observation)
+    return -timedelta(minutes=10) <= age <= timedelta(hours=24)
+
+
 @router.get("/city-data", response_model=CityDataResponse)
 def get_city_data(city: str):
     now = time.time()
@@ -636,10 +651,11 @@ def get_city_data(city: str):
                 .order_by(DBObservation.timestamp.desc())
                 .first()
             )
-            if obs:
+            if obs and observation_is_fresh(obs):
                 # Deduplicate by approximate coordinates to avoid duplicate dots for identical physical sites
                 coord_key = (round(st.latitude, 4), round(st.longitude, 4))
-                if coord_key not in db_station_map or "cpcb" in st.id.lower():
+                previous = db_station_map.get(coord_key)
+                if previous is None or observation_datetime(obs) > observation_datetime(previous[1]) or (observation_datetime(obs) == observation_datetime(previous[1]) and "cpcb" in st.id.lower()):
                     db_station_map[coord_key] = (st, obs)
     except Exception as e:
         print(f"Error querying DB stations for {city}: {e}")
@@ -678,23 +694,31 @@ def get_city_data(city: str):
     total_aqi_us = 0
     monitored_count = 0
 
+    observation_times = []
     for i, (st_obj, obs_obj) in enumerate(physical_stations):
+        if not any(getattr(obs_obj, key) is not None for key in ("pm25", "pm10", "no2", "so2", "co", "o3")):
+            continue
         cw = w_list[i].get("current", {}) if i < len(w_list) else {}
-        st_temp = float(cw.get("temperature_2m", 28.0))
-        st_hum = float(cw.get("relative_humidity_2m", 60.0))
-        st_press = float(cw.get("surface_pressure", 1008.0))
-        st_wind = float(cw.get("wind_speed_10m", 2.0))
-        st_wind_dir = float(cw.get("wind_direction_10m", 0.0))
-        st_pblh = float(cw.get("boundary_layer_height", 800.0))
-
-        pm25_val = float(obs_obj.pm25 or 28.0)
-        pm10_val = float(obs_obj.pm10 or 55.0)
-        no2_val = float(obs_obj.no2 or 22.0)
-        so2_val = float(obs_obj.so2 or 8.0)
-        co_val = float(obs_obj.co or 0.9)
-        o3_val = float(obs_obj.o3 or 20.0)
-        aqi_in_val = float(obs_obj.aqi_in or 65.0)
-        aqi_us_val = float(obs_obj.aqi_us or 75.0)
+        def reading(value, precision=1):
+            return round(float(value), precision) if value is not None else None
+        st_temp = reading(cw.get("temperature_2m"))
+        st_hum = reading(cw.get("relative_humidity_2m"))
+        st_press = reading(cw.get("surface_pressure"))
+        st_wind = reading(cw.get("wind_speed_10m"))
+        st_wind_dir = reading(cw.get("wind_direction_10m"))
+        st_pblh = reading(cw.get("boundary_layer_height"))
+        pm25_val = reading(obs_obj.pm25)
+        pm10_val = reading(obs_obj.pm10)
+        no2_val = reading(obs_obj.no2)
+        so2_val = reading(obs_obj.so2)
+        co_val = reading(obs_obj.co, 2)
+        o3_val = reading(obs_obj.o3)
+        aqi_in_val = obs_obj.aqi_in if obs_obj.aqi_in is not None else obs_obj.aqi_us
+        aqi_us_val = obs_obj.aqi_us if obs_obj.aqi_us is not None else obs_obj.aqi_in
+        if aqi_in_val is None or aqi_us_val is None:
+            continue
+        observed_at = observation_datetime(obs_obj)
+        observation_times.append(observed_at)
         effective_aqi = aqi_in_val
 
         total_aqi += effective_aqi
@@ -707,18 +731,18 @@ def get_city_data(city: str):
             name=st_obj.name,
             lat=st_obj.latitude,
             lon=st_obj.longitude,
-            pm25=round(pm25_val, 1),
-            pm10=round(pm10_val, 1),
-            no2=round(no2_val, 1),
-            so2=round(so2_val, 1),
-            co=round(co_val, 2),
-            o3=round(o3_val, 1),
-            temp=round(st_temp, 1),
-            humidity=round(st_hum, 1),
-            pressure=round(st_press, 1),
-            wind_speed=round(st_wind, 1),
-            wind_dir=round(st_wind_dir, 1),
-            pblh=round(st_pblh, 1),
+            pm25=pm25_val,
+            pm10=pm10_val,
+            no2=no2_val,
+            so2=so2_val,
+            co=co_val,
+            o3=o3_val,
+            temp=st_temp,
+            humidity=st_hum,
+            pressure=st_press,
+            wind_speed=st_wind,
+            wind_dir=st_wind_dir,
+            pblh=st_pblh,
             aqi=round(effective_aqi, 1),
             aqi_in=round(aqi_in_val, 1),
             aqi_us=round(aqi_us_val, 1),
@@ -729,7 +753,9 @@ def get_city_data(city: str):
             status="online",
         ))
 
-    num = max(1, monitored_count)
+    if not monitored_count:
+        raise HTTPException(status_code=503, detail="No usable station observations are available for this city")
+    num = monitored_count
     center_aqi = round(total_aqi / num, 1) if monitored_count > 0 else 55.0
     center_aqi_in = round(total_aqi_in / num, 1) if monitored_count > 0 else 55.0
     center_aqi_us = round(total_aqi_us / num, 1) if monitored_count > 0 else 65.0
@@ -741,6 +767,7 @@ def get_city_data(city: str):
         center_aqi_in=center_aqi_in,
         center_aqi_us=center_aqi_us,
         monitored_stations_count=monitored_count,
+        latest_observation_time=max(observation_times).isoformat() if observation_times else None,
     )
     with CACHE_LOCK:
         CITY_DATA_CACHE[city] = (time.time(), res)

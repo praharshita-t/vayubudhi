@@ -8,6 +8,7 @@ from app.ingestion import cpcb_once
 def scheduled_engine(owns_lock=True):
     engine = MagicMock()
     engine.dialect.name = "postgresql"
+    engine.connect.return_value.execution_options.return_value = engine.connect.return_value
     connection = engine.connect.return_value.__enter__.return_value
     connection.scalar.return_value = owns_lock
     return engine, connection

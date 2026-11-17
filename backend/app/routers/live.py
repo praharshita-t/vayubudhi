@@ -2,7 +2,7 @@ import json
 import os
 import threading
 import time
-from datetime import timezone
+from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Dict, Any, Optional
@@ -622,6 +622,11 @@ def observation_datetime(observation):
     return value
 
 
+def observation_is_fresh(observation, now=None):
+    age = (now or datetime.now(timezone.utc)) - observation_datetime(observation)
+    return -timedelta(minutes=10) <= age <= timedelta(hours=24)
+
+
 @router.get("/city-data", response_model=CityDataResponse)
 def get_city_data(city: str):
     now = time.time()
@@ -646,7 +651,7 @@ def get_city_data(city: str):
                 .order_by(DBObservation.timestamp.desc())
                 .first()
             )
-            if obs:
+            if obs and observation_is_fresh(obs):
                 # Deduplicate by approximate coordinates to avoid duplicate dots for identical physical sites
                 coord_key = (round(st.latitude, 4), round(st.longitude, 4))
                 previous = db_station_map.get(coord_key)

@@ -6,10 +6,40 @@ Supports dual-mode execution:
 Provides both Synchronous and Asynchronous (SQLAlchemy 2.0 AsyncSession) interfaces.
 """
 import os
+import ssl
+from pathlib import Path
+from dotenv import load_dotenv
 from typing import AsyncGenerator, Generator
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.engine import make_url
+
+# Neon CLI writes repo-root .env.local. Explicit host/container environment
+# variables retain priority, and credentials never enter source control.
+project_root = Path(__file__).resolve().parents[2]
+load_dotenv(project_root / ".env.local", override=False)
+load_dotenv(project_root / ".env", override=False)
+
+
+def async_postgres_connection(url: str) -> tuple[str, dict]:
+    """Translate managed Postgres/libpq TLS options for the asyncpg driver."""
+    parsed = make_url(url).set(drivername="postgresql+asyncpg")
+    query = dict(parsed.query)
+    # This libpq-only option is not an asyncpg connection keyword. TLS below
+    # verifies the server certificate and hostname for managed connections.
+    query.pop("channel_binding", None)
+    mode = query.pop("sslmode", None)
+    connect_args = {}
+    if mode in {"require", "verify-ca", "verify-full"}:
+        connect_args["ssl"] = ssl.create_default_context()
+    elif mode == "disable":
+        connect_args["ssl"] = False
+    elif mode in {"allow", "prefer"}:
+        connect_args["ssl"] = mode
+    elif mode is not None:
+        raise ValueError("Unsupported PostgreSQL sslmode")
+    return parsed.set(query=query).render_as_string(hide_password=False), connect_args
 
 # Base database URL from environment
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./vayubudhi.db")
@@ -70,15 +100,11 @@ if is_sqlite:
         connect_args={"check_same_thread": False}
     )
 else:
-    if DATABASE_URL.startswith("postgresql://"):
-        ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
-    elif DATABASE_URL.startswith("postgresql+psycopg2://"):
-        ASYNC_DATABASE_URL = DATABASE_URL.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
-    else:
-        ASYNC_DATABASE_URL = DATABASE_URL
+    ASYNC_DATABASE_URL, async_connect_args = async_postgres_connection(DATABASE_URL)
 
     async_engine = create_async_engine(
         ASYNC_DATABASE_URL,
+        connect_args=async_connect_args,
         pool_size=20,
         max_overflow=40,
         pool_timeout=30,

@@ -10,6 +10,8 @@ import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from dotenv import load_dotenv
 
 from app.database import SessionLocal, Base, engine
@@ -23,6 +25,17 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger("cpcb_worker")
 
 DATA_GOV_API_KEY = os.getenv("DATAGOV_API_KEY", "")
+
+
+class ProviderKeyFilter(logging.Filter):
+    def filter(self, record):
+        if DATA_GOV_API_KEY:
+            record.msg = record.getMessage().replace(DATA_GOV_API_KEY, "[REDACTED]")
+            record.args = ()
+        return True
+
+
+logging.getLogger("urllib3.connectionpool").addFilter(ProviderKeyFilter())
 RESOURCE_ID = os.getenv("CPCB_RESOURCE_ID", "3b01bcb8-0b14-4abf-b6f2-c1bfd384ba69")
 BASE_URL = f"https://api.data.gov.in/resource/{RESOURCE_ID}"
 
@@ -52,8 +65,7 @@ def parse_cpcb_timestamp(ts_str: str) -> datetime:
 def fetch_cpcb_records(limit: int = 1000, offset: int = 0, city: Optional[str] = None) -> List[Dict[str, Any]]:
     """Fetches a page of records from data.gov.in."""
     if not DATA_GOV_API_KEY:
-        logger.error("DATAGOV_API_KEY is not set in environment or .env")
-        return []
+        raise RuntimeError("DATAGOV_API_KEY is not configured")
 
     params = {
         "api-key": DATA_GOV_API_KEY,
@@ -65,16 +77,18 @@ def fetch_cpcb_records(limit: int = 1000, offset: int = 0, city: Optional[str] =
         params["filters[city]"] = city
 
     try:
-        resp = requests.get(BASE_URL, params=params, timeout=20, headers={"User-Agent": "VayuBudhi/1.0"})
+        retries = Retry(total=3, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504], allowed_methods={"GET"}, raise_on_status=False)
+        with requests.Session() as session:
+            session.mount("https://", HTTPAdapter(max_retries=retries))
+            resp = session.get(BASE_URL, params=params, timeout=(10, 30), headers={"User-Agent": "VayuBudhi/1.0"})
         if resp.status_code != 200:
-            logger.error("data.gov.in returned HTTP %s", resp.status_code)
-            return []
+            raise RuntimeError(f"data.gov.in returned HTTP {resp.status_code}")
         data = resp.json()
         return data.get("records", [])
     except Exception as e:
         # Request exceptions can include the URL, whose query contains the key.
-        logger.error("Failed to fetch data.gov.in records (%s)", type(e).__name__)
-        return []
+        safe_message = str(e).replace(DATA_GOV_API_KEY, "[REDACTED]")
+        raise RuntimeError(f"CPCB request failed ({type(e).__name__}): {safe_message}") from None
 
 def run_cpcb_ingestion(cities: Optional[List[str]] = None, max_records: int = 4000) -> Dict[str, Any]:
     """

@@ -10,7 +10,8 @@ import time
 import os
 import secrets
 from uuid import UUID, uuid4
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from typing import Dict, Any
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends, Header
 from app.auth import require_roles
@@ -18,7 +19,7 @@ from app.auth import require_roles
 from app.database import SessionLocal
 from app.models import Station, StationObservation
 from app.database import engine
-from sqlalchemy import text
+from sqlalchemy import text, func
 from app.redis_client import get_cache, set_cache
 from app.ingestion.cpcb_worker import run_cpcb_ingestion
 from app.ingestion.openaq_worker import run_openaq_ingestion
@@ -181,12 +182,11 @@ def get_ingestion_status():
     try:
         station_count = db.query(Station).count()
         observation_count = db.query(StationObservation).count()
-        latest_obs = (
-            db.query(StationObservation)
-            .order_by(StationObservation.timestamp.desc())
-            .first()
-        )
-        latest_ts = latest_obs.timestamp.isoformat() if latest_obs else None
+        latest_by_source = db.query(StationObservation.source, func.max(StationObservation.timestamp)).group_by(StationObservation.source).all()
+        observation_times = [timestamp.replace(tzinfo=ZoneInfo("Asia/Kolkata") if source == "cpcb_caaqms" else timezone.utc)
+                             if timestamp.tzinfo is None else timestamp
+                             for source, timestamp in latest_by_source if timestamp is not None]
+        latest_ts = max(observation_times).isoformat() if observation_times else None
 
         return {
             "scheduler_active": SCHEDULER_THREAD is not None and SCHEDULER_THREAD.is_alive(),

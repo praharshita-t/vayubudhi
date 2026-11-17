@@ -5,7 +5,7 @@ Exposes endpoints for registration, login, profile inspection, and role authoriz
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.database import get_db, SessionLocal
@@ -23,11 +23,26 @@ router = APIRouter(prefix="/auth", tags=["Authentication & RBAC"])
 
 # Pydantic Schemas
 class UserRegisterRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     email: str
-    password: str
-    full_name: str
-    role: str = "public_viewer"  # super_admin, city_officer, field_inspector, public_viewer
-    department: Optional[str] = None
+    password: str = Field(min_length=12)
+    full_name: str = Field(min_length=2, max_length=255)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        import re
+        value = value.strip().lower()
+        if len(value) > 255 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", value):
+            raise ValueError("Invalid email address")
+        return value
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("Password must fit within 72 UTF-8 bytes")
+        return value
 
 
 class UserLoginRequest(BaseModel):
@@ -56,6 +71,9 @@ def seed_default_users():
     """
     Seed initial 4-tier demonstration accounts if not already created.
     """
+    from app.config import PRODUCTION
+    if PRODUCTION:
+        raise RuntimeError("Demo seeding is forbidden in production")
     db = SessionLocal()
     try:
         default_accounts = [
@@ -86,13 +104,7 @@ def seed_default_users():
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register_user(req: UserRegisterRequest, db: Session = Depends(get_db)):
-    """Register a new user account with assigned role."""
-    valid_roles = ["super_admin", "city_officer", "field_inspector", "public_viewer"]
-    if req.role not in valid_roles:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid role '{req.role}'. Must be one of: {valid_roles}"
-        )
+    """Public registration always creates an unprivileged viewer."""
 
     existing = db.query(User).filter(User.email == req.email.lower().strip()).first()
     if existing:
@@ -105,8 +117,8 @@ def register_user(req: UserRegisterRequest, db: Session = Depends(get_db)):
         email=req.email.lower().strip(),
         hashed_password=hash_password(req.password),
         full_name=req.full_name,
-        role=req.role,
-        department=req.department,
+        role="public_viewer",
+        department=None,
         is_active=True
     )
     db.add(user)

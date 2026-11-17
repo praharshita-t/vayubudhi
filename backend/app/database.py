@@ -18,6 +18,10 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./vayubudhi.db")
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
+# SQLAlchemy 2.1 defaults to psycopg3; this project explicitly installs psycopg2.
+if DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+
 is_sqlite = DATABASE_URL.startswith("sqlite")
 
 # ==========================================================

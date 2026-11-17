@@ -1,4 +1,5 @@
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends
+from app.auth import require_roles
 import os
 import sys
 import subprocess
@@ -46,10 +47,14 @@ def run_sync_pipeline():
     print("ML Synchronization Pipeline completed successfully.")
     return True
 
-@router.post("/sync")
+@router.post("/sync", dependencies=[Depends(require_roles(["super_admin"]))])
 def trigger_sync(background_tasks: BackgroundTasks):
     """
     Manually trigger the 24-hour sync pipeline for the Live Dataset.
     """
+    if os.getenv("APP_ENV") == "production":
+        raise HTTPException(status_code=409, detail="Production models are immutable; retrain and release a new image")
+    if not os.path.exists(os.path.join(BASE_DIR, "scripts", "fetch_expanded_dataset.py")):
+        raise HTTPException(status_code=503, detail="Dataset fetch script is not installed")
     background_tasks.add_task(run_sync_pipeline)
     return {"message": "Synchronization pipeline triggered in the background. Models will be hot-reloaded upon completion."}

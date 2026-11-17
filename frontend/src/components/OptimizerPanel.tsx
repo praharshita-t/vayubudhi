@@ -102,12 +102,16 @@ export default function OptimizerPanel({ city = 'Delhi', cityData, liveData, dis
     if (!payload) return;
 
     setLoading(true);
-    fetch('http://127.0.0.1:8000/api/optimize', {
+    fetch('/api/optimize', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json',
+        Authorization: `Bearer ${localStorage.getItem('vayubudhi_auth_token') || ''}` },
       body: JSON.stringify(payload)
     })
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error(`Routing request failed (${res.status})`);
+        return res.json();
+      })
       .then(data => {
         setLiveRoute(data);
         setLiveConnection(true);

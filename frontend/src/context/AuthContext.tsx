@@ -21,7 +21,6 @@ interface AuthContextType {
   error: string | null;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => void;
-  switchDemoRole: (role: UserRole) => Promise<void>;
   hasRole: (allowedRoles: UserRole[]) => boolean;
 }
 
@@ -34,13 +33,6 @@ const GUEST_USER: UserProfile = {
   is_active: true,
 };
 
-const DEMO_CREDENTIALS: Record<UserRole, { email: string; pass: string }> = {
-  super_admin: { email: 'admin@vayubudhi.gov.in', pass: 'Admin123!' },
-  city_officer: { email: 'officer@ghmc.gov.in', pass: 'Officer123!' },
-  field_inspector: { email: 'inspector@ghmc.gov.in', pass: 'Inspector123!' },
-  public_viewer: { email: 'public@vayubudhi.in', pass: 'Public123!' },
-};
-
 const AuthContext = createContext<AuthContextType>({
   user: GUEST_USER,
   token: null,
@@ -50,11 +42,10 @@ const AuthContext = createContext<AuthContextType>({
   error: null,
   login: async () => false,
   logout: () => {},
-  switchDemoRole: async () => {},
   hasRole: () => false,
 });
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = '';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(GUEST_USER);
@@ -62,22 +53,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Restore stored session on mount
+  // Restore only sessions verified by the API; stored profile data is not trusted.
   useEffect(() => {
-    try {
-      const storedToken = localStorage.getItem('vayubudhi_auth_token');
-      const storedUser = localStorage.getItem('vayubudhi_auth_user');
-      if (storedToken && storedUser) {
+    const controller = new AbortController();
+    const restore = async () => {
+      try {
+        const storedToken = localStorage.getItem('vayubudhi_auth_token');
+        if (!storedToken) return;
+        const response = await fetch('/api/auth/me', {
+          headers: { Authorization: `Bearer ${storedToken}` }, signal: controller.signal,
+        });
+        if (!response.ok) throw new Error('Session expired');
+        const profile = await response.json();
         setToken(storedToken);
-        setUser(JSON.parse(storedUser));
-      } else {
-        setUser(GUEST_USER);
+        setUser(profile);
+      } catch {
+        if (!controller.signal.aborted) {
+          localStorage.removeItem('vayubudhi_auth_token');
+          localStorage.removeItem('vayubudhi_auth_user');
+          setToken(null);
+          setUser(GUEST_USER);
+        }
+      } finally {
+        if (!controller.signal.aborted) setIsLoading(false);
       }
-    } catch {
-      setUser(GUEST_USER);
-    } finally {
-      setIsLoading(false);
-    }
+    };
+    void restore();
+    return () => controller.abort();
   }, []);
 
   const login = async (email: string, password: string): Promise<boolean> => {
@@ -121,13 +123,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {}
   };
 
-  const switchDemoRole = async (targetRole: UserRole) => {
-    const creds = DEMO_CREDENTIALS[targetRole];
-    if (creds) {
-      await login(creds.email, creds.pass);
-    }
-  };
-
   const hasRole = (allowedRoles: UserRole[]): boolean => {
     if (!user) return false;
     if (user.role === 'super_admin') return true;
@@ -135,7 +130,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const role: UserRole = user?.role || 'public_viewer';
-  const isAuthenticated = !!token && role !== 'public_viewer';
+  const isAuthenticated = !!token;
 
   return (
     <AuthContext.Provider
@@ -148,7 +143,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         error,
         login,
         logout,
-        switchDemoRole,
         hasRole,
       }}
     >

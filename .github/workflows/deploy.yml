@@ -1,0 +1,155 @@
+name: Release and deploy
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment (configure its secrets first)
+        type: choice
+        options: [staging, production]
+        required: true
+      release_sha:
+        description: Full commit SHA on main (use the same SHA after staging passes)
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate reviewed release
+        env:
+          SHA: ${{ inputs.release_sha }}
+        run: |
+          [[ "$GITHUB_REF" == refs/heads/main ]]
+          [[ "$SHA" =~ ^[a-f0-9]{40}$ ]]
+          git cat-file -e "$SHA^{commit}"
+          git merge-base --is-ancestor "$SHA" origin/main
+  checks:
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ inputs.release_sha }}
+  release:
+    needs: checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      deployments: write
+      actions: read
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ vars.DEPLOY_URL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_sha }}
+      - name: Set image names
+        env:
+          SHA: ${{ inputs.release_sha }}
+        run: |
+          echo "BACKEND_IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}-backend:$SHA" >> "$GITHUB_ENV"
+          echo "FRONTEND_IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}-frontend:$SHA" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        if: inputs.environment == 'staging'
+        id: backend
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: true
+          tags: ${{ env.BACKEND_IMAGE }}
+      - uses: docker/build-push-action@v6
+        if: inputs.environment == 'staging'
+        id: frontend
+        with:
+          context: frontend
+          push: true
+          build-args: BACKEND_URL=http://backend:8000
+          tags: ${{ env.FRONTEND_IMAGE }}
+      - name: Pin staging image digests
+        if: inputs.environment == 'staging'
+        env:
+          BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
+          FRONTEND_DIGEST: ${{ steps.frontend.outputs.digest }}
+        run: |
+          echo "BACKEND_IMAGE=${BACKEND_IMAGE%:*}@$BACKEND_DIGEST" > images.env
+          echo "FRONTEND_IMAGE=${FRONTEND_IMAGE%:*}@$FRONTEND_DIGEST" >> images.env
+      - name: Find successful staging artifact
+        if: inputs.environment == 'production'
+        id: staging
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.release_sha }}
+        run: |
+          run_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=staging-$SHA" --jq '.artifacts | map(select(.expired == false)) | first | .workflow_run.id')
+          [[ "$run_id" =~ ^[0-9]+$ ]]
+          trusted=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '.conclusion == "success" and .event == "workflow_dispatch" and .head_branch == "main" and .path == ".github/workflows/deploy.yml"')
+          [[ "$trusted" == true ]]
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        if: inputs.environment == 'production'
+        with:
+          name: staging-${{ inputs.release_sha }}
+          run-id: ${{ steps.staging.outputs.run_id }}
+          github-token: ${{ github.token }}
+      - name: Load verified image digests
+        run: |
+          [[ $(wc -l < images.env) == 2 ]]
+          grep -Eq '^BACKEND_IMAGE=ghcr.io/[a-z0-9_./-]+@sha256:[a-f0-9]{64}$' images.env
+          grep -Eq '^FRONTEND_IMAGE=ghcr.io/[a-z0-9_./-]+@sha256:[a-f0-9]{64}$' images.env
+          backend_ref=$(sed -n 's/^BACKEND_IMAGE=//p' images.env)
+          frontend_ref=$(sed -n 's/^FRONTEND_IMAGE=//p' images.env)
+          [[ "$backend_ref" == "ghcr.io/${GITHUB_REPOSITORY,,}-backend@sha256:"* ]]
+          [[ "$frontend_ref" == "ghcr.io/${GITHUB_REPOSITORY,,}-frontend@sha256:"* ]]
+          cat images.env >> "$GITHUB_ENV"
+      - name: Deploy over verified SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          SHA: ${{ inputs.release_sha }}
+          TARGET: ${{ inputs.environment }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9.-]+$ ]]
+          [[ "$DEPLOY_USER" =~ ^[a-zA-Z0-9_-]+$ ]]
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          root="/opt/vayubudhi-$TARGET"
+          release="$root/releases/$SHA"
+          tar -czf release.tar.gz compose.production.yml deploy
+          # The validated release paths intentionally expand on the runner.
+          # shellcheck disable=SC2029
+          ssh -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$release'"
+          scp release.tar.gz "$DEPLOY_USER@$DEPLOY_HOST:$release/release.tar.gz"
+          # shellcheck disable=SC2029
+          ssh -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" "cd '$release' && tar -xzf release.tar.gz && BACKEND_IMAGE='$BACKEND_IMAGE' FRONTEND_IMAGE='$FRONTEND_IMAGE' bash deploy/deploy.sh"
+      - name: Verify public HTTPS
+        env:
+          URL: ${{ vars.DEPLOY_URL }}
+        run: |
+          [[ "$URL" == https://* ]]
+          curl --fail --retry 12 --retry-all-errors --retry-delay 10 "$URL/api/health"
+          curl --fail --retry 3 "$URL/" -o /dev/null
+      - uses: actions/upload-artifact@v4
+        if: inputs.environment == 'staging'
+        with:
+          name: staging-${{ inputs.release_sha }}
+          path: images.env
+          retention-days: 30

@@ -39,6 +39,27 @@ class MLService:
         self.forecast_history = []
         self._load_models()
         self._load_dataset()
+        from app.config import PRODUCTION
+        if PRODUCTION:
+            self.validate_artifacts()
+
+    def validate_artifacts(self):
+        """A production process must perform real inference before serving traffic."""
+        from app.schemas import SensorReading
+        frame = self._prepare_features(SensorReading())
+        if self.dataset_cache is None or self.dataset_cache.empty:
+            raise RuntimeError("Required ML dataset is missing or empty")
+        for horizon in (24, 48, 72):
+            if f"{horizon}h" not in self.forecasters:
+                raise RuntimeError(f"Required {horizon}h forecast artifact is missing")
+        for model in self.forecasters.values():
+            points, intervals = model.predict_interval(frame)
+            if not np.isfinite(points).all() or not np.isfinite(intervals).all():
+                raise RuntimeError("Forecast artifact returned invalid predictions")
+        if self.classifier is None:
+            raise RuntimeError("Required attribution classifier is missing")
+        if not np.isfinite(self.classifier._estimator.predict_proba(frame)).all():
+            raise RuntimeError("Attribution artifact returned invalid predictions")
 
     def update_online_feedback(self, city: str, actual_pm25: float, current_time_ts: float = None):
         """
@@ -188,6 +209,10 @@ class MLService:
         now_ts = time.time()
         
         if not self.forecasters:
+            from app.config import PRODUCTION
+            if PRODUCTION:
+                from fastapi import HTTPException
+                raise HTTPException(status_code=503, detail="Forecast models unavailable")
             # Physics-based dispersion fallback if model files are unmounted
             p24 = max(5.0, pm25_in * 0.90 + active_bias)
             p48 = max(5.0, pm25_in * 0.80 + active_bias * 0.7)
@@ -255,6 +280,10 @@ class MLService:
             }
         except Exception as e:
             print(f"Forecast error: {e}")
+            from app.config import PRODUCTION
+            if PRODUCTION:
+                from fastapi import HTTPException
+                raise HTTPException(status_code=503, detail="Forecast inference unavailable") from e
             p24 = max(5.0, pm25_in * 0.90 + active_bias)
             p48 = max(5.0, pm25_in * 0.80 + active_bias * 0.7)
             p72 = max(5.0, pm25_in * 0.70 + active_bias * 0.5)
@@ -286,6 +315,10 @@ class MLService:
         )
 
         if not self.classifier:
+            from app.config import PRODUCTION
+            if PRODUCTION:
+                from fastapi import HTTPException
+                raise HTTPException(status_code=503, detail="Attribution model unavailable")
             return {
                 "prediction_set": ["vehicular", "industrial"],
                 "set_size": 2,
@@ -317,6 +350,10 @@ class MLService:
             }
         except Exception as e:
             print(f"Attribution error: {e}")
+            from app.config import PRODUCTION
+            if PRODUCTION:
+                from fastapi import HTTPException
+                raise HTTPException(status_code=503, detail="Attribution inference unavailable") from e
             return {
                 "prediction_set": ["vehicular"],
                 "set_size": 1,

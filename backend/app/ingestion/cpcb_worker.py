@@ -82,7 +82,9 @@ def run_cpcb_ingestion(cities: Optional[List[str]] = None, max_records: int = 40
     calculates dual-standard AQIs, and persists to database.
     """
     # Ensure tables exist
-    Base.metadata.create_all(bind=engine)
+    from app.config import PRODUCTION
+    if not PRODUCTION:
+        Base.metadata.create_all(bind=engine)
     db = SessionLocal()
 
     stats = {

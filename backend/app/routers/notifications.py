@@ -5,7 +5,8 @@ from typing import Any, Dict, Optional
 
 import requests
 from dotenv import load_dotenv
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from app.auth import require_roles
 from pydantic import BaseModel
 
 from app import schemas
@@ -33,7 +34,8 @@ class LatestNotificationResponse(BaseModel):
     notification: Optional[Dict[str, Any]] = None
 
 
-@router.post("/notifications/dispatch-alert", response_model=schemas.DispatchAlertResponse)
+@router.post("/notifications/dispatch-alert", response_model=schemas.DispatchAlertResponse,
+             dependencies=[Depends(require_roles(["super_admin", "city_officer"]))])
 def dispatch_alert(body: schemas.DispatchAlertRequest):
     """
     Fire a mobile alert at the exact enforcement-dispatch moment.
@@ -89,7 +91,8 @@ def dispatch_alert(body: schemas.DispatchAlertRequest):
     )
 
 
-@router.get("/notifications/latest", response_model=LatestNotificationResponse)
+@router.get("/notifications/latest", response_model=LatestNotificationResponse,
+            dependencies=[Depends(require_roles(["super_admin", "city_officer", "field_inspector"]))])
 def latest_notification(since: Optional[str] = None):
     """Return the last dispatch alert. Optional `since` ISO timestamp skips older records."""
     if _latest is None:

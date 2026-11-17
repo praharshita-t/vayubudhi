@@ -44,8 +44,8 @@ IMG_SIZE = 512
 CACHE_TTL = 3600
 
 # Cache directory
-CACHE_DIR = Path(__file__).resolve().parent.parent / "satellite_cache"
-CACHE_DIR.mkdir(exist_ok=True)
+CACHE_DIR = Path(os.getenv("SATELLITE_CACHE_DIR", "/tmp/vayubudhi-satellite"))
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Open-Meteo CAMS Air Quality API endpoint
 OPEN_METEO_AQ_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"

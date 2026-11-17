@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 try:
-    import google.generativeai as genai
+    from google import genai
 except ImportError:
     genai = None
 
@@ -509,8 +509,7 @@ class GeminiAdvisorClient:
         self.api_key = api_key or os.getenv('GEMINI_API_KEY', '')
         if self.api_key and genai:
             try:
-                genai.configure(api_key=self.api_key)
-                self.model = genai.GenerativeModel('gemini-1.5-flash')
+                self.model = genai.Client(api_key=self.api_key, http_options={"timeout": 15000})
             except Exception:
                 self.model = None
         else:
@@ -1020,7 +1019,8 @@ class GeminiAdvisorClient:
 
                 Respond strictly in {lang} with bold headers and bullet points.
                 """
-                resp = self.model.generate_content(prompt)
+                with self.model as client:
+                    resp = client.models.generate_content(model=os.getenv("GEMINI_MODEL", "gemini-3.8-flash"), contents=prompt)
                 if resp and resp.text:
                     full_text = resp.text.strip()
             except Exception:

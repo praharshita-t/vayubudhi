@@ -1,6 +1,7 @@
 'use client';
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useCityContext } from '@/context/CityContext';
+import { useAuth } from '@/context/AuthContext';
 
 export type LogLevel = 'info' | 'success' | 'warn' | 'error';
 export type SimLogEvent = { ts: number; message: string; level: LogLevel };
@@ -26,10 +27,11 @@ export function useSimulation() {
   return ctx;
 }
 
-const API_BASE = 'http://127.0.0.1:8000/api';
+const API_BASE = '/api';
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function SimulationProvider({ children }: { children: React.ReactNode }) {
+  const { hasRole } = useAuth();
   const { activeCity, cityData } = useCityContext();
   const [simulating, setSimulating] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -76,6 +78,10 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
   }, [stopTimer]);
 
   const startSimulation = useCallback(async () => {
+    if (!hasRole(['super_admin', 'city_officer'])) {
+      setEvents([{ ts: 0, message: 'Sign in with an assigned staff account to run routing and dispatch.', level: 'error' }]);
+      return;
+    }
     const stations = cityData ? cityData.stations : [];
     const iotSensor = stations.find((s: any) => s.source === 'deployed' || s.source === 'iot') || stations[0];
 
@@ -168,7 +174,8 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
       const depotLon = iotSensor.lon ?? stations[0].lon;
       const optRes = await fetch(`${API_BASE}/optimize`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('vayubudhi_auth_token') || ''}` },
         body: JSON.stringify({
           lat: depotLat,
           lon: depotLon,
@@ -210,7 +217,8 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
       try {
         const notifRes = await fetch(`${API_BASE}/notifications/dispatch-alert`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json',
+            Authorization: `Bearer ${localStorage.getItem('vayubudhi_auth_token') || ''}` },
           body: JSON.stringify({
             station_id: iotSensor.id,
             station_name: iotSensor.name,
@@ -256,7 +264,7 @@ export function SimulationProvider({ children }: { children: React.ReactNode }) 
         stopTimer();
       }
     }
-  }, [activeCity, cityData, startTimer, stopTimer]);
+  }, [activeCity, cityData, startTimer, stopTimer, hasRole]);
 
   return (
     <SimulationContext.Provider value={{

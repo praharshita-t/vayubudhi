@@ -9,10 +9,14 @@ import threading
 import time
 from datetime import datetime
 from typing import Dict, Any
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends
+from app.auth import require_roles
 
 from app.database import SessionLocal
 from app.models import Station, StationObservation
+from app.database import engine
+from sqlalchemy import text
+from app.redis_client import get_cache, set_cache
 from app.ingestion.cpcb_worker import run_cpcb_ingestion
 from app.ingestion.openaq_worker import run_openaq_ingestion
 
@@ -31,6 +35,20 @@ SCHEDULER_THREAD = None
 RUN_EVENT = threading.Event()
 
 def execute_ingestion_cycle() -> Dict[str, Any]:
+    """Serialize workers and manual triggers across processes on PostgreSQL."""
+    if engine.dialect.name != "postgresql":
+        return _execute_ingestion_cycle()
+    with engine.connect() as connection:
+        if not connection.scalar(text("SELECT pg_try_advisory_lock(8675309)")):
+            return {"status": "skipped", "reason": "Another ingestion process owns the lock"}
+        try:
+            result = _execute_ingestion_cycle()
+            set_cache("ingestion:last_result", result, ttl_seconds=86400)
+            return result
+        finally:
+            connection.execute(text("SELECT pg_advisory_unlock(8675309)"))
+
+def _execute_ingestion_cycle() -> Dict[str, Any]:
     """Runs one full ingestion cycle across CPCB and OpenAQ."""
     global INGESTION_STATUS
     if INGESTION_STATUS["is_running"]:
@@ -98,7 +116,7 @@ def stop_ingestion_scheduler():
     """Stops the scheduler thread gracefully."""
     RUN_EVENT.set()
 
-@router.post("/trigger")
+@router.post("/trigger", dependencies=[Depends(require_roles(["super_admin"]))])
 def trigger_manual_ingestion(background_tasks: BackgroundTasks):
     """
     On-demand administrative trigger to run an immediate ingestion cycle.
@@ -130,6 +148,8 @@ def get_ingestion_status():
 
         return {
             "scheduler_active": SCHEDULER_THREAD is not None and SCHEDULER_THREAD.is_alive(),
+            "worker_heartbeat": get_cache("ingestion:heartbeat"),
+            "worker_last_result": get_cache("ingestion:last_result"),
             "scheduler_status": INGESTION_STATUS,
             "metrics": {
                 "total_monitored_stations": station_count,

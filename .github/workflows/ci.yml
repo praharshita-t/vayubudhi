@@ -1,0 +1,76 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main, 'fix/**', 'feature/**']
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm audit --omit=dev --audit-level=high
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: docker build --build-arg BACKEND_URL=http://backend:8000 -t vayu-frontend:ci frontend
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: vayu_test
+          POSTGRES_USER: vayu
+          POSTGRES_PASSWORD: test-only-password
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U vayu -d vayu_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      APP_ENV: production
+      DATABASE_URL: postgresql://vayu:test-only-password@localhost:5432/vayu_test
+      REDIS_URL: redis://localhost:6379/0
+      JWT_SECRET_KEY: ci-only-secret-0123456789abcdef0123456789abcdef
+      ALLOWED_ORIGINS: https://ci.example.com
+      SEED_DEMO_USERS: 'false'
+      INGESTION_ENABLED: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r backend/requirements.txt -r backend/requirements-test.txt
+      - run: pip check
+      - run: pip install pip-audit && pip-audit --disable-pip --no-deps -r backend/requirements.txt
+      - run: alembic upgrade head && alembic check
+        working-directory: backend
+      - run: python -m pytest tests -q
+        working-directory: backend
+      - run: docker build -f backend/Dockerfile -t vayu-backend:ci .

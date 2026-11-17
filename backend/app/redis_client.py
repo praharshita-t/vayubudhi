@@ -16,13 +16,16 @@ logger = logging.getLogger("vayubudhi.redis")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 _redis_client = None
+_retry_after = 0.0
 _in_memory_cache: dict[str, tuple[Any, float]] = {}  # key -> (value, expiry_timestamp)
 _rate_limit_buckets: dict[str, list[float]] = {}  # ip -> list of request timestamps
 
 
 def _get_redis():
-    global _redis_client
-    if _redis_client is not None:
+    global _redis_client, _retry_after
+    if _redis_client is False and time.time() < _retry_after:
+        return None
+    if _redis_client:
         return _redis_client
 
     try:
@@ -37,11 +40,12 @@ def _get_redis():
         # Verify connection
         client.ping()
         _redis_client = client
-        logger.info(f"Connected to Redis at {REDIS_URL}")
+        logger.info("Connected to Redis")
         return _redis_client
     except Exception as e:
-        logger.warning(f"Redis unavailable ({e}). Falling back to in-memory TTL caching.")
+        logger.warning("Redis unavailable; using development in-memory cache")
         _redis_client = False
+        _retry_after = time.time() + 5
         return None
 
 
@@ -181,5 +185,4 @@ def get_cache_status() -> dict:
         "backend": "redis_cluster" if is_live else "in_memory_ttl_fallback",
         "in_memory_keys": len(_in_memory_cache),
         "redis_keys": keys_count,
-        "redis_url": REDIS_URL if is_live else None
     }

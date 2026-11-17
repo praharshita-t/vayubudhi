@@ -132,7 +132,7 @@ export default function HomePage() {
   useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const res = await fetch(`http://127.0.0.1:8000/api/city-historical?city=${activeCity}`);
+        const res = await fetch(`/api/city-historical?city=${activeCity}`);
         if (res.ok) {
           const data = await res.json();
           if (data.history && data.history.length > 0) {
@@ -310,12 +310,14 @@ export default function HomePage() {
   const best5 = sortedDistricts.slice(0, 5);
   const worst5 = [...sortedDistricts].reverse().slice(0, 5);
 
-  if (liveLoading && stations.length === 0) {
+  if (stations.length === 0) {
     return (
       <div className="home-page">
         <div className="home-loading">
-          <div className="home-loading-spinner" />
-          <div>Loading air quality data for {activeCity}...</div>
+          {liveLoading && <div className="home-loading-spinner" />}
+          <div role="status">{liveLoading
+            ? `Loading air quality data for ${activeCity}...`
+            : `Air quality data for ${activeCity} is currently unavailable. Please try again later.`}</div>
         </div>
       </div>
     );

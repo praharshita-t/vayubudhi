@@ -1,10 +1,20 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, Header, HTTPException
+import os
+import secrets
+from app.config import PRODUCTION
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app import models
 from app import schemas
 
-router = APIRouter()
+def verify_sensor_key(x_api_key: str = Header(default="")):
+    expected = os.getenv("SENSOR_API_KEY", "")
+    if PRODUCTION and not expected:
+        raise HTTPException(status_code=503, detail="Sensor ingestion is not configured")
+    if expected and not secrets.compare_digest(x_api_key, expected):
+        raise HTTPException(status_code=401, detail="Invalid sensor API key")
+
+router = APIRouter(dependencies=[Depends(verify_sensor_key)])
 
 @router.post("/ingest", response_model=schemas.IngestResponse, status_code=status.HTTP_200_OK)
 def ingest_reading(reading: schemas.SensorReading, db: Session = Depends(get_db)):

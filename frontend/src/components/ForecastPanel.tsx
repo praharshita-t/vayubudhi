@@ -91,7 +91,7 @@ export default function ForecastPanel({ city = 'Hyderabad', userCoords, liveData
   // Fetch API Forecast logic & Real Metrics
   useEffect(() => {
     // 1. Fetch Real Validation Metrics from API
-    fetch('http://127.0.0.1:8000/api/model/metrics')
+    fetch('/api/model/metrics')
       .then(res => res.json())
       .then(result => setValidationMetrics(result))
       .catch(err => console.error('Failed to fetch ML metrics:', err));
@@ -174,7 +174,7 @@ export default function ForecastPanel({ city = 'Hyderabad', userCoords, liveData
       lon: targetSensor.lon || (city === 'Delhi' ? 77.2090 : city === 'Bengaluru' ? 77.5946 : 78.45),
     };
 
-    fetch('http://127.0.0.1:8000/api/forecast', {
+    fetch('/api/forecast', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -189,7 +189,7 @@ export default function ForecastPanel({ city = 'Hyderabad', userCoords, liveData
       })
       .catch(err => console.error('Failed to fetch ML forecast:', err));
 
-    fetch('http://127.0.0.1:8000/api/attribution', {
+    fetch('/api/attribution', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)

@@ -19,7 +19,7 @@ from app.database import get_db
 from app.models import User
 
 # JWT Secret & Algorithm
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "vayubudhi_enterprise_jwt_secret_key_2026_secured")
+from app.config import JWT_SECRET_KEY
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = 24
 
@@ -94,7 +94,11 @@ def get_current_user(
             detail="Token payload is missing user identifier.",
         )
 
-    user = db.query(User).filter(User.id == int(user_id)).first()
+    try:
+        parsed_id = int(user_id)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid token subject")
+    user = db.query(User).filter(User.id == parsed_id).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

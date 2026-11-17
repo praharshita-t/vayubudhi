@@ -38,15 +38,17 @@ def load_server_dataset() -> pd.DataFrame:
         except Exception as e:
             print(f"Failed to load AQUI Index.xlsx: {e}")
 
-    # 2. Check remote Google Sheet
-    try:
-        print("Fetching live dataset from Google Sheets...")
-        df = pd.read_csv(SHEET_URL, timeout=5)
-        print(f"Successfully loaded {len(df)} rows from live Google Sheet.")
-        historical_df = df
-        return df
-    except Exception as e:
-        print(f"Failed to fetch live dataset from Google Sheets: {e}")
+    # Remote datasets are opt-in; startup works from packaged data without network.
+    dataset_url = os.getenv("DATASET_URL", "")
+    if dataset_url:
+        try:
+            import io
+            response = requests.get(dataset_url, timeout=10)
+            response.raise_for_status()
+            historical_df = pd.read_csv(io.StringIO(response.text))
+            return historical_df
+        except Exception:
+            print("Configured remote dataset unavailable; using packaged CSV")
 
     # 3. Fallback to local CSV files
     for fallback_name in ['dataset.csv', os.path.join('ml_model', 'data', 'dataset.csv'), os.path.join('data', 'dataset_hyderabad_expanded.csv')]:

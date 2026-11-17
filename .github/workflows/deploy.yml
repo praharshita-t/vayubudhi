@@ -99,7 +99,7 @@ jobs:
           trusted=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '.conclusion == "success" and .event == "workflow_dispatch" and .head_branch == "main" and .path == ".github/workflows/deploy.yml"')
           [[ "$trusted" == true ]]
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: inputs.environment == 'production'
         with:
           name: staging-${{ inputs.release_sha }}

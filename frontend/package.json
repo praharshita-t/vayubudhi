@@ -6,12 +6,14 @@
     "dev": "node ./node_modules/next/dist/bin/next dev",
     "build": "node ./node_modules/next/dist/bin/next build",
     "start": "node ./node_modules/next/dist/bin/next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "node ./node_modules/typescript/bin/tsc --noEmit"
   },
   "dependencies": {
     "@deck.gl/core": "^8.9.0",
     "@deck.gl/layers": "^8.9.0",
     "@deck.gl/react": "^8.9.0",
+    "@react-three/drei": "^10.7.9",
+    "@react-three/fiber": "^9.8.2",
     "d3-interpolate": "^3.0.1",
     "lucide-react": "^1.74.0",
     "maplibre-gl": "^6.18.0",
@@ -19,12 +21,14 @@
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-map-gl": "^8.1.1",
-    "recharts": "^2.12.0"
+    "recharts": "^2.12.0",
+    "three": "^0.187.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@types/three": "^0.187.0",
     "typescript": "^5.0.0"
   }
 }

@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   Home, Map, FlaskConical, TrendingUp, Shield,
-  FileText, Building2, Menu, PanelLeftClose, Lock,
+  FileText, Building2, Menu, PanelLeftClose, Lock, Cpu,
 } from 'lucide-react';
 import { useCityContext } from '@/context/CityContext';
 import { useAuth, UserRole } from '@/context/AuthContext';
@@ -24,6 +24,7 @@ const navItems: NavItem[] = [
   { id: 'forecast', label: 'Forecast', href: '/forecast', icon: TrendingUp },
   { id: 'enforce', label: 'Enforce', href: '/enforce', icon: Shield, requiredRoles: ['city_officer', 'super_admin'] },
   { id: 'compare', label: 'Compare Cities', href: '/compare', icon: Building2 },
+  { id: 'hardware', label: 'Hardware', href: '/hardware', icon: Cpu },
 ];
 
 export default function Sidebar() {

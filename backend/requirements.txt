@@ -7,9 +7,9 @@
 absl-py==2.5.1
     # via ortools
 aiosqlite==0.22.1
-    # via -r backend/requirements.in
+    # via -r requirements.in
 alembic==1.20.1
-    # via -r backend/requirements.in
+    # via -r requirements.in
 annotated-doc==0.0.6
     # via fastapi
 annotated-types==0.8.0
@@ -21,11 +21,11 @@ anyio==4.16.0
     #   httpx2
     #   starlette
 asyncpg==0.32.0
-    # via -r backend/requirements.in
+    # via -r requirements.in
 bcrypt==5.0.0
-    # via -r backend/requirements.in
+    # via -r requirements.in
 catboost==1.2.10
-    # via -r backend/requirements.in
+    # via -r requirements.in
 certifi==2026.10.23
     # via requests
 cffi==2.1.1
@@ -42,24 +42,24 @@ contourpy==1.4.0
     # via matplotlib
 cryptography==50.0.2
     # via
-    #   -r backend/requirements.in
+    #   -r requirements.in
     #   google-auth
 cycler==0.12.1
     # via matplotlib
 distro==1.9.0
     # via google-genai
-fastapi==0.163.1
-    # via -r backend/requirements.in
+fastapi==0.165.0
+    # via -r requirements.in
 fonttools==4.68.0
     # via matplotlib
 google-auth==2.62.2
     # via google-genai
 google-genai==3.4.0
-    # via -r backend/requirements.in
+    # via -r requirements.in
 graphviz==0.21
     # via catboost
 greenlet==3.5.6
-    # via -r backend/requirements.in
+    # via -r requirements.in
 h11==0.16.0
     # via
     #   httpcore2
@@ -77,16 +77,16 @@ immutabledict==4.3.1
     # via ortools
 joblib==1.6.0
     # via
-    #   -r backend/requirements.in
+    #   -r requirements.in
     #   scikit-learn
 kiwisolver==1.5.1
     # via matplotlib
 lightgbm==4.7.0
-    # via -r backend/requirements.in
+    # via -r requirements.in
 mako==1.4.3
     # via alembic
 mapie==1.6.0
-    # via -r backend/requirements.in
+    # via -r requirements.in
 markupsafe==3.0.4
     # via mako
 matplotlib==3.11.2
@@ -113,7 +113,7 @@ numpy==2.5.5
 opentelemetry-api==1.45.2
     # via fastapi
 ortools==9.15.6755
-    # via -r backend/requirements.in
+    # via -r requirements.in
 packaging==26.3
     # via
     #   matplotlib
@@ -121,7 +121,7 @@ packaging==26.3
     #   shap
 pandas==3.1.1
     # via
-    #   -r backend/requirements.in
+    #   -r requirements.in
     #   catboost
     #   ortools
     #   shap
@@ -132,7 +132,7 @@ plotly==7.1.0
 protobuf==6.33.6
     # via ortools
 psycopg2-binary==2.9.13
-    # via -r backend/requirements.in
+    # via -r requirements.in
 pyasn1==0.6.5
     # via pyasn1-modules
 pyasn1-modules==0.4.2
@@ -141,13 +141,13 @@ pycparser==3.12
     # via cffi
 pydantic==2.14.3
     # via
-    #   -r backend/requirements.in
+    #   -r requirements.in
     #   fastapi
     #   google-genai
 pydantic-core==2.50.4
     # via pydantic
 pyjwt==2.15.1
-    # via -r backend/requirements.in
+    # via -r requirements.in
 pyparsing==3.3.3
     # via matplotlib
 python-dateutil==4.0.0
@@ -155,24 +155,24 @@ python-dateutil==4.0.0
     #   matplotlib
     #   pandas
 python-dotenv==1.2.4
-    # via -r backend/requirements.in
+    # via -r requirements.in
 python-multipart==0.0.34
-    # via -r backend/requirements.in
+    # via -r requirements.in
 redis==8.1.0
-    # via -r backend/requirements.in
+    # via -r requirements.in
 requests==2.34.2
     # via
-    #   -r backend/requirements.in
+    #   -r requirements.in
     #   google-auth
     #   google-genai
 scikit-learn==1.9.0
     # via
-    #   -r backend/requirements.in
+    #   -r requirements.in
     #   mapie
     #   shap
 scipy==1.18.1
     # via
-    #   -r backend/requirements.in
+    #   -r requirements.in
     #   catboost
     #   lightgbm
     #   mapie
@@ -180,9 +180,9 @@ scipy==1.18.1
     #   shap
     #   xgboost-cpu
 shap==0.54.1
-    # via -r backend/requirements.in
+    # via -r requirements.in
 shapely==2.2.0
-    # via -r backend/requirements.in
+    # via -r requirements.in
 six==1.17.0
     # via catboost
 slicer==0.0.8
@@ -191,7 +191,7 @@ sniffio==1.3.1
     # via google-genai
 sqlalchemy==2.1.9
     # via
-    #   -r backend/requirements.in
+    #   -r requirements.in
     #   alembic
 starlette==1.10.0
     # via fastapi
@@ -228,8 +228,8 @@ tzdata==2026.6
 urllib3==2.8.0
     # via requests
 uvicorn==0.54.0
-    # via -r backend/requirements.in
+    # via -r requirements.in
 websockets==17.4
     # via google-genai
 xgboost-cpu==3.3.0
-    # via -r backend/requirements.in
+    # via -r requirements.in
